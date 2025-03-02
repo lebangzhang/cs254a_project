@@ -221,30 +221,6 @@ inline void vx_fence() {
     __asm__ volatile ("fence iorw, iorw");
 }
 
-inline unsigned vx_u4_mmadd(unsigned a, unsigned b, unsigned c) {
-    unsigned ret;
-    asm volatile (".insn r4 %1, 0, %2, %0, %3, %4, %5" : "=r"(ret) : "i"(RISCV_CUSTOM1), "i"(0), "r"(a), "r"(b), "r"(c));
-    return ret;
-}
-
-inline unsigned vx_u8_mmadd(unsigned a, unsigned b, unsigned c) {
-    unsigned ret;
-    asm volatile (".insn r4 %1, 0, %2, %0, %3, %4, %5" : "=r"(ret) : "i"(RISCV_CUSTOM1), "i"(1), "r"(a), "r"(b), "r"(c));
-    return ret;
-}
-
-inline unsigned vx_f16_mmadd(unsigned a, unsigned b, unsigned c) {
-    unsigned ret;
-    asm volatile (".insn r4 %1, 0, %2, %0, %3, %4, %5" : "=r"(ret) : "i"(RISCV_CUSTOM1), "i"(2), "r"(a), "r"(b), "r"(c));
-    return ret;
-}
-
-inline unsigned vx_bf16_mmadd(unsigned a, unsigned b, unsigned c) {
-    unsigned ret;
-    asm volatile (".insn r4 %1, 0, %2, %0, %3, %4, %5" : "=r"(ret) : "i"(RISCV_CUSTOM1), "i"(3), "r"(a), "r"(b), "r"(c));
-    return ret;
-}
-
 #ifdef __cplusplus
 }
 #endif

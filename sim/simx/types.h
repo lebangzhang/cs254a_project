@@ -244,10 +244,7 @@ enum class SfuType {
   PRED,
   CSRRW,
   CSRRS,
-  CSRRC,
-#ifdef EXT_TPU_ENABLE
-  MMADD,
-#endif
+  CSRRC
 };
 
 inline std::ostream &operator<<(std::ostream &os, const SfuType& type) {
@@ -261,9 +258,6 @@ inline std::ostream &operator<<(std::ostream &os, const SfuType& type) {
   case SfuType::CSRRW:  os << "CSRRW"; break;
   case SfuType::CSRRS:  os << "CSRRS"; break;
   case SfuType::CSRRC:  os << "CSRRC"; break;
-#ifdef EXT_TPU_ENABLE
-  case SfuType::MMADD:  os << "MMADD"; break;
-#endif
   default: assert(false);
   }
   return os;

@@ -141,12 +141,6 @@ public:
     return mem_coalescers_.at(idx);
   }
 
-#ifdef EXT_TPU_ENABLE
-  TensorUnit::Ptr& tensor_unit() {
-    return tensor_unit_;
-  }
-#endif
-
 #ifdef EXT_V_ENABLE
   VecUnit::Ptr& vec_unit() {
     return vec_unit_;
@@ -171,10 +165,6 @@ private:
   uint32_t core_id_;
   Socket* socket_;
   const Arch& arch_;
-
-#ifdef EXT_TPU_ENABLE
-  TensorUnit::Ptr tensor_unit_;
-#endif
 
 #ifdef EXT_V_ENABLE
   VecUnit::Ptr vec_unit_;

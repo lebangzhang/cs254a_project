@@ -264,14 +264,6 @@ void SfuUnit::tick() {
 				release_warp = core_->barrier(trace_data->arg1, trace_data->arg2, trace->wid);
 			}
 		} break;
-	#ifdef EXT_TPU_ENABLE
-		case SfuType::MMADD:	{
-			if (trace->eop) {
-				auto trace_data = std::dynamic_pointer_cast<TensorUnit::TraceData>(trace->data);
-				output.push(trace, trace_data->latency + delay);
-			}
-		} break;
-	#endif
 		default:
 			std::abort();
 		}
