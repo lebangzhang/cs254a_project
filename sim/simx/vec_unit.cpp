@@ -6,9 +6,10 @@ using namespace vortex;
 
 class VecUnit::Impl {
 public:
-  Impl(VecUnit* simobject, const Arch& /*arch*/, Core* core)
+  Impl(VecUnit* simobject, const Arch& arch, Core* core)
       : simobject_(simobject)
       , core_(core)
+      , vpu_states_(arch.num_warps(), arch.num_threads())
   {
     this->clear();
   }

@@ -464,6 +464,11 @@ Word Emulator::get_csr(uint32_t addr, uint32_t wid, uint32_t tid) {
   CSR_READ_64(VX_CSR_MCYCLE, core_perf.cycles);
   CSR_READ_64(VX_CSR_MINSTRET, core_perf.instrs);
   default:
+  #ifdef EXT_V_ENABLE
+    Word value = 0;
+    if (vec_unit_->get_csr(addr, wid, tid, &value))
+      return value;
+  #endif
     if ((addr >= VX_CSR_MPM_BASE && addr < (VX_CSR_MPM_BASE + 32))
      || (addr >= VX_CSR_MPM_BASE_H && addr < (VX_CSR_MPM_BASE_H + 32))) {
       // user-defined MPM CSRs
@@ -552,16 +557,10 @@ Word Emulator::get_csr(uint32_t addr, uint32_t wid, uint32_t tid) {
         }
       } break;
     #endif
-      default: {
-      #ifdef EXT_V_ENABLE
-        Word value = 0;
-        if (vec_unit_->get_csr(addr, wid, tid, &value)) {
-          return value;
-        }
-      #endif
+      default:
         std::cout << "Error: invalid MPM CLASS: value=" << perf_class << std::endl;
         std::abort();
-      } break;
+        break;
       }
     } else {
       std::cout << "Error: invalid CSR read addr=0x"<< std::hex << addr << std::dec << std::endl;

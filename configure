@@ -16,6 +16,11 @@
 # Determine the current working directory
 CURRENT_DIR=$(pwd)
 
+# default configuration parameters
+default_xlen=32
+default_tooldir=$HOME/tools
+default_prefix=$CURRENT_DIR
+
 # Function to detect current OS
 detect_osversion() {
     local osversion="unsupported"
@@ -41,6 +46,9 @@ detect_osversion() {
     fi
     echo "$osversion"
 }
+
+# default configuration parameters
+default_osversion=$(detect_osversion)
 
 # Function to recursively copy files, skipping the current directory
 copy_files() {
@@ -111,12 +119,6 @@ copy_files() {
 
 ###############################################################################
 
-# default configuration parameters
-default_xlen=32
-default_tooldir=$HOME/tools
-default_osversion=$(detect_osversion)
-default_prefix=$CURRENT_DIR
-
 # load default configuration parameters from existing config.mk
 if [ -f "config.mk" ]; then
     while IFS='=' read -r key value; do
@@ -140,7 +142,7 @@ PREFIX=${PREFIX:=$default_prefix}
 
 # parse command line arguments
 usage() {
-    echo "Usage: $0 [--xlen=<value>] [--tooldir=<path>] [--osversion=<version>]"
+    echo "Usage: $0 [--xlen=<value>] [--prefix=<path>] [--tooldir=<path>] [--osversion=<version>]"
     echo "  --xlen=<value>       Set the XLEN value (default: 32)"
     echo "  --tooldir=<path>     Set the TOOLDIR path (default: $HOME/tools)"
     echo "  --osversion=<version> Set the OS Version (default: $(detect_osversion))"

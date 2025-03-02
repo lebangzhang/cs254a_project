@@ -131,9 +131,7 @@ int ProcessorImpl::run() {
         done = false;
         continue;
       }
-    #ifdef EXT_V_ENABLE
       exitcode |= cluster->get_exitcode();
-    #endif
     }
     perf_mem_latency_ += perf_mem_pending_reads_;
   } while (!done);

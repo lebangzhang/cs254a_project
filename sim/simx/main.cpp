@@ -119,9 +119,9 @@ int main(int argc, char **argv) {
     std::cout << "[VXDRV] START: program=" << program << std::endl;
 #endif
     // run simulation
-    // vector test exitcode is a special case
   #ifdef EXT_V_ENABLE
-    if (vector_test) return processor.run();
+    // vector test exitcode is a special case
+    if (vector_test) return (1 == processor.run());
   #endif
     // else continue as normal
     processor.run();

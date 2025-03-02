@@ -1,5 +1,9 @@
 #!/bin/bash
 
+XLEN=${XLEN:-"@XLEN@"}
+TOOLDIR=${TOOLDIR:-"@TOOLDIR@"}
+RISCV_TOOLCHAIN_PATH=${RISCV_TOOLCHAIN_PATH:-"$TOOLDIR/riscv$XLEN-gnu-toolchain"}
+SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 PREV_DIR=$(pwd)
 
 sudo apt-get install device-tree-compiler
@@ -8,6 +12,7 @@ wget -O- -q https://go.dev/dl/go1.24.0.linux-amd64.tar.gz | tar -xzf -
 git clone https://github.com/chipsalliance/riscv-vector-tests.git
 cd riscv-vector-tests
 wget -O- -q https://github.com/riscv-collab/riscv-gnu-toolchain/releases/download/2024.04.12/riscv64-elf-ubuntu-22.04-gcc-nightly-2024.04.12-nightly.tar.gz | tar -xzf -
+
 export RISCV=$PREV_DIR/riscv-vector-tests/riscv
 export PATH=$PATH:$PREV_DIR/go/bin:$PREV_DIR/riscv-vector-tests/riscv/bin
 
