@@ -19,7 +19,6 @@
 #include <stack>
 #include <mem.h>
 #include "types.h"
-#include "tensor_unit.h"
 #ifdef EXT_V_ENABLE
 #include "vec_unit.h"
 #endif
@@ -33,61 +32,32 @@ class Instr;
 class instr_trace_t;
 
 struct ipdom_entry_t {
+  ThreadMask  orig_tmask;
+  ThreadMask  else_tmask;
+  Word        PC;
+  bool        fallthrough;
+
   ipdom_entry_t(const ThreadMask &orig_tmask, const ThreadMask &else_tmask, Word PC)
     : orig_tmask (orig_tmask)
     , else_tmask (else_tmask)
     , PC         (PC)
     , fallthrough(false)
   {}
-
-  ThreadMask  orig_tmask;
-  ThreadMask  else_tmask;
-  Word        PC;
-  bool        fallthrough;
-};
-
-///////////////////////////////////////////////////////////////////////////////
-
-struct vtype_t {
-  uint32_t vill;
-  uint32_t vma;
-  uint32_t vta;
-  uint32_t vsew;
-  uint32_t vlmul;
-};
-
-///////////////////////////////////////////////////////////////////////////////
-
-struct vcsrs_t {
-  uint32_t vstart;
-  uint32_t vxsat;
-  uint32_t vxrm;
-  uint32_t vcsr;
-  uint32_t vl;
-  uint32_t vtype;
-  uint32_t vlenb;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
 
 struct warp_t {
-  warp_t(uint32_t num_threads);
-  void clear(uint64_t startup_addr);
-
   Word                              PC;
   ThreadMask                        tmask;
   std::vector<std::vector<Word>>    ireg_file;
   std::vector<std::vector<uint64_t>>freg_file;
   std::stack<ipdom_entry_t>         ipdom_stack;
   Byte                              fcsr;
-#ifdef EXT_V_ENABLE
-  std::vector<std::vector<std::vector<Byte>>> vreg_file;
-  std::vector<vcsrs_t>              vcsrs;
-  vtype_t                           vtype;
-  uint32_t                          vl;
-  uint32_t                          vlmax;
-#endif
   uint32_t                          uuid;
+
+  warp_t(uint32_t num_threads);
+  void clear(uint64_t startup_addr);
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -109,6 +79,7 @@ public:
   void clear();
 
   void attach_ram(RAM* ram);
+
 #ifdef VM_ENABLE
   void set_satp(uint64_t satp) ;
 #endif
@@ -137,12 +108,6 @@ private:
 
   void execute(const Instr &instr, uint32_t wid, instr_trace_t *trace);
 
-#ifdef EXT_V_ENABLE
-  void loadVector(const Instr &instr, uint32_t wid, uint32_t tid, const std::vector<reg_data_t>& rs1_data, const std::vector<reg_data_t>& rs2_data);
-  void storeVector(const Instr &instr, uint32_t wid, uint32_t tid, const std::vector<reg_data_t>& rs1_data, const std::vector<reg_data_t>& rs2_data);
-  bool executeVector(const Instr &instr, uint32_t wid, uint32_t tid, const std::vector<reg_data_t>& rs1_data, const std::vector<reg_data_t>& rs2_data, std::vector<reg_data_t>& rd_data);
-#endif
-
   void icache_read(void* data, uint64_t addr, uint32_t size);
 
   void dcache_amo_reserve(uint64_t addr);
@@ -153,13 +118,13 @@ private:
 
   void cout_flush();
 
-  Word get_csr(uint32_t addr, uint32_t tid, uint32_t wid);
+  Word get_csr(uint32_t addr, uint32_t wid, uint32_t tid);
 
-  void set_csr(uint32_t addr, Word value, uint32_t tid, uint32_t wid);
+  void set_csr(uint32_t addr, Word value, uint32_t wid, uint32_t tid);
 
-  uint32_t get_fpu_rm(uint32_t func3, uint32_t tid, uint32_t wid);
+  uint32_t get_fpu_rm(uint32_t func3, uint32_t wid, uint32_t tid);
 
-  void update_fcrs(uint32_t fflags, uint32_t tid, uint32_t wid);
+  void update_fcrs(uint32_t fflags, uint32_t wid, uint32_t tid);
 
   // temporarily added for riscv-vector tests
   // TODO: remove once ecall/ebreak are supported

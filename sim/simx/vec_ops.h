@@ -14,6 +14,8 @@
 
 namespace vortex {
 
+typedef std::vector<std::vector<Byte>> VRF_t;
+
 template <typename T, typename R>
 class Add {
 public:
@@ -1131,10 +1133,10 @@ public:
 
 ///////////////////////////////////////////////////////////////////////////////
 
-bool isMasked(const std::vector<std::vector<Byte>> &vreg_file, uint32_t maskVreg, uint32_t byteI, uint32_t vmask) {
+bool isMasked(const VRF_t& vreg_file, uint32_t maskVreg, uint32_t byteI, uint32_t vmask) {
   if (vmask == 1)
     return false; // unmasked
-  auto &mask = vreg_file.at(maskVreg);
+  auto& mask = vreg_file.at(maskVreg);
   uint8_t emask = *(uint8_t *)(mask.data() + byteI / 8);
   uint8_t value = (emask >> (byteI % 8)) & 0x1;
   DP(4, "Masking enabled: " << +value);
@@ -1168,7 +1170,7 @@ uint32_t getVregElt(uint32_t eltIndex) {
 }
 
 template <typename DT>
-DT getVregData(const std::vector<std::vector<Byte>> &vreg_file, uint32_t baseVreg, uint32_t eltIndex) {
+DT getVregData(const VRF_t& vreg_file, uint32_t baseVreg, uint32_t eltIndex) {
   uint32_t reg_no  = getVregNo<DT>(baseVreg, eltIndex);
   uint32_t reg_elt = getVregElt<DT>(eltIndex);
   auto value = getVregData<DT>(vreg_file.at(reg_no), reg_elt);
@@ -1177,22 +1179,22 @@ DT getVregData(const std::vector<std::vector<Byte>> &vreg_file, uint32_t baseVre
 }
 
 template <typename DT>
-void setVregData(std::vector<std::vector<Byte>> &vreg_file, uint32_t baseVreg, uint32_t eltIndex, DT value) {
+void setVregData(VRF_t& vreg_file, uint32_t baseVreg, uint32_t eltIndex, DT value) {
   uint32_t reg_no  = getVregNo<DT>(baseVreg, eltIndex);
   uint32_t reg_elt = getVregElt<DT>(eltIndex);
   DP(4, "VRF Write: v[" << reg_no << "][" << reg_elt * sizeof(DT) << "]=0x" << std::hex << +value << std::dec);
   setVregData<DT>(vreg_file.at(reg_no), reg_elt, value);
 }
 
-inline uint64_t getVregData(uint32_t vsew, const std::vector<std::vector<Byte>> &vreg_file, uint32_t baseVreg, uint32_t eltIndex) {
+inline uint64_t getVregData(uint32_t vsew, const VRF_t& vreg_file, uint32_t baseVreg, uint32_t eltIndex) {
   switch (vsew) {
-  case 8:
+  case 0:
     return getVregData<uint8_t>(vreg_file, baseVreg, eltIndex);
-  case 16:
+  case 1:
     return getVregData<uint16_t>(vreg_file, baseVreg, eltIndex);
-  case 32:
+  case 2:
     return getVregData<uint32_t>(vreg_file, baseVreg, eltIndex);
-  case 64:
+  case 3:
     return getVregData<uint64_t>(vreg_file, baseVreg, eltIndex);
   default:
     std::abort();
@@ -1200,18 +1202,18 @@ inline uint64_t getVregData(uint32_t vsew, const std::vector<std::vector<Byte>> 
   }
 }
 
-inline void setVregData(uint32_t vsew, std::vector<std::vector<Byte>> &vreg_file, uint32_t baseVreg, uint32_t eltIndex, uint64_t value) {
+inline void setVregData(uint32_t vsew, VRF_t& vreg_file, uint32_t baseVreg, uint32_t eltIndex, uint64_t value) {
   switch (vsew) {
-  case 8:
+  case 0:
     setVregData<uint8_t>(vreg_file, baseVreg, eltIndex, value);
     break;
-  case 16:
+  case 1:
     setVregData<uint16_t>(vreg_file, baseVreg, eltIndex, value);
     break;
-  case 32:
+  case 2:
     setVregData<uint32_t>(vreg_file, baseVreg, eltIndex, value);
     break;
-  case 64:
+  case 3:
     setVregData<uint64_t>(vreg_file, baseVreg, eltIndex, value);
     break;
   default:
@@ -1220,7 +1222,7 @@ inline void setVregData(uint32_t vsew, std::vector<std::vector<Byte>> &vreg_file
 }
 
 template <template <typename DT1, typename DT2> class OP, typename DT>
-void vector_op_vix(DT first, std::vector<std::vector<Byte>> &vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vl, uint32_t vmask) {
+void vector_op_vix(DT first, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vl, uint32_t vmask) {
   for (uint32_t i = 0; i < vl; i++) {
     if (isMasked(vreg_file, 0, i, vmask))
       continue;
@@ -1233,18 +1235,18 @@ void vector_op_vix(DT first, std::vector<std::vector<Byte>> &vreg_file, uint32_t
 }
 
 template <template <typename DT1, typename DT2> class OP, typename DT8, typename DT16, typename DT32, typename DT64>
-void vector_op_vix(Word src1, std::vector<std::vector<Byte>> &vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vsew, uint32_t vl, uint32_t vmask) {
+void vector_op_vix(Word src1, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vsew, uint32_t vl, uint32_t vmask) {
   switch (vsew) {
-  case 8:
+  case 0:
     vector_op_vix<OP, DT8>(src1, vreg_file, rsrc0, rdest, vl, vmask);
     break;
-  case 16:
+  case 1:
     vector_op_vix<OP, DT16>(src1, vreg_file, rsrc0, rdest, vl, vmask);
     break;
-  case 32:
+  case 2:
     vector_op_vix<OP, DT32>(src1, vreg_file, rsrc0, rdest, vl, vmask);
     break;
-  case 64:
+  case 3:
     vector_op_vix<OP, DT64>(src1, vreg_file, rsrc0, rdest, vl, vmask);
     break;
   default:
@@ -1254,7 +1256,7 @@ void vector_op_vix(Word src1, std::vector<std::vector<Byte>> &vreg_file, uint32_
 }
 
 template <template <typename DT1, typename DT2> class OP, typename DT>
-void vector_op_vix_carry(DT first, std::vector<std::vector<Byte>> &vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vl) {
+void vector_op_vix_carry(DT first, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vl) {
   for (uint32_t i = 0; i < vl; i++) {
     DT second = getVregData<DT>(vreg_file, rsrc0, i);
     bool third = !isMasked(vreg_file, 0, i, false);
@@ -1265,18 +1267,18 @@ void vector_op_vix_carry(DT first, std::vector<std::vector<Byte>> &vreg_file, ui
 }
 
 template <template <typename DT1, typename DT2> class OP, typename DT8, typename DT16, typename DT32, typename DT64>
-void vector_op_vix_carry(Word src1, std::vector<std::vector<Byte>> &vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vsew, uint32_t vl) {
+void vector_op_vix_carry(Word src1, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vsew, uint32_t vl) {
   switch (vsew) {
-  case 8:
+  case 0:
     vector_op_vix_carry<OP, DT8>(src1, vreg_file, rsrc0, rdest, vl);
     break;
-  case 16:
+  case 1:
     vector_op_vix_carry<OP, DT16>(src1, vreg_file, rsrc0, rdest, vl);
     break;
-  case 32:
+  case 2:
     vector_op_vix_carry<OP, DT32>(src1, vreg_file, rsrc0, rdest, vl);
     break;
-  case 64:
+  case 3:
     vector_op_vix_carry<OP, DT64>(src1, vreg_file, rsrc0, rdest, vl);
     break;
   default:
@@ -1286,7 +1288,7 @@ void vector_op_vix_carry(Word src1, std::vector<std::vector<Byte>> &vreg_file, u
 }
 
 template <template <typename DT1, typename DT2> class OP, typename DT, typename DTR>
-void vector_op_vix_carry_out(DT first, std::vector<std::vector<Byte>> &vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vl, uint32_t vmask) {
+void vector_op_vix_carry_out(DT first, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vl, uint32_t vmask) {
   for (uint32_t i = 0; i < vl; i++) {
     DT second = getVregData<DT>(vreg_file, rsrc0, i);
     bool third = !vmask && !isMasked(vreg_file, 0, i, vmask);
@@ -1302,18 +1304,18 @@ void vector_op_vix_carry_out(DT first, std::vector<std::vector<Byte>> &vreg_file
 }
 
 template <template <typename DT1, typename DT2> class OP, typename DT8, typename DT16, typename DT32, typename DT64, typename DT128>
-void vector_op_vix_carry_out(Word src1, std::vector<std::vector<Byte>> &vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vsew, uint32_t vl, uint32_t vmask) {
+void vector_op_vix_carry_out(Word src1, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vsew, uint32_t vl, uint32_t vmask) {
   switch (vsew) {
-  case 8:
+  case 0:
     vector_op_vix_carry_out<OP, DT8, DT16>(src1, vreg_file, rsrc0, rdest, vl, vmask);
     break;
-  case 16:
+  case 1:
     vector_op_vix_carry_out<OP, DT16, DT32>(src1, vreg_file, rsrc0, rdest, vl, vmask);
     break;
-  case 32:
+  case 2:
     vector_op_vix_carry_out<OP, DT32, DT64>(src1, vreg_file, rsrc0, rdest, vl, vmask);
     break;
-  case 64:
+  case 3:
     vector_op_vix_carry_out<OP, DT64, DT128>(src1, vreg_file, rsrc0, rdest, vl, vmask);
     break;
   default:
@@ -1323,7 +1325,7 @@ void vector_op_vix_carry_out(Word src1, std::vector<std::vector<Byte>> &vreg_fil
 }
 
 template <typename DT>
-void vector_op_vix_merge(DT first, std::vector<std::vector<Byte>> &vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vl, uint32_t vmask) {
+void vector_op_vix_merge(DT first, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vl, uint32_t vmask) {
   for (uint32_t i = 0; i < vl; i++) {
     DT result = isMasked(vreg_file, 0, i, vmask) ? getVregData<DT>(vreg_file, rsrc0, i) : first;
     DP(4, "Merge - Choosing result: " << +result);
@@ -1332,18 +1334,18 @@ void vector_op_vix_merge(DT first, std::vector<std::vector<Byte>> &vreg_file, ui
 }
 
 template <typename DT8, typename DT16, typename DT32, typename DT64>
-void vector_op_vix_merge(Word src1, std::vector<std::vector<Byte>> &vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vsew, uint32_t vl, uint32_t vmask) {
+void vector_op_vix_merge(Word src1, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vsew, uint32_t vl, uint32_t vmask) {
   switch (vsew) {
-  case 8:
+  case 0:
     vector_op_vix_merge<DT8>(src1, vreg_file, rsrc0, rdest, vl, vmask);
     break;
-  case 16:
+  case 1:
     vector_op_vix_merge<DT16>(src1, vreg_file, rsrc0, rdest, vl, vmask);
     break;
-  case 32:
+  case 2:
     vector_op_vix_merge<DT32>(src1, vreg_file, rsrc0, rdest, vl, vmask);
     break;
-  case 64:
+  case 3:
     vector_op_vix_merge<DT64>(src1, vreg_file, rsrc0, rdest, vl, vmask);
     break;
   default:
@@ -1353,22 +1355,22 @@ void vector_op_vix_merge(Word src1, std::vector<std::vector<Byte>> &vreg_file, u
 }
 
 template <typename DT>
-void vector_op_scalar(DT *dest, const std::vector<std::vector<Byte>> &vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t vsew) {
+void vector_op_scalar(DT *dest, const VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t vsew) {
   if (rsrc0 != 0) {
     std::cout << "Vwxunary0/Vwfunary0 has unsupported value for vs2: " << rsrc0 << std::endl;
     std::abort();
   }
   switch (vsew) {
-  case 8:
+  case 0:
     *dest = getVregData<uint8_t>(vreg_file, rsrc1, 0);
     break;
-  case 16:
+  case 1:
     *dest = getVregData<uint16_t>(vreg_file, rsrc1, 0);
     break;
-  case 32:
+  case 2:
     *dest = getVregData<uint32_t>(vreg_file, rsrc1, 0);
     break;
-  case 64:
+  case 3:
     *dest = getVregData<uint64_t>(vreg_file, rsrc1, 0);
     break;
   default:
@@ -1378,7 +1380,7 @@ void vector_op_scalar(DT *dest, const std::vector<std::vector<Byte>> &vreg_file,
 }
 
 template <template <typename DT1, typename DT2> class OP, typename DT, typename DTR>
-void vector_op_vix_w(DT first, std::vector<std::vector<Byte>> &vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vl, uint32_t vmask) {
+void vector_op_vix_w(DT first, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vl, uint32_t vmask) {
   for (uint32_t i = 0; i < vl; i++) {
     if (isMasked(vreg_file, 0, i, vmask))
       continue;
@@ -1391,15 +1393,15 @@ void vector_op_vix_w(DT first, std::vector<std::vector<Byte>> &vreg_file, uint32
 }
 
 template <template <typename DT1, typename DT2> class OP, typename DT8, typename DT16, typename DT32, typename DT64>
-void vector_op_vix_w(Word src1, std::vector<std::vector<Byte>> &vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vsew, uint32_t vl, uint32_t vmask) {
+void vector_op_vix_w(Word src1, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vsew, uint32_t vl, uint32_t vmask) {
   switch (vsew) {
-  case 8:
+  case 0:
     vector_op_vix_w<OP, DT8, DT16>(src1, vreg_file, rsrc0, rdest, vl, vmask);
     break;
-  case 16:
+  case 1:
     vector_op_vix_w<OP, DT16, DT32>(src1, vreg_file, rsrc0, rdest, vl, vmask);
     break;
-  case 32:
+  case 2:
     vector_op_vix_w<OP, DT32, DT64>(src1, vreg_file, rsrc0, rdest, vl, vmask);
     break;
   default:
@@ -1409,15 +1411,15 @@ void vector_op_vix_w(Word src1, std::vector<std::vector<Byte>> &vreg_file, uint3
 }
 
 template <template <typename DT1, typename DT2> class OP, typename DT8, typename DT16, typename DT32, typename DT64>
-void vector_op_vix_wx(Word src1, std::vector<std::vector<Byte>> &vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vsew, uint32_t vl, uint32_t vmask) {
+void vector_op_vix_wx(Word src1, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vsew, uint32_t vl, uint32_t vmask) {
   switch (vsew) {
-  case 8:
+  case 0:
     vector_op_vix<OP, DT16>(src1, vreg_file, rsrc0, rdest, vl, vmask);
     break;
-  case 16:
+  case 1:
     vector_op_vix<OP, DT32>(src1, vreg_file, rsrc0, rdest, vl, vmask);
     break;
-  case 32:
+  case 2:
     vector_op_vix<OP, DT64>(src1, vreg_file, rsrc0, rdest, vl, vmask);
     break;
   default:
@@ -1427,7 +1429,7 @@ void vector_op_vix_wx(Word src1, std::vector<std::vector<Byte>> &vreg_file, uint
 }
 
 template <template <typename DT1, typename DT2> class OP, typename DT, typename DTR>
-void vector_op_vix_n(DT first, std::vector<std::vector<Byte>> &vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vl, uint32_t vmask, uint32_t vxrm, uint32_t &vxsat) {
+void vector_op_vix_n(DT first, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vl, uint32_t vmask, uint32_t vxrm, uint32_t &vxsat) {
   for (uint32_t i = 0; i < vl; i++) {
     if (isMasked(vreg_file, 0, i, vmask))
       continue;
@@ -1439,15 +1441,15 @@ void vector_op_vix_n(DT first, std::vector<std::vector<Byte>> &vreg_file, uint32
 }
 
 template <template <typename DT1, typename DT2> class OP, typename DT8, typename DT16, typename DT32, typename DT64>
-void vector_op_vix_n(Word src1, std::vector<std::vector<Byte>> &vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vsew, uint32_t vl, uint32_t vmask, uint32_t vxrm, uint32_t &vxsat) {
+void vector_op_vix_n(Word src1, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vsew, uint32_t vl, uint32_t vmask, uint32_t vxrm, uint32_t &vxsat) {
   switch (vsew) {
-  case 8:
+  case 0:
     vector_op_vix_n<OP, DT16, DT8>(src1, vreg_file, rsrc0, rdest, vl, vmask, vxrm, vxsat);
     break;
-  case 16:
+  case 1:
     vector_op_vix_n<OP, DT32, DT16>(src1, vreg_file, rsrc0, rdest, vl, vmask, vxrm, vxsat);
     break;
-  case 32:
+  case 2:
     vector_op_vix_n<OP, DT64, DT32>(src1, vreg_file, rsrc0, rdest, vl, vmask, vxrm, vxsat);
     break;
   default:
@@ -1457,7 +1459,7 @@ void vector_op_vix_n(Word src1, std::vector<std::vector<Byte>> &vreg_file, uint3
 }
 
 template <template <typename DT1, typename DT2> class OP, typename DT, typename DTR>
-void vector_op_vix_sat(DTR first, std::vector<std::vector<Byte>> &vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vl, uint32_t vmask, uint32_t vxrm, uint32_t &vxsat) {
+void vector_op_vix_sat(DTR first, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vl, uint32_t vmask, uint32_t vxrm, uint32_t &vxsat) {
   for (uint32_t i = 0; i < vl; i++) {
     if (isMasked(vreg_file, 0, i, vmask))
       continue;
@@ -1469,18 +1471,18 @@ void vector_op_vix_sat(DTR first, std::vector<std::vector<Byte>> &vreg_file, uin
 }
 
 template <template <typename DT1, typename DT2> class OP, typename DT8, typename DT16, typename DT32, typename DT64, typename DT128>
-void vector_op_vix_sat(Word src1, std::vector<std::vector<Byte>> &vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vsew, uint32_t vl, uint32_t vmask, uint32_t vxrm, uint32_t &vxsat) {
+void vector_op_vix_sat(Word src1, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vsew, uint32_t vl, uint32_t vmask, uint32_t vxrm, uint32_t &vxsat) {
   switch (vsew) {
-  case 8:
+  case 0:
     vector_op_vix_sat<OP, DT16, DT8>(src1, vreg_file, rsrc0, rdest, vl, vmask, vxrm, vxsat);
     break;
-  case 16:
+  case 1:
     vector_op_vix_sat<OP, DT32, DT16>(src1, vreg_file, rsrc0, rdest, vl, vmask, vxrm, vxsat);
     break;
-  case 32:
+  case 2:
     vector_op_vix_sat<OP, DT64, DT32>(src1, vreg_file, rsrc0, rdest, vl, vmask, vxrm, vxsat);
     break;
-  case 64:
+  case 3:
     vector_op_vix_sat<OP, DT128, DT64>(src1, vreg_file, rsrc0, rdest, vl, vmask, vxrm, vxsat);
     break;
   default:
@@ -1490,18 +1492,18 @@ void vector_op_vix_sat(Word src1, std::vector<std::vector<Byte>> &vreg_file, uin
 }
 
 template <template <typename DT1, typename DT2> class OP, typename DT8, typename DT16, typename DT32, typename DT64>
-void vector_op_vix_scale(Word src1, std::vector<std::vector<Byte>> &vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vsew, uint32_t vl, uint32_t vmask, uint32_t vxrm, uint32_t &vxsat) {
+void vector_op_vix_scale(Word src1, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vsew, uint32_t vl, uint32_t vmask, uint32_t vxrm, uint32_t &vxsat) {
   switch (vsew) {
-  case 8:
+  case 0:
     vector_op_vix_sat<OP, DT8, DT8>(src1, vreg_file, rsrc0, rdest, vl, vmask, vxrm, vxsat);
     break;
-  case 16:
+  case 1:
     vector_op_vix_sat<OP, DT16, DT16>(src1, vreg_file, rsrc0, rdest, vl, vmask, vxrm, vxsat);
     break;
-  case 32:
+  case 2:
     vector_op_vix_sat<OP, DT32, DT32>(src1, vreg_file, rsrc0, rdest, vl, vmask, vxrm, vxsat);
     break;
-  case 64:
+  case 3:
     vector_op_vix_sat<OP, DT64, DT64>(src1, vreg_file, rsrc0, rdest, vl, vmask, vxrm, vxsat);
     break;
   default:
@@ -1511,7 +1513,7 @@ void vector_op_vix_scale(Word src1, std::vector<std::vector<Byte>> &vreg_file, u
 }
 
 template <template <typename DT1, typename DT2> class OP>
-void vector_op_vix_ext(Word src1, std::vector<std::vector<Byte>> &vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vsew, uint32_t vl, uint32_t vmask) {
+void vector_op_vix_ext(Word src1, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vsew, uint32_t vl, uint32_t vmask) {
   if (vsew == 16) {
     switch (src1) {
     case 0b00110: // vzext.vf2
@@ -1573,7 +1575,7 @@ void vector_op_vix_ext(Word src1, std::vector<std::vector<Byte>> &vreg_file, uin
 }
 
 template <template <typename DT1, typename DT2> class OP, typename DT>
-void vector_op_vix_mask(DT first, std::vector<std::vector<Byte>> &vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vl, uint32_t vmask) {
+void vector_op_vix_mask(DT first, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vl, uint32_t vmask) {
   for (uint32_t i = 0; i < vl; i++) {
     if (isMasked(vreg_file, 0, i, vmask))
       continue;
@@ -1590,18 +1592,18 @@ void vector_op_vix_mask(DT first, std::vector<std::vector<Byte>> &vreg_file, uin
 }
 
 template <template <typename DT1, typename DT2> class OP, typename DT8, typename DT16, typename DT32, typename DT64>
-void vector_op_vix_mask(Word src1, std::vector<std::vector<Byte>> &vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vsew, uint32_t vl, uint32_t vmask) {
+void vector_op_vix_mask(Word src1, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vsew, uint32_t vl, uint32_t vmask) {
   switch (vsew) {
-  case 8:
+  case 0:
     vector_op_vix_mask<OP, DT8>(src1, vreg_file, rsrc0, rdest, vl, vmask);
     break;
-  case 16:
+  case 1:
     vector_op_vix_mask<OP, DT16>(src1, vreg_file, rsrc0, rdest, vl, vmask);
     break;
-  case 32:
+  case 2:
     vector_op_vix_mask<OP, DT32>(src1, vreg_file, rsrc0, rdest, vl, vmask);
     break;
-  case 64:
+  case 3:
     vector_op_vix_mask<OP, DT64>(src1, vreg_file, rsrc0, rdest, vl, vmask);
     break;
   default:
@@ -1611,7 +1613,7 @@ void vector_op_vix_mask(Word src1, std::vector<std::vector<Byte>> &vreg_file, ui
 }
 
 template <typename DT>
-void vector_op_vix_slide(Word first, std::vector<std::vector<Byte>> &vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vl, Word vlmax, uint32_t vmask, bool scalar) {
+void vector_op_vix_slide(Word first, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vl, Word vlmax, uint32_t vmask, bool scalar) {
   // If vlmax > 0 this means we have a vslidedown instruction, vslideup does not require vlmax
   bool slideDown = vlmax;
   uint32_t scalarPos = slideDown ? vl - 1 : 0;
@@ -1635,18 +1637,18 @@ void vector_op_vix_slide(Word first, std::vector<std::vector<Byte>> &vreg_file, 
 }
 
 template <typename DT8, typename DT16, typename DT32, typename DT64>
-void vector_op_vix_slide(Word src1, std::vector<std::vector<Byte>> &vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vsew, uint32_t vl, Word vlmax, uint32_t vmask, bool scalar) {
+void vector_op_vix_slide(Word src1, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vsew, uint32_t vl, Word vlmax, uint32_t vmask, bool scalar) {
   switch (vsew) {
-  case 8:
+  case 0:
     vector_op_vix_slide<DT8>(src1, vreg_file, rsrc0, rdest, vl, vlmax, vmask, scalar);
     break;
-  case 16:
+  case 1:
     vector_op_vix_slide<DT16>(src1, vreg_file, rsrc0, rdest, vl, vlmax, vmask, scalar);
     break;
-  case 32:
+  case 2:
     vector_op_vix_slide<DT32>(src1, vreg_file, rsrc0, rdest, vl, vlmax, vmask, scalar);
     break;
-  case 64:
+  case 3:
     vector_op_vix_slide<DT64>(src1, vreg_file, rsrc0, rdest, vl, vlmax, vmask, scalar);
     break;
   default:
@@ -1656,7 +1658,7 @@ void vector_op_vix_slide(Word src1, std::vector<std::vector<Byte>> &vreg_file, u
 }
 
 template <typename DT>
-void vector_op_vix_gather(Word first, std::vector<std::vector<Byte>> &vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vl, Word vlmax, uint32_t vmask) {
+void vector_op_vix_gather(Word first, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vl, Word vlmax, uint32_t vmask) {
   for (Word i = 0; i < vl; i++) {
     if (isMasked(vreg_file, 0, i, vmask))
       continue;
@@ -1667,18 +1669,18 @@ void vector_op_vix_gather(Word first, std::vector<std::vector<Byte>> &vreg_file,
 }
 
 template <typename DT8, typename DT16, typename DT32, typename DT64>
-void vector_op_vix_gather(Word src1, std::vector<std::vector<Byte>> &vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vsew, uint32_t vl, Word vlmax, uint32_t vmask) {
+void vector_op_vix_gather(Word src1, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vsew, uint32_t vl, Word vlmax, uint32_t vmask) {
   switch (vsew) {
-  case 8:
+  case 0:
     vector_op_vix_gather<DT8>(src1, vreg_file, rsrc0, rdest, vl, vlmax, vmask);
     break;
-  case 16:
+  case 1:
     vector_op_vix_gather<DT16>(src1, vreg_file, rsrc0, rdest, vl, vlmax, vmask);
     break;
-  case 32:
+  case 2:
     vector_op_vix_gather<DT32>(src1, vreg_file, rsrc0, rdest, vl, vlmax, vmask);
     break;
-  case 64:
+  case 3:
     vector_op_vix_gather<DT64>(src1, vreg_file, rsrc0, rdest, vl, vlmax, vmask);
     break;
   default:
@@ -1688,7 +1690,7 @@ void vector_op_vix_gather(Word src1, std::vector<std::vector<Byte>> &vreg_file, 
 }
 
 template <template <typename DT1, typename DT2> class OP, typename DT>
-void vector_op_vv(std::vector<std::vector<Byte>> &vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vl, uint32_t vmask) {
+void vector_op_vv(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vl, uint32_t vmask) {
   for (uint32_t i = 0; i < vl; i++) {
     if (isMasked(vreg_file, 0, i, vmask))
       continue;
@@ -1702,18 +1704,18 @@ void vector_op_vv(std::vector<std::vector<Byte>> &vreg_file, uint32_t rsrc0, uin
 }
 
 template <template <typename DT1, typename DT2> class OP, typename DT8, typename DT16, typename DT32, typename DT64>
-void vector_op_vv(std::vector<std::vector<Byte>> &vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vsew, uint32_t vl, uint32_t vmask) {
+void vector_op_vv(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vsew, uint32_t vl, uint32_t vmask) {
   switch (vsew) {
-  case 8:
+  case 0:
     vector_op_vv<OP, DT8>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask);
     break;
-  case 16:
+  case 1:
     vector_op_vv<OP, DT16>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask);
     break;
-  case 32:
+  case 2:
     vector_op_vv<OP, DT32>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask);
     break;
-  case 64:
+  case 3:
     vector_op_vv<OP, DT64>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask);
     break;
   default:
@@ -1723,7 +1725,7 @@ void vector_op_vv(std::vector<std::vector<Byte>> &vreg_file, uint32_t rsrc0, uin
 }
 
 template <template <typename DT1, typename DT2> class OP, typename DT>
-void vector_op_vv_carry(std::vector<std::vector<Byte>> &vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vl) {
+void vector_op_vv_carry(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vl) {
   for (uint32_t i = 0; i < vl; i++) {
     DT first = getVregData<DT>(vreg_file, rsrc0, i);
     DT second = getVregData<DT>(vreg_file, rsrc1, i);
@@ -1735,18 +1737,18 @@ void vector_op_vv_carry(std::vector<std::vector<Byte>> &vreg_file, uint32_t rsrc
 }
 
 template <template <typename DT1, typename DT2> class OP, typename DT8, typename DT16, typename DT32, typename DT64>
-void vector_op_vv_carry(std::vector<std::vector<Byte>> &vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vsew, uint32_t vl) {
+void vector_op_vv_carry(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vsew, uint32_t vl) {
   switch (vsew) {
-  case 8:
+  case 0:
     vector_op_vv_carry<OP, DT8>(vreg_file, rsrc0, rsrc1, rdest, vl);
     break;
-  case 16:
+  case 1:
     vector_op_vv_carry<OP, DT16>(vreg_file, rsrc0, rsrc1, rdest, vl);
     break;
-  case 32:
+  case 2:
     vector_op_vv_carry<OP, DT32>(vreg_file, rsrc0, rsrc1, rdest, vl);
     break;
-  case 64:
+  case 3:
     vector_op_vv_carry<OP, DT64>(vreg_file, rsrc0, rsrc1, rdest, vl);
     break;
   default:
@@ -1756,7 +1758,7 @@ void vector_op_vv_carry(std::vector<std::vector<Byte>> &vreg_file, uint32_t rsrc
 }
 
 template <template <typename DT1, typename DT2> class OP, typename DT, typename DTR>
-void vector_op_vv_carry_out(std::vector<std::vector<Byte>> &vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vl, uint32_t vmask) {
+void vector_op_vv_carry_out(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vl, uint32_t vmask) {
   for (uint32_t i = 0; i < vl; i++) {
     DT first = getVregData<DT>(vreg_file, rsrc0, i);
     DT second = getVregData<DT>(vreg_file, rsrc1, i);
@@ -1773,18 +1775,18 @@ void vector_op_vv_carry_out(std::vector<std::vector<Byte>> &vreg_file, uint32_t 
 }
 
 template <template <typename DT1, typename DT2> class OP, typename DT8, typename DT16, typename DT32, typename DT64, typename DT128>
-void vector_op_vv_carry_out(std::vector<std::vector<Byte>> &vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vsew, uint32_t vl, uint32_t vmask) {
+void vector_op_vv_carry_out(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vsew, uint32_t vl, uint32_t vmask) {
   switch (vsew) {
-  case 8:
+  case 0:
     vector_op_vv_carry_out<OP, DT8, DT16>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask);
     break;
-  case 16:
+  case 1:
     vector_op_vv_carry_out<OP, DT16, DT32>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask);
     break;
-  case 32:
+  case 2:
     vector_op_vv_carry_out<OP, DT32, DT64>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask);
     break;
-  case 64:
+  case 3:
     vector_op_vv_carry_out<OP, DT64, DT128>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask);
     break;
   default:
@@ -1794,7 +1796,7 @@ void vector_op_vv_carry_out(std::vector<std::vector<Byte>> &vreg_file, uint32_t 
 }
 
 template <typename DT>
-void vector_op_vv_merge(std::vector<std::vector<Byte>> &vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vl, uint32_t vmask) {
+void vector_op_vv_merge(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vl, uint32_t vmask) {
   for (uint32_t i = 0; i < vl; i++) {
     uint32_t rsrc = isMasked(vreg_file, 0, i, vmask) ? rsrc1 : rsrc0;
     DT result = getVregData<DT>(vreg_file, rsrc, i);
@@ -1804,18 +1806,18 @@ void vector_op_vv_merge(std::vector<std::vector<Byte>> &vreg_file, uint32_t rsrc
 }
 
 template <typename DT8, typename DT16, typename DT32, typename DT64>
-void vector_op_vv_merge(std::vector<std::vector<Byte>> &vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vsew, uint32_t vl, uint32_t vmask) {
+void vector_op_vv_merge(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vsew, uint32_t vl, uint32_t vmask) {
   switch (vsew) {
-  case 8:
+  case 0:
     vector_op_vv_merge<DT8>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask);
     break;
-  case 16:
+  case 1:
     vector_op_vv_merge<DT16>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask);
     break;
-  case 32:
+  case 2:
     vector_op_vv_merge<DT32>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask);
     break;
-  case 64:
+  case 3:
     vector_op_vv_merge<DT64>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask);
     break;
   default:
@@ -1825,7 +1827,7 @@ void vector_op_vv_merge(std::vector<std::vector<Byte>> &vreg_file, uint32_t rsrc
 }
 
 template <typename DT>
-void vector_op_vv_gather(std::vector<std::vector<Byte>> &vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vl, bool ei16, uint32_t vlmax, uint32_t vmask) {
+void vector_op_vv_gather(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vl, bool ei16, uint32_t vlmax, uint32_t vmask) {
   for (Word i = 0; i < vl; i++) {
     if (isMasked(vreg_file, 0, i, vmask))
       continue;
@@ -1837,18 +1839,18 @@ void vector_op_vv_gather(std::vector<std::vector<Byte>> &vreg_file, uint32_t rsr
 }
 
 template <typename DT8, typename DT16, typename DT32, typename DT64>
-void vector_op_vv_gather(std::vector<std::vector<Byte>> &vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vsew, uint32_t vl, bool ei16, uint32_t vlmax, uint32_t vmask) {
+void vector_op_vv_gather(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vsew, uint32_t vl, bool ei16, uint32_t vlmax, uint32_t vmask) {
   switch (vsew) {
-  case 8:
+  case 0:
     vector_op_vv_gather<DT8>(vreg_file, rsrc0, rsrc1, rdest, vl, ei16, vlmax, vmask);
     break;
-  case 16:
+  case 1:
     vector_op_vv_gather<DT16>(vreg_file, rsrc0, rsrc1, rdest, vl, ei16, vlmax, vmask);
     break;
-  case 32:
+  case 2:
     vector_op_vv_gather<DT32>(vreg_file, rsrc0, rsrc1, rdest, vl, ei16, vlmax, vmask);
     break;
-  case 64:
+  case 3:
     vector_op_vv_gather<DT64>(vreg_file, rsrc0, rsrc1, rdest, vl, ei16, vlmax, vmask);
     break;
   default:
@@ -1858,7 +1860,7 @@ void vector_op_vv_gather(std::vector<std::vector<Byte>> &vreg_file, uint32_t rsr
 }
 
 template <template <typename DT1, typename DT2> class OP, typename DT, typename DTR>
-void vector_op_vv_w(std::vector<std::vector<Byte>> &vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vl, uint32_t vmask) {
+void vector_op_vv_w(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vl, uint32_t vmask) {
   for (uint32_t i = 0; i < vl; i++) {
     if (isMasked(vreg_file, 0, i, vmask))
       continue;
@@ -1872,15 +1874,15 @@ void vector_op_vv_w(std::vector<std::vector<Byte>> &vreg_file, uint32_t rsrc0, u
 }
 
 template <template <typename DT1, typename DT2> class OP, typename DT8, typename DT16, typename DT32, typename DT64>
-void vector_op_vv_w(std::vector<std::vector<Byte>> &vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vsew, uint32_t vl, uint32_t vmask) {
+void vector_op_vv_w(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vsew, uint32_t vl, uint32_t vmask) {
   switch (vsew) {
-  case 8:
+  case 0:
     vector_op_vv_w<OP, DT8, DT16>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask);
     break;
-  case 16:
+  case 1:
     vector_op_vv_w<OP, DT16, DT32>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask);
     break;
-  case 32:
+  case 2:
     vector_op_vv_w<OP, DT32, DT64>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask);
     break;
   default:
@@ -1890,7 +1892,7 @@ void vector_op_vv_w(std::vector<std::vector<Byte>> &vreg_file, uint32_t rsrc0, u
 }
 
 template <template <typename DT1, typename DT2> class OP, typename DT, typename DTR>
-void vector_op_vv_wv(std::vector<std::vector<Byte>> &vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vl, uint32_t vmask) {
+void vector_op_vv_wv(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vl, uint32_t vmask) {
   for (uint32_t i = 0; i < vl; i++) {
     if (isMasked(vreg_file, 0, i, vmask))
       continue;
@@ -1904,15 +1906,15 @@ void vector_op_vv_wv(std::vector<std::vector<Byte>> &vreg_file, uint32_t rsrc0, 
 }
 
 template <template <typename DT1, typename DT2> class OP, typename DT8, typename DT16, typename DT32, typename DT64>
-void vector_op_vv_wv(std::vector<std::vector<Byte>> &vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vsew, uint32_t vl, uint32_t vmask) {
+void vector_op_vv_wv(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vsew, uint32_t vl, uint32_t vmask) {
   switch (vsew) {
-  case 8:
+  case 0:
     vector_op_vv_wv<OP, DT8, DT16>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask);
     break;
-  case 16:
+  case 1:
     vector_op_vv_wv<OP, DT16, DT32>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask);
     break;
-  case 32:
+  case 2:
     vector_op_vv_wv<OP, DT32, DT64>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask);
     break;
   default:
@@ -1922,7 +1924,7 @@ void vector_op_vv_wv(std::vector<std::vector<Byte>> &vreg_file, uint32_t rsrc0, 
 }
 
 template <template <typename DT1, typename DT2> class OP, typename DT, typename DTR>
-void vector_op_vv_wfv(std::vector<std::vector<Byte>> &vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vl, uint32_t vmask) {
+void vector_op_vv_wfv(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vl, uint32_t vmask) {
   for (uint32_t i = 0; i < vl; i++) {
     if (isMasked(vreg_file, 0, i, vmask))
       continue;
@@ -1936,7 +1938,7 @@ void vector_op_vv_wfv(std::vector<std::vector<Byte>> &vreg_file, uint32_t rsrc0,
 }
 
 template <template <typename DT1, typename DT2> class OP, typename DT8, typename DT16, typename DT32, typename DT64>
-void vector_op_vv_wfv(std::vector<std::vector<Byte>> &vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vsew, uint32_t vl, uint32_t vmask) {
+void vector_op_vv_wfv(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vsew, uint32_t vl, uint32_t vmask) {
   if (vsew == 32) {
     vector_op_vv_wfv<OP, DT32, DT64>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask);
   } else {
@@ -1946,7 +1948,7 @@ void vector_op_vv_wfv(std::vector<std::vector<Byte>> &vreg_file, uint32_t rsrc0,
 }
 
 template <template <typename DT1, typename DT2> class OP, typename DT, typename DTR>
-void vector_op_vv_n(std::vector<std::vector<Byte>> &vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vl, uint32_t vmask, uint32_t vxrm, uint32_t &vxsat) {
+void vector_op_vv_n(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vl, uint32_t vmask, uint32_t vxrm, uint32_t &vxsat) {
   for (uint32_t i = 0; i < vl; i++) {
     if (isMasked(vreg_file, 0, i, vmask))
       continue;
@@ -1959,15 +1961,15 @@ void vector_op_vv_n(std::vector<std::vector<Byte>> &vreg_file, uint32_t rsrc0, u
 }
 
 template <template <typename DT1, typename DT2> class OP, typename DT8, typename DT16, typename DT32, typename DT64>
-void vector_op_vv_n(std::vector<std::vector<Byte>> &vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vsew, uint32_t vl, uint32_t vmask, uint32_t vxrm, uint32_t &vxsat) {
+void vector_op_vv_n(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vsew, uint32_t vl, uint32_t vmask, uint32_t vxrm, uint32_t &vxsat) {
   switch (vsew) {
-  case 8:
+  case 0:
     vector_op_vv_n<OP, DT16, DT8>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask, vxrm, vxsat);
     break;
-  case 16:
+  case 1:
     vector_op_vv_n<OP, DT32, DT16>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask, vxrm, vxsat);
     break;
-  case 32:
+  case 2:
     vector_op_vv_n<OP, DT64, DT32>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask, vxrm, vxsat);
     break;
   default:
@@ -1977,7 +1979,7 @@ void vector_op_vv_n(std::vector<std::vector<Byte>> &vreg_file, uint32_t rsrc0, u
 }
 
 template <template <typename DT1, typename DT2> class OP, typename DT, typename DTR>
-void vector_op_vv_sat(std::vector<std::vector<Byte>> &vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vl, uint32_t vmask, uint32_t vxrm, uint32_t &vxsat) {
+void vector_op_vv_sat(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vl, uint32_t vmask, uint32_t vxrm, uint32_t &vxsat) {
   for (uint32_t i = 0; i < vl; i++) {
     if (isMasked(vreg_file, 0, i, vmask))
       continue;
@@ -1990,18 +1992,18 @@ void vector_op_vv_sat(std::vector<std::vector<Byte>> &vreg_file, uint32_t rsrc0,
 }
 
 template <template <typename DT1, typename DT2> class OP, typename DT8, typename DT16, typename DT32, typename DT64, typename DT128>
-void vector_op_vv_sat(std::vector<std::vector<Byte>> &vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vsew, uint32_t vl, uint32_t vmask, uint32_t vxrm, uint32_t &vxsat) {
+void vector_op_vv_sat(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vsew, uint32_t vl, uint32_t vmask, uint32_t vxrm, uint32_t &vxsat) {
   switch (vsew) {
-  case 8:
+  case 0:
     vector_op_vv_sat<OP, DT16, DT8>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask, vxrm, vxsat);
     break;
-  case 16:
+  case 1:
     vector_op_vv_sat<OP, DT32, DT16>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask, vxrm, vxsat);
     break;
-  case 32:
+  case 2:
     vector_op_vv_sat<OP, DT64, DT32>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask, vxrm, vxsat);
     break;
-  case 64:
+  case 3:
     vector_op_vv_sat<OP, DT128, DT64>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask, vxrm, vxsat);
     break;
   default:
@@ -2011,18 +2013,18 @@ void vector_op_vv_sat(std::vector<std::vector<Byte>> &vreg_file, uint32_t rsrc0,
 }
 
 template <template <typename DT1, typename DT2> class OP, typename DT8, typename DT16, typename DT32, typename DT64>
-void vector_op_vv_scale(std::vector<std::vector<Byte>> &vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vsew, uint32_t vl, uint32_t vmask, uint32_t vxrm, uint32_t &vxsat) {
+void vector_op_vv_scale(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vsew, uint32_t vl, uint32_t vmask, uint32_t vxrm, uint32_t &vxsat) {
   switch (vsew) {
-  case 8:
+  case 0:
     vector_op_vv_sat<OP, DT8, DT8>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask, vxrm, vxsat);
     break;
-  case 16:
+  case 1:
     vector_op_vv_sat<OP, DT16, DT16>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask, vxrm, vxsat);
     break;
-  case 32:
+  case 2:
     vector_op_vv_sat<OP, DT32, DT32>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask, vxrm, vxsat);
     break;
-  case 64:
+  case 3:
     vector_op_vv_sat<OP, DT64, DT64>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask, vxrm, vxsat);
     break;
   default:
@@ -2032,7 +2034,7 @@ void vector_op_vv_scale(std::vector<std::vector<Byte>> &vreg_file, uint32_t rsrc
 }
 
 template <template <typename DT1, typename DT2> class OP, typename DT>
-void vector_op_vv_red(std::vector<std::vector<Byte>> &vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vl, uint32_t vmask) {
+void vector_op_vv_red(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vl, uint32_t vmask) {
   for (uint32_t i = 0; i < vl; i++) {
     // use rdest as accumulator
     if (i == 0) {
@@ -2049,18 +2051,18 @@ void vector_op_vv_red(std::vector<std::vector<Byte>> &vreg_file, uint32_t rsrc0,
 }
 
 template <template <typename DT1, typename DT2> class OP, typename DT8, typename DT16, typename DT32, typename DT64>
-void vector_op_vv_red(std::vector<std::vector<Byte>> &vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vsew, uint32_t vl, uint32_t vmask) {
+void vector_op_vv_red(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vsew, uint32_t vl, uint32_t vmask) {
   switch (vsew) {
-  case 8:
+  case 0:
     vector_op_vv_red<OP, DT8>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask);
     break;
-  case 16:
+  case 1:
     vector_op_vv_red<OP, DT16>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask);
     break;
-  case 32:
+  case 2:
     vector_op_vv_red<OP, DT32>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask);
     break;
-  case 64:
+  case 3:
     vector_op_vv_red<OP, DT64>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask);
     break;
   default:
@@ -2070,7 +2072,7 @@ void vector_op_vv_red(std::vector<std::vector<Byte>> &vreg_file, uint32_t rsrc0,
 }
 
 template <template <typename DT1, typename DT2> class OP, typename DT, typename DTR>
-void vector_op_vv_red_w(std::vector<std::vector<Byte>> &vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vl, uint32_t vmask) {
+void vector_op_vv_red_w(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vl, uint32_t vmask) {
   for (uint32_t i = 0; i < vl; i++) {
     // use rdest as accumulator
     if (i == 0) {
@@ -2088,15 +2090,15 @@ void vector_op_vv_red_w(std::vector<std::vector<Byte>> &vreg_file, uint32_t rsrc
 }
 
 template <template <typename DT1, typename DT2> class OP, typename DT8, typename DT16, typename DT32, typename DT64>
-void vector_op_vv_red_w(std::vector<std::vector<Byte>> &vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vsew, uint32_t vl, uint32_t vmask) {
+void vector_op_vv_red_w(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vsew, uint32_t vl, uint32_t vmask) {
   switch (vsew) {
-  case 8:
+  case 0:
     vector_op_vv_red_w<OP, DT8, DT16>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask);
     break;
-  case 16:
+  case 1:
     vector_op_vv_red_w<OP, DT16, DT32>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask);
     break;
-  case 32:
+  case 2:
     vector_op_vv_red_w<OP, DT32, DT64>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask);
     break;
   default:
@@ -2106,7 +2108,7 @@ void vector_op_vv_red_w(std::vector<std::vector<Byte>> &vreg_file, uint32_t rsrc
 }
 
 template <template <typename DT1, typename DT2> class OP, typename DT, typename DTR>
-void vector_op_vv_red_wf(std::vector<std::vector<Byte>> &vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vl, uint32_t vmask) {
+void vector_op_vv_red_wf(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vl, uint32_t vmask) {
   for (uint32_t i = 0; i < vl; i++) {
     // use rdest as accumulator
     if (i == 0) {
@@ -2124,7 +2126,7 @@ void vector_op_vv_red_wf(std::vector<std::vector<Byte>> &vreg_file, uint32_t rsr
 }
 
 template <template <typename DT1, typename DT2> class OP, typename DT8, typename DT16, typename DT32, typename DT64>
-void vector_op_vv_red_wf(std::vector<std::vector<Byte>> &vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vsew, uint32_t vl, uint32_t vmask) {
+void vector_op_vv_red_wf(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vsew, uint32_t vl, uint32_t vmask) {
   if (vsew == 32) {
     vector_op_vv_red_wf<OP, DT32, DT64>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask);
   } else {
@@ -2134,7 +2136,7 @@ void vector_op_vv_red_wf(std::vector<std::vector<Byte>> &vreg_file, uint32_t rsr
 }
 
 template <typename DT>
-void vector_op_vid(std::vector<std::vector<Byte>> &vreg_file, uint32_t rdest, uint32_t vl, uint32_t vmask) {
+void vector_op_vid(VRF_t& vreg_file, uint32_t rdest, uint32_t vl, uint32_t vmask) {
   for (uint32_t i = 0; i < vl; i++) {
     if (isMasked(vreg_file, 0, i, vmask))
       continue;
@@ -2143,18 +2145,18 @@ void vector_op_vid(std::vector<std::vector<Byte>> &vreg_file, uint32_t rdest, ui
   }
 }
 
-void vector_op_vid(std::vector<std::vector<Byte>> &vreg_file, uint32_t rdest, uint32_t vsew, uint32_t vl, uint32_t vmask) {
+void vector_op_vid(VRF_t& vreg_file, uint32_t rdest, uint32_t vsew, uint32_t vl, uint32_t vmask) {
   switch (vsew) {
-  case 8:
+  case 0:
     vector_op_vid<uint8_t>(vreg_file, rdest, vl, vmask);
     break;
-  case 16:
+  case 1:
     vector_op_vid<uint16_t>(vreg_file, rdest, vl, vmask);
     break;
-  case 32:
+  case 2:
     vector_op_vid<uint32_t>(vreg_file, rdest, vl, vmask);
     break;
-  case 64:
+  case 3:
     vector_op_vid<uint64_t>(vreg_file, rdest, vl, vmask);
     break;
   default:
@@ -2164,7 +2166,7 @@ void vector_op_vid(std::vector<std::vector<Byte>> &vreg_file, uint32_t rdest, ui
 }
 
 template <template <typename DT1, typename DT2> class OP, typename DT>
-void vector_op_vv_mask(std::vector<std::vector<Byte>> &vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vl, uint32_t vmask) {
+void vector_op_vv_mask(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vl, uint32_t vmask) {
   for (uint32_t i = 0; i < vl; i++) {
     if (isMasked(vreg_file, 0, i, vmask))
       continue;
@@ -2182,18 +2184,18 @@ void vector_op_vv_mask(std::vector<std::vector<Byte>> &vreg_file, uint32_t rsrc0
 }
 
 template <template <typename DT1, typename DT2> class OP, typename DT8, typename DT16, typename DT32, typename DT64>
-void vector_op_vv_mask(std::vector<std::vector<Byte>> &vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vsew, uint32_t vl, uint32_t vmask) {
+void vector_op_vv_mask(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vsew, uint32_t vl, uint32_t vmask) {
   switch (vsew) {
-  case 8:
+  case 0:
     vector_op_vv_mask<OP, DT8>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask);
     break;
-  case 16:
+  case 1:
     vector_op_vv_mask<OP, DT16>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask);
     break;
-  case 32:
+  case 2:
     vector_op_vv_mask<OP, DT32>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask);
     break;
-  case 64:
+  case 3:
     vector_op_vv_mask<OP, DT64>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask);
     break;
   default:
@@ -2203,7 +2205,7 @@ void vector_op_vv_mask(std::vector<std::vector<Byte>> &vreg_file, uint32_t rsrc0
 }
 
 template <template <typename DT1, typename DT2> class OP>
-void vector_op_vv_mask(std::vector<std::vector<Byte>> &vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vl) {
+void vector_op_vv_mask(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vl) {
   for (uint32_t i = 0; i < vl; i++) {
     uint8_t firstMask = getVregData<uint8_t>(vreg_file, rsrc0, i / 8);
     bool first = (firstMask >> (i % 8)) & 0x1;
@@ -2221,7 +2223,7 @@ void vector_op_vv_mask(std::vector<std::vector<Byte>> &vreg_file, uint32_t rsrc0
 }
 
 template <typename DT>
-void vector_op_vv_compress(std::vector<std::vector<Byte>> &vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vl) {
+void vector_op_vv_compress(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vl) {
   int currPos = 0;
   for (uint32_t i = 0; i < vl; i++) {
     // Special case: use rsrc0 as mask vector register instead of default v0
@@ -2236,18 +2238,18 @@ void vector_op_vv_compress(std::vector<std::vector<Byte>> &vreg_file, uint32_t r
 }
 
 template <typename DT8, typename DT16, typename DT32, typename DT64>
-void vector_op_vv_compress(std::vector<std::vector<Byte>> &vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vsew, uint32_t vl) {
+void vector_op_vv_compress(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vsew, uint32_t vl) {
   switch (vsew) {
-  case 8:
+  case 0:
     vector_op_vv_compress<DT8>(vreg_file, rsrc0, rsrc1, rdest, vl);
     break;
-  case 16:
+  case 1:
     vector_op_vv_compress<DT16>(vreg_file, rsrc0, rsrc1, rdest, vl);
     break;
-  case 32:
+  case 2:
     vector_op_vv_compress<DT32>(vreg_file, rsrc0, rsrc1, rdest, vl);
     break;
-  case 64:
+  case 3:
     vector_op_vv_compress<DT64>(vreg_file, rsrc0, rsrc1, rdest, vl);
     break;
   default:

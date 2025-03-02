@@ -1,4 +1,3 @@
-#ifdef EXT_V_ENABLE
 #pragma once
 
 #include "arch.h"
@@ -8,6 +7,8 @@
 #include "types.h"
 
 namespace vortex {
+
+class Core;
 
 class VecUnit : public SimObject<VecUnit> {
 public:
@@ -33,15 +34,13 @@ public:
     }
   };
 
-  std::vector<SimPort<MemReq>> MemReqs;
-  std::vector<SimPort<MemRsp>> MemRsps;
-
   SimPort<instr_trace_t*> Input;
   SimPort<instr_trace_t*> Output;
 
   VecUnit(const SimContext& ctx,
           const char* name,
-          const Arch &arch);
+          const Arch& arch,
+          Core* core);
 
   ~VecUnit();
 
@@ -49,11 +48,15 @@ public:
 
   void tick();
 
-  void load(const Instr &instr, uint32_t wid, std::vector<reg_data_t[3]> &rsdata);
+  bool get_csr(uint32_t addr, uint32_t wid, uint32_t tid, Word* value);
 
-  void store(const Instr &instr, uint32_t wid, std::vector<reg_data_t[3]> &rsdata);
+  bool set_csr(uint32_t addr, uint32_t wid, uint32_t tid, Word value);
 
-  void execute(const Instr &instr, uint32_t wid, std::vector<reg_data_t[3]> &rsdata, std::vector<reg_data_t> &rddata);
+  void load(const Instr &instr, uint32_t wid, uint32_t tid, const std::vector<reg_data_t>& rs1_data, const std::vector<reg_data_t>& rs2_data);
+
+  void store(const Instr &instr, uint32_t wid, uint32_t tid, const std::vector<reg_data_t>& rs1_data, const std::vector<reg_data_t>& rs2_data);
+
+  bool execute(const Instr &instr, uint32_t wid, uint32_t tid, const std::vector<reg_data_t>& rs1_data, const std::vector<reg_data_t>& rs2_data, std::vector<reg_data_t>& rd_data);
 
   const PerfStats& perf_stats() const;
 
@@ -64,4 +67,3 @@ private:
 };
 
 }
-#endif

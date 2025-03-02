@@ -100,7 +100,7 @@ public:
        Socket* socket,
        const Arch &arch,
        const DCRS &dcrs
-       );
+  );
 
   ~Core();
 
@@ -139,6 +139,14 @@ public:
 
   const MemCoalescer::Ptr& mem_coalescer(uint32_t idx) const {
     return mem_coalescers_.at(idx);
+  }
+
+  void dcache_read(void* data, uint64_t addr, uint32_t size) {
+    return emulator_.dcache_read(data, addr, size);
+  }
+
+  void dcache_write(const void* data, uint64_t addr, uint32_t size) {
+    return emulator_.dcache_write(data, addr, size);
   }
 
 #ifdef EXT_V_ENABLE

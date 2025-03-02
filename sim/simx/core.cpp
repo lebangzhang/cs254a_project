@@ -40,7 +40,7 @@ Core::Core(const SimContext& ctx,
   , socket_(socket)
   , arch_(arch)
 #ifdef EXT_V_ENABLE
-  , vec_unit_(VecUnit::Create("vpu", arch))
+  , vec_unit_(VecUnit::Create("vpu", arch, this))
 #endif
   , emulator_(arch, dcrs, this)
   , ibuffers_(arch.num_warps(), IBUF_SIZE)

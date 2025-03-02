@@ -33,10 +33,6 @@ using namespace vortex;
 warp_t::warp_t(uint32_t num_threads)
   : ireg_file(MAX_NUM_REGS, std::vector<Word>(num_threads))
   , freg_file(MAX_NUM_REGS, std::vector<uint64_t>(num_threads))
-#ifdef EXT_V_ENABLE
-  , vreg_file(num_threads, std::vector(MAX_NUM_REGS, std::vector<Byte>(VLENB)))
-  , vcsrs(num_threads)
-#endif
   , uuid(0)
 {}
 
@@ -70,32 +66,6 @@ void warp_t::clear(uint64_t startup_addr) {
     #endif
     }
   }
-
-#ifdef EXT_V_ENABLE
-  for (auto& reg_file : this->vreg_file) {
-    for (auto& reg : reg_file) {
-      for (auto& elm : reg) {
-      #ifndef NDEBUG
-        elm = 0;
-      #else
-        elm = std::rand();
-      #endif
-      }
-    }
-  }
-  for (auto& vcsrs : this->vcsrs) {
-    vcsrs.vstart = 0;
-    vcsrs.vxsat = 0;
-    vcsrs.vxrm = 0;
-    vcsrs.vcsr = 0;
-    vcsrs.vlenb = 0;
-    vcsrs.vtype = 0;
-    vcsrs.vl = 0;
-  }
-  this->vtype = {0, 0, 0, 0, 0};
-  this->vl = 0;
-  this->vlmax = 0;
-#endif
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -454,7 +424,7 @@ void Emulator::cout_flush() {
     case (addr + (VX_CSR_MPM_BASE_H-VX_CSR_MPM_BASE)) : return ((value >> 32) & 0xFFFFFFFF)
 #endif
 
-Word Emulator::get_csr(uint32_t addr, uint32_t tid, uint32_t wid) {
+Word Emulator::get_csr(uint32_t addr, uint32_t wid, uint32_t tid) {
   auto core_perf = core_->perf_stats();
   switch (addr) {
   case VX_CSR_SATP:
@@ -478,24 +448,6 @@ Word Emulator::get_csr(uint32_t addr, uint32_t tid, uint32_t wid) {
   case VX_CSR_FFLAGS: return warps_.at(wid).fcsr & 0x1F;
   case VX_CSR_FRM:    return (warps_.at(wid).fcsr >> 5);
   case VX_CSR_FCSR:   return warps_.at(wid).fcsr;
-
-#ifdef EXT_V_ENABLE
-  // Vector CRSs
-  case VX_CSR_VSTART:
-    return  warps_.at(wid).vcsrs.at(tid).vstart;
-  case VX_CSR_VXSAT:
-    return  warps_.at(wid).vcsrs.at(tid).vxsat;
-  case VX_CSR_VXRM:
-    return  warps_.at(wid).vcsrs.at(tid).vxrm;
-  case VX_CSR_VCSR:
-    return ( warps_.at(wid).vcsrs.at(tid).vxrm << 1) |  warps_.at(wid).vcsrs.at(tid).vxsat;
-  case VX_CSR_VL:
-    return  warps_.at(wid).vcsrs.at(tid).vl;
-  case VX_CSR_VTYPE:
-    return  warps_.at(wid).vcsrs.at(tid).vtype;
-  case VX_CSR_VLENB:
-    return VLENB;
-#endif
 
   case VX_CSR_MHARTID:    return (core_->id() * arch_.num_warps() + wid) * arch_.num_threads() + tid;
   case VX_CSR_THREAD_ID:  return tid;
@@ -601,6 +553,12 @@ Word Emulator::get_csr(uint32_t addr, uint32_t tid, uint32_t wid) {
       } break;
     #endif
       default: {
+      #ifdef EXT_V_ENABLE
+        Word value = 0;
+        if (vec_unit_->get_csr(addr, wid, tid, &value)) {
+          return value;
+        }
+      #endif
         std::cout << "Error: invalid MPM CLASS: value=" << perf_class << std::endl;
         std::abort();
       } break;
@@ -613,7 +571,7 @@ Word Emulator::get_csr(uint32_t addr, uint32_t tid, uint32_t wid) {
   return 0;
 }
 
-void Emulator::set_csr(uint32_t addr, Word value, uint32_t tid, uint32_t wid) {
+void Emulator::set_csr(uint32_t addr, Word value, uint32_t wid, uint32_t tid) {
   __unused (tid);
   switch (addr) {
   case VX_CSR_FFLAGS:
@@ -628,33 +586,6 @@ void Emulator::set_csr(uint32_t addr, Word value, uint32_t tid, uint32_t wid) {
   case VX_CSR_MSCRATCH:
     csr_mscratch_ = value;
     break;
-
-#ifdef EXT_V_ENABLE
-  // Vector CRSs
-  case VX_CSR_VSTART:
-     warps_.at(wid).vcsrs.at(tid).vstart = value;
-    break;
-  case VX_CSR_VXSAT:
-     warps_.at(wid).vcsrs.at(tid).vxsat = value & 0b1;
-    break;
-  case VX_CSR_VXRM:
-     warps_.at(wid).vcsrs.at(tid).vxrm = value & 0b11;
-    break;
-  case VX_CSR_VCSR:
-     warps_.at(wid).vcsrs.at(tid).vxsat = value & 0b1;
-     warps_.at(wid).vcsrs.at(tid).vxrm = (value >> 1) & 0b11;
-    break;
-  case VX_CSR_VL:
-     warps_.at(wid).vcsrs.at(tid).vl = value;
-    break;
-  case VX_CSR_VTYPE:
-     warps_.at(wid).vcsrs.at(tid).vtype = value;
-    break;
-  case VX_CSR_VLENB: // read only
-    std::abort();
-    break;
-#endif
-
   case VX_CSR_SATP:
   #ifdef VM_ENABLE
     mmu_.set_satp(value);
@@ -671,8 +602,11 @@ void Emulator::set_csr(uint32_t addr, Word value, uint32_t tid, uint32_t wid) {
   case VX_CSR_MNSTATUS:
   case VX_CSR_MCAUSE:
     break;
-
   default: {
+    #ifdef EXT_V_ENABLE
+      if (vec_unit_->set_csr(addr, wid, tid, value))
+        return;
+    #endif
       std::cout << "Error: invalid CSR write addr=0x" << std::hex << addr << ", value=0x" << value << std::dec << std::endl;
       std::flush(std::cout);
       std::abort();
@@ -680,14 +614,14 @@ void Emulator::set_csr(uint32_t addr, Word value, uint32_t tid, uint32_t wid) {
   }
 }
 
-uint32_t Emulator::get_fpu_rm(uint32_t func3, uint32_t tid, uint32_t wid) {
-  return (func3 == 0x7) ? this->get_csr(VX_CSR_FRM, tid, wid) : func3;
+uint32_t Emulator::get_fpu_rm(uint32_t func3, uint32_t wid, uint32_t tid) {
+  return (func3 == 0x7) ? this->get_csr(VX_CSR_FRM, wid, tid) : func3;
 }
 
-void Emulator::update_fcrs(uint32_t fflags, uint32_t tid, uint32_t wid) {
+void Emulator::update_fcrs(uint32_t fflags, uint32_t wid, uint32_t tid) {
   if (fflags) {
-    this->set_csr(VX_CSR_FCSR, this->get_csr(VX_CSR_FCSR, tid, wid) | fflags, tid, wid);
-    this->set_csr(VX_CSR_FFLAGS, this->get_csr(VX_CSR_FFLAGS, tid, wid) | fflags, tid, wid);
+    this->set_csr(VX_CSR_FCSR, this->get_csr(VX_CSR_FCSR, wid, tid) | fflags, wid, tid);
+    this->set_csr(VX_CSR_FFLAGS, this->get_csr(VX_CSR_FFLAGS, wid, tid) | fflags, wid, tid);
   }
 }
 

@@ -212,14 +212,7 @@ jobs:
           cd build${{ matrix.xlen }}
           source ci/toolchain_env.sh
           chmod -R +x . # Ensure all files have executable permissions
-          if [ "${{ matrix.name }}" == "regression" ]; then
-            ./ci/regression.sh --unittest
-            ./ci/regression.sh --isa
-            ./ci/regression.sh --kernel
-            ./ci/regression.sh --regression
-          else
-            ./ci/regression.sh --${{ matrix.name }}
-          fi
+          ./ci/regression.sh --${{ matrix.name }}
 
   complete:
     runs-on: ubuntu-20.04

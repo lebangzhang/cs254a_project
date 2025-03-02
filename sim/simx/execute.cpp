@@ -51,6 +51,7 @@ inline void read_register(std::vector<reg_data_t>& out, uint32_t src_index, cons
   auto reg = instr.getRSrc(src_index);
   switch (type) {
   case RegType::None:
+  case RegType::Vector:
     break;
   case RegType::Integer: {
     DPH(2, "Src" << src_index << " Reg: " << type << reg << "={");
@@ -86,10 +87,6 @@ inline void read_register(std::vector<reg_data_t>& out, uint32_t src_index, cons
     }
     DPN(2, "}" << std::endl);
   } break;
-#ifdef EXT_V_ENABLE
-  case RegType::Vector:
-  break;
-#endif
   default:
     std::abort();
     break;
@@ -733,7 +730,7 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
       for (uint32_t t = thread_start; t < num_threads; ++t) {
         if (!warp.tmask.test(t))
           continue;
-        this->loadVector(instr, wid, t, rs1_data, rs2_data);
+        vec_unit_->load(instr, wid, t, rs1_data, rs2_data);
       }
     }
   #endif
@@ -775,7 +772,7 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
       for (uint32_t t = thread_start; t < num_threads; ++t) {
         if (!warp.tmask.test(t))
           continue;
-        this->storeVector(instr, wid, t, rs1_data, rs2_data);
+        vec_unit_->store(instr, wid, t, rs1_data, rs2_data);
       }
     }
   #endif
@@ -883,7 +880,7 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
         trace->fu_type = FUType::SFU;
         // stall the fetch stage for FPU CSRs
         trace->fetch_stall = (csr_addr <= VX_CSR_FCSR);
-        csr_value = this->get_csr(csr_addr, t, wid);
+        csr_value = this->get_csr(csr_addr, wid, t);
         switch (func3) {
         case 1: {
           // RV32I: CSRRW
@@ -962,7 +959,7 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
     for (uint32_t t = thread_start; t < num_threads; ++t) {
       if (!warp.tmask.test(t))
         continue;
-      uint32_t frm = this->get_fpu_rm(func3, t, wid);
+      uint32_t frm = this->get_fpu_rm(func3, wid, t);
       uint32_t fflags = 0;
       switch (func7) {
       case 0x00: { // RV32F: FADD.S
@@ -1277,7 +1274,7 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
         break;
       }
       }
-      this->update_fcrs(fflags, t, wid);
+      this->update_fcrs(fflags, wid, t);
     }
     rd_write = true;
     break;
@@ -1293,7 +1290,7 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
     for (uint32_t t = thread_start; t < num_threads; ++t) {
       if (!warp.tmask.test(t))
         continue;
-      uint32_t frm = this->get_fpu_rm(func3, t, wid);
+      uint32_t frm = this->get_fpu_rm(func3, wid, t);
       uint32_t fflags = 0;
       switch (opcode) {
       case Opcode::FMADD:
@@ -1331,7 +1328,7 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
       default:
         break;
       }
-      this->update_fcrs(fflags, t, wid);
+      this->update_fcrs(fflags, wid, t);
     }
     rd_write = true;
     break;
@@ -1341,7 +1338,7 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
     for (uint32_t t = thread_start; t < num_threads; ++t) {
       if (!warp.tmask.test(t))
         continue;
-      rd_write |= executeVector(instr, wid, t, rs1_data, rs2_data, rd_data);
+      rd_write |= vec_unit_->execute(instr, wid, t, rs1_data, rs2_data, rd_data);
     }
     break;
 #endif
@@ -1463,16 +1460,6 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
         std::abort();
       }
     } break;
-    default:
-      std::abort();
-    }
-  } break;
-  case Opcode::EXT2: {
-    switch(func3) {
-    case 2: // Reserved
-      break;
-    } break;
-  #endif
     default:
       std::abort();
     }
