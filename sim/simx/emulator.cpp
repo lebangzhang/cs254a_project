@@ -34,7 +34,7 @@ warp_t::warp_t(uint32_t num_threads)
   : ireg_file(MAX_NUM_REGS, std::vector<Word>(num_threads))
   , freg_file(MAX_NUM_REGS, std::vector<uint64_t>(num_threads))
 #ifdef EXT_V_ENABLE
-  , vreg_file(num_threads, std::vector(MAX_NUM_REGS, std::vector<Byte>(VLEN)))
+  , vreg_file(num_threads, std::vector(MAX_NUM_REGS, std::vector<Byte>(VLENB)))
   , vcsrs(num_threads)
 #endif
   , uuid(0)
@@ -110,6 +110,9 @@ Emulator::Emulator(const Arch &arch, const DCRS &dcrs, Core* core)
     , warps_(arch.num_warps(), arch.num_threads())
     , barriers_(arch.num_barriers(), 0)
     , ipdom_size_(arch.num_threads()-1)
+  #ifdef EXT_V_ENABLE
+    , vec_unit_(core->vec_unit())
+  #endif
 {
   std::srand(50);
   this->clear();
@@ -137,6 +140,10 @@ void Emulator::clear() {
   for (auto& barrier : barriers_) {
     barrier.reset();
   }
+
+#ifdef EXT_V_ENABLE
+  vec_unit_->reset();
+#endif
 
   csr_mscratch_ = startup_arg;
 
@@ -584,6 +591,18 @@ Word Emulator::get_csr(uint32_t addr, uint32_t tid, uint32_t wid) {
         CSR_READ_64(VX_CSR_MPM_LMEM_BANK_ST, lmem_perf.bank_stalls);
         }
       } break;
+    #ifdef EXT_V_ENABLE
+      case VX_DCR_MPM_CLASS_VEC: {
+        VecUnit::PerfStats vec_perf_stats;
+        vec_perf_stats += vec_unit_->perf_stats();
+        switch (addr) {
+        CSR_READ_64(VX_CSR_MPM_VEC_READS, vec_perf_stats.reads);
+        CSR_READ_64(VX_CSR_MPM_VEC_WRITES, vec_perf_stats.writes);
+        CSR_READ_64(VX_CSR_MPM_VEC_LAT, vec_perf_stats.latency);
+        CSR_READ_64(VX_CSR_MPM_VEC_ST, vec_perf_stats.stalls);
+        }
+      } break;
+    #endif
       default: {
         std::cout << "Error: invalid MPM CLASS: value=" << perf_class << std::endl;
         std::abort();

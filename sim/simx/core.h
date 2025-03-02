@@ -27,6 +27,9 @@
 #include "func_unit.h"
 #include "mem_coalescer.h"
 #include "VX_config.h"
+#ifdef EXT_V_ENABLE
+#include "vec_unit.h"
+#endif
 
 namespace vortex {
 
@@ -52,6 +55,9 @@ public:
     uint64_t scrb_sfu;
     uint64_t scrb_csrs;
     uint64_t scrb_wctl;
+  #ifdef EXT_V_ENABLE
+    uint64_t scrb_vpu;
+  #endif
     uint64_t ifetches;
     uint64_t loads;
     uint64_t stores;
@@ -72,6 +78,9 @@ public:
       , scrb_sfu(0)
       , scrb_csrs(0)
       , scrb_wctl(0)
+    #ifdef EXT_V_ENABLE
+      , scrb_vpu(0)
+    #endif
       , ifetches(0)
       , loads(0)
       , stores(0)
@@ -90,7 +99,8 @@ public:
        uint32_t core_id,
        Socket* socket,
        const Arch &arch,
-       const DCRS &dcrs);
+       const DCRS &dcrs
+       );
 
   ~Core();
 
@@ -137,6 +147,12 @@ public:
   }
 #endif
 
+#ifdef EXT_V_ENABLE
+  VecUnit::Ptr& vec_unit() {
+    return vec_unit_;
+  }
+#endif
+
   const PerfStats& perf_stats() const {
     return perf_stats_;
   }
@@ -158,6 +174,10 @@ private:
 
 #ifdef EXT_TPU_ENABLE
   TensorUnit::Ptr tensor_unit_;
+#endif
+
+#ifdef EXT_V_ENABLE
+  VecUnit::Ptr vec_unit_;
 #endif
 
   Emulator emulator_;

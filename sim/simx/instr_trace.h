@@ -43,6 +43,13 @@ struct SFUTraceData : public ITraceData {
   SFUTraceData(Word arg1, Word arg2) : arg1(arg1), arg2(arg2) {}
 };
 
+struct VPUTraceData : public ITraceData {
+  using Ptr = std::shared_ptr<VPUTraceData>;
+  Word arg1;
+  Word arg2;
+  VPUTraceData(Word arg1, Word arg2) : arg1(arg1), arg2(arg2) {}
+};
+
 struct instr_trace_t {
 public:
   struct reg_t {
@@ -77,6 +84,9 @@ public:
     AluType  alu_type;
     FpuType  fpu_type;
     SfuType  sfu_type;
+  #ifdef EXT_V_ENABLE
+    VpuType  vpu_type;
+  #endif
   };
 
   ITraceData::Ptr data;

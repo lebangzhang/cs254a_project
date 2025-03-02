@@ -20,6 +20,9 @@
 #include <mem.h>
 #include "types.h"
 #include "tensor_unit.h"
+#ifdef EXT_V_ENABLE
+#include "vec_unit.h"
+#endif
 
 namespace vortex {
 
@@ -180,6 +183,10 @@ private:
   uint32_t    ipdom_size_;
   Word        csr_mscratch_;
   wspawn_t    wspawn_;
+
+#ifdef EXT_V_ENABLE
+  VecUnit::Ptr vec_unit_;
+#endif
 };
 
 }
