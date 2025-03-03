@@ -119,6 +119,17 @@ package VX_gpu_pkg;
 	localparam SFU_BITS = `CLOG2(NUM_SFU_UNITS);
 	localparam SFU_WIDTH = `UP(SFU_BITS);
 
+    //////////////////////////////// Vector ISA ///////////////////////////////
+
+`ifdef EXT_V_ENABLE
+
+    localparam VLENB    = `VLEN / 8;
+    localparan VL_COUNT = `VLEN / `XLEN;
+    localparam VL_BITS  = `CLOG2(VLANES);
+    localparam VL_WIDTH = `UP(VL_BITS);
+
+`endif
+
     ///////////////////////////////////////////////////////////////////////////
 
     localparam INST_LUI =        7'b0110111;
