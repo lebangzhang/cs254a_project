@@ -15,7 +15,7 @@
 
 module VX_issue_slice import VX_gpu_pkg::*; #(
     parameter `STRING INSTANCE_ID = "",
-    parameter ISSUE_ID
+    parameter ISSUE_ID = 0
 ) (
     `SCOPE_IO_DECL
 
@@ -65,6 +65,24 @@ module VX_issue_slice import VX_gpu_pkg::*; #(
         .scoreboard_if  (scoreboard_if)
     );
 
+`ifdef EXT_V_ENABLE
+
+    VX_voperands #(
+        .INSTANCE_ID (`SFORMATF(("%s-operands", INSTANCE_ID))),
+        .ISSUE_ID (ISSUE_ID)
+    ) operands (
+        .clk            (clk),
+        .reset          (reset),
+     `ifdef PERF_ENABLE
+        .perf_stalls    (issue_perf.opd_stalls),
+     `endif
+        .writeback_if   (writeback_if),
+        .scoreboard_if  (scoreboard_if),
+        .operands_if    (operands_if)
+    );
+
+`else
+
     VX_operands #(
         .INSTANCE_ID (`SFORMATF(("%s-operands", INSTANCE_ID))),
         .ISSUE_ID (ISSUE_ID)
@@ -78,6 +96,8 @@ module VX_issue_slice import VX_gpu_pkg::*; #(
         .scoreboard_if  (scoreboard_if),
         .operands_if    (operands_if)
     );
+
+`endif
 
     VX_dispatch #(
         .INSTANCE_ID (`SFORMATF(("%s-dispatch", INSTANCE_ID))),

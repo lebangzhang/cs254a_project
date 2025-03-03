@@ -40,6 +40,7 @@ module VX_voperands import VX_gpu_pkg::*; #(
     localparam OPD_DATAW = UUID_WIDTH + ISSUE_WIS_W + SIMD_IDX_W + `SIMD_WIDTH + PC_BITS + EX_BITS + INST_OP_BITS + INST_ARGS_BITS + 1 + NR_BITS + (NUM_SRC_OPDS * `SIMD_WIDTH * `XLEN) + 1 + 1;
 
     VX_gpr_if per_opc_gpr_if[`NUM_OPCS]();
+    VX_vgpr_if vgpr_if();
     VX_scoreboard_if per_opc_scoreboard_if[`NUM_OPCS]();
     VX_operands_if per_opc_operands_if[`NUM_OPCS]();
 
@@ -100,20 +101,39 @@ module VX_voperands import VX_gpu_pkg::*; #(
             assign pending_regs_in[j-1] = per_opc_pending_regs[k];
         end
 
-        VX_opc_unit #(
-            .INSTANCE_ID (`SFORMATF(("%s-collector%0d", INSTANCE_ID, i))),
-            .ISSUE_ID (ISSUE_ID)
-        ) opc_unit (
-            .clk          (clk),
-            .reset        (reset),
-            .pending_wis_in(pending_wis_in),
-            .pending_regs_in(pending_regs_in),
-            .pending_wis  (per_opc_pending_wis[i]),
-            .pending_regs (per_opc_pending_regs[i]),
-            .scoreboard_if(per_opc_scoreboard_if[i]),
-            .gpr_if       (per_opc_gpr_if[i]),
-            .operands_if  (per_opc_operands_if[i])
-        );
+        if (i < (`NUM_OPCS-1)) begin : g_scalar
+            VX_opc_unit #(
+                .INSTANCE_ID (`SFORMATF(("%s-collector%0d", INSTANCE_ID, i))),
+                .ISSUE_ID (ISSUE_ID)
+            ) opc_unit (
+                .clk          (clk),
+                .reset        (reset),
+                .pending_wis_in(pending_wis_in),
+                .pending_regs_in(pending_regs_in),
+                .pending_wis  (per_opc_pending_wis[i]),
+                .pending_regs (per_opc_pending_regs[i]),
+                .scoreboard_if(per_opc_scoreboard_if[i]),
+                .gpr_if       (per_opc_gpr_if[i]),
+                .operands_if  (per_opc_operands_if[i])
+            );
+        end else begin : g_vector
+            VX_vopc_unit #(
+                .INSTANCE_ID (`SFORMATF(("%s-collector%0d", INSTANCE_ID, i))),
+                .ISSUE_ID (ISSUE_ID)
+            ) vopc_unit (
+                .clk          (clk),
+                .reset        (reset),
+                .pending_wis_in(pending_wis_in),
+                .pending_regs_in(pending_regs_in),
+                .pending_wis  (per_opc_pending_wis[i]),
+                .pending_regs (per_opc_pending_regs[i]),
+                .scoreboard_if(per_opc_scoreboard_if[i]),
+                .writeback_if (writeback_if),
+                .gpr_if       (per_opc_gpr_if[i]),
+                .vgpr_if      (vgpr_if),
+                .operands_if  (per_opc_operands_if[i])
+            );
+        end
     end
 
     VX_gpr_unit #(
@@ -131,17 +151,17 @@ module VX_voperands import VX_gpu_pkg::*; #(
     );
 
     VX_vgpr_unit #(
-        .INSTANCE_ID (`SFORMATF(("%s-gpr", INSTANCE_ID))),
-        .NUM_REQS    (`NUM_OPCS),
-        .NUM_BANKS   (`NUM_VGPR_BANKS)
-    ) gpr_unit (
+        .INSTANCE_ID (`SFORMATF(("%s-vgpr", INSTANCE_ID))),
+        .NUM_REQS    (NUM_SRC_OPDS),
+        .NUM_BANKS   (NUM_SRC_OPDS)
+    ) vgpr_unit (
         .clk          (clk),
         .reset        (reset),
     `ifdef PERF_ENABLE
-        .perf_stalls  (perf_stalls),
+        `UNUSED_PIN (perf_stalls),
     `endif
         .writeback_if (writeback_if),
-        .vgpr_if      (per_opc_gpr_if)
+        .vgpr_if      (vgpr_if)
     );
 
     `ITF_TO_AOS (per_opc_operands_if, per_opc_operands, `NUM_OPCS, OPD_DATAW)

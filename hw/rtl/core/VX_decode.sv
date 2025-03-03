@@ -341,7 +341,7 @@ module VX_decode import VX_gpu_pkg::*; #(
                 `USED_IREG (rs1);
                 `USED_IREG (rd);
             `ifdef EXT_F_ENABLE
-                rd_v.rtype = opcode[2];
+                rd_v.rtype = REG_TYPE_BITS'(opcode[2]);
             `endif
             end
         `ifdef EXT_F_ENABLE
@@ -356,7 +356,7 @@ module VX_decode import VX_gpu_pkg::*; #(
                 `USED_IREG (rs1);
                 `USED_IREG (rs2);
             `ifdef EXT_F_ENABLE
-                rs2_v.rtype = opcode[2];
+                rs2_v.rtype = REG_TYPE_BITS'(opcode[2]);
             `endif
             end
         `ifdef EXT_F_ENABLE

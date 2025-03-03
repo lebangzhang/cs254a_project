@@ -33,7 +33,7 @@ module VX_vgpr_unit import VX_gpu_pkg::*; #(
 `endif
 
     VX_writeback_if.slave   writeback_if,
-    VX_vgpr_if.slave        vgpr_if [NUM_REQS]
+    VX_vgpr_if.slave        vgpr_if
 );
     `UNUSED_SPARAM (INSTANCE_ID)
 
@@ -83,18 +83,18 @@ module VX_vgpr_unit import VX_gpu_pkg::*; #(
     `UNUSED_VAR (writeback_if.data.wis)
 
     for (genvar i = 0; i < NUM_REQS; ++i) begin : g_gpr_req
-        assign gpr_req_valid[i] = gpr_if[i].req_valid;
+        assign gpr_req_valid[i] = vgpr_if[i].req_valid;
         if (SIMD_IDX_BITS != 0 || PER_BANK_WIS_BITS != 0) begin : g_simd_wis
             wire [SIMD_IDX_BITS + PER_BANK_WIS_BITS-1:0] tmp;
-            `CONCAT(tmp, gpr_if[i].req_data.sid, gpr_if[i].req_data.wis[ISSUE_WIS_W-1:BANKID_WIS_BITS], SIMD_IDX_BITS, PER_BANK_WIS_BITS);
-            assign gpr_req_data[i] = {gpr_if[i].req_data.opd_id, tmp, gpr_if[i].req_data.reg_id[NR_BITS-1:BANKID_REG_BITS]};
+            `CONCAT(tmp, vgpr_if[i].req_data.sid, vgpr_if[i].req_data.wis[ISSUE_WIS_W-1:BANKID_WIS_BITS], SIMD_IDX_BITS, PER_BANK_WIS_BITS);
+            assign gpr_req_data[i] = {vgpr_if[i].req_data.opd_id, tmp, vgpr_if[i].req_data.reg_id[NR_BITS-1:BANKID_REG_BITS]};
         end else begin : g_no_simd_wis
-            assign gpr_req_data[i] = {gpr_if[i].req_data.opd_id, gpr_if[i].req_data.reg_id[NR_BITS-1:BANKID_REG_BITS]};
+            assign gpr_req_data[i] = {vgpr_if[i].req_data.opd_id, vgpr_if[i].req_data.reg_id[NR_BITS-1:BANKID_REG_BITS]};
         end
-        `CONCAT(gpr_req_bank_idx[i], gpr_if[i].req_data.wis[BANKID_WIS_BITS-1:0], gpr_if[i].req_data.reg_id[BANKID_REG_BITS-1:0], BANKID_WIS_BITS, BANKID_REG_BITS)
-        `UNUSED_VAR (gpr_if[i].req_data.sid)
-        `UNUSED_VAR (gpr_if[i].req_data.wis)
-        assign gpr_if[i].req_ready = gpr_req_ready[i];
+        `CONCAT(gpr_req_bank_idx[i], vgpr_if[i].req_data.wis[BANKID_WIS_BITS-1:0], vgpr_if[i].req_data.reg_id[BANKID_REG_BITS-1:0], BANKID_WIS_BITS, BANKID_REG_BITS)
+        `UNUSED_VAR (vgpr_if[i].req_data.sid)
+        `UNUSED_VAR (vgpr_if[i].req_data.wis)
+        assign vgpr_if[i].req_ready = gpr_req_ready[i];
     end
 
     VX_stream_xbar #(
@@ -212,7 +212,7 @@ module VX_vgpr_unit import VX_gpu_pkg::*; #(
         assign bank_rsp_data[b] = {bank_rsp_opd_id[b], bank_rd_data[b]};
     end
 
-    `AOS_TO_ITF_RSP_V (gpr, gpr_if, NUM_REQS, GPR_RSP_DATAW)
+    `AOS_TO_ITF_RSP_V (gpr, vgpr_if, NUM_REQS, GPR_RSP_DATAW)
 
     VX_stream_xpoint #(
         .NUM_INPUTS  (NUM_BANKS),

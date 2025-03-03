@@ -35,10 +35,14 @@ package VX_gpu_pkg;
 	localparam RV_REGS = 32;
 	localparam RV_REGS_BITS = `CLOG2(RV_REGS);
 
+`ifdef EXT_V_ENABLE
+    localparam REG_TYPES = 3;
+`else
 `ifdef EXT_F_ENABLE
 	localparam REG_TYPES = 2;
 `else
 	localparam REG_TYPES = 1;
+`endif
 `endif
 
 	localparam REG_TYPE_BITS = `LOG2UP(REG_TYPES);
@@ -90,12 +94,6 @@ package VX_gpu_pkg;
     localparam MEM_REQ_FLAG_LOCAL =  2; // shoud be last since optional
     localparam MEM_FLAGS_WIDTH = (MEM_REQ_FLAG_LOCAL + `LMEM_ENABLED);
 
-    localparam VX_MEM_PORTS =           `L3_MEM_PORTS;
-    localparam VX_MEM_BYTEEN_WIDTH =    `L3_LINE_SIZE;
-    localparam VX_MEM_ADDR_WIDTH =      (`MEM_ADDR_WIDTH - `CLOG2(`L3_LINE_SIZE));
-    localparam VX_MEM_DATA_WIDTH =      (`L3_LINE_SIZE * 8);
-    localparam VX_MEM_TAG_WIDTH =       L3_MEM_TAG_WIDTH;
-
     localparam VX_DCR_ADDR_WIDTH = `VX_DCR_ADDR_BITS;
     localparam VX_DCR_DATA_WIDTH = 32;
 
@@ -124,8 +122,8 @@ package VX_gpu_pkg;
 `ifdef EXT_V_ENABLE
 
     localparam VLENB    = `VLEN / 8;
-    localparan VL_COUNT = `VLEN / `XLEN;
-    localparam VL_BITS  = `CLOG2(VLANES);
+    localparam VL_COUNT = `VLEN / `XLEN;
+    localparam VL_BITS  = `CLOG2(VL_COUNT);
     localparam VL_WIDTH = `UP(VL_BITS);
 
 `endif
@@ -655,6 +653,14 @@ package VX_gpu_pkg;
 `else
     localparam L3_MEM_TAG_WIDTH     = `CACHE_BYPASS_TAG_WIDTH(L3_NUM_REQS, `L3_MEM_PORTS, `L3_LINE_SIZE, L3_WORD_SIZE, L3_TAG_WIDTH);
 `endif
+
+    ///////////////////////////////////////////////////////////////////////////
+
+    localparam VX_MEM_PORTS =           `L3_MEM_PORTS;
+    localparam VX_MEM_BYTEEN_WIDTH =    `L3_LINE_SIZE;
+    localparam VX_MEM_ADDR_WIDTH =      (`MEM_ADDR_WIDTH - `CLOG2(`L3_LINE_SIZE));
+    localparam VX_MEM_DATA_WIDTH =      (`L3_LINE_SIZE * 8);
+    localparam VX_MEM_TAG_WIDTH =       L3_MEM_TAG_WIDTH;
 
     /////////////////////////////// Issue parameters //////////////////////////
 
