@@ -4,6 +4,7 @@ XLEN=${XLEN:-"@XLEN@"}
 TOOLDIR=${TOOLDIR:-"@TOOLDIR@"}
 RISCV_TOOLCHAIN_PATH=${RISCV_TOOLCHAIN_PATH:-"$TOOLDIR/riscv$XLEN-gnu-toolchain"}
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+TEST_DIR=${TEST_DIR:-"$SCRIPT_DIR/testcases"}
 
 VECTOR_TESTS_REPOSITORY=https://github.com/MichaelJSr/testcases/raw/main
 VECTOR_TESTS_BASE_NAME=vector-tests.tar.bz2
@@ -63,10 +64,9 @@ else
 fi
 
 # Fallback #1: If testcases directory exists, use the existing testcases
-if [ ! -d "$SCRIPT_DIR/testcases" ]; then
-  pushd $SCRIPT_DIR
-  mkdir testcases
-  pushd testcases
+if [ ! -d "$TEST_DIR" ]; then
+  mkdir $TEST_DIR
+  pushd $TEST_DIR
   # Fallback #2: Generate testcases
   if [ -n "$GEN_TESTS" ] && [ $GEN_TESTS -eq 1 ]; then
     /bin/bash ../gen-test.sh
@@ -77,7 +77,7 @@ if [ ! -d "$SCRIPT_DIR/testcases" ]; then
   popd
 fi
 
-pushd "$SCRIPT_DIR/testcases/v${VLEN}x$XLEN"
+pushd "$TEST_DIR/v${VLEN}x$XLEN"
 
 rm -f "*.ddr4.log" > /dev/null 2>&1
 for testcase in ${testcases[@]}; do
@@ -86,7 +86,6 @@ done
 
 passed=0
 failed=0
-selected=0
 
 for testcase in ${testcases[@]}; do
   echo "Testcase: $testcase"
@@ -101,7 +100,6 @@ for testcase in ${testcases[@]}; do
     else
       echo "$f FAILED"
       ((failed++))
-      exit 1
     fi
     # REG_TESTS=1 informs the script to delete the previous binary after each vector test to save disk space
     # Otherwise, the vector regression tests would run out of disk space eventually
@@ -109,12 +107,16 @@ for testcase in ${testcases[@]}; do
       cat "$f.log"
       rm -f "$f..bin" "$f.dump" "$f.log" > /dev/null 2>&1
     fi
-    ((selected++))
   done
 done
 
 popd
 
-echo "Passed $passed out of $selected selected vector tests."
+if [ $failed -eq 0 ]; then
+  echo "All $total vector tests passed."
+else
+  total=$((passed + failed))
+  echo "$failed out of $total vector tests failed."
+fi
 
 exit $failed
