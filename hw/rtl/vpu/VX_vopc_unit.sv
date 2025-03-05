@@ -247,7 +247,7 @@ module VX_vopc_unit import VX_gpu_pkg::*; #(
             staging_if.data.op_type,
             staging_if.data.op_args,
             staging_if.data.wb,
-            to_reg_number(staging_if.data.rd),
+            rd,
             opd_values[0],
             opd_values[1],
             opd_values[2],
