@@ -6,12 +6,12 @@ RISCV_TOOLCHAIN_PATH=${RISCV_TOOLCHAIN_PATH:-"$TOOLDIR/riscv$XLEN-gnu-toolchain"
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 TEST_DIR=${TEST_DIR:-"$SCRIPT_DIR/testcases"}
 
-VECTOR_TESTS_REPOSITORY=https://github.com/MichaelJSr/testcases/raw/main
+VECTOR_TESTS_REPOSITORY=https://github.com/MichaelJSr/testcases/raw/updated
 VECTOR_TESTS_BASE_NAME=vector-tests.tar.bz2
 
 download_tests()
 {
-    parts=$(eval echo {a..l})
+    parts=$(eval echo {a..z})
     for x in $parts
     do
         wget $VECTOR_TESTS_REPOSITORY/$VECTOR_TESTS_BASE_NAME.parta$x
@@ -25,11 +25,10 @@ download_tests()
 if [ "$#" -eq 0 ]; then
   # write out test case name explicitely if there are collisions with other test names
   testcases=(vmv vslide vmerge vrgather \
-             vlm.v vsm.v \
              vle8 vle16 vle32 \
              vse8 vse16 vse32 \
+             vsseg vssseg vsuxseg vsoxseg \
              vlseg vlsseg vluxseg vloxseg \
-            # vsseg vssseg vsuxseg vsoxseg \ # fails for both XLEN 32 and 64
              vlse8 vlse16 vlse32 \
              vsse8 vsse16 vsse32 \
              vloxei vluxei vsoxei vsuxei \
@@ -53,10 +52,10 @@ if [ "$#" -eq 0 ]; then
              vsext vzext \
              vid)
   if [ "$XLEN" -eq 32 ]; then
-    testcases+=(vset) # fails for XLEN 64? Which doesn't make sense, since vset is essential, and other tests work
+    testcases+=()
   elif [ "$XLEN" -eq 64 ]; then
     testcases+=(vle64 vse64 vlse64 vsse64 vfwcvt vfncvt \
-                # vfwadd vfwsub \ # vfwadd.wf and vfwsub.wf fail, but .wv .vf and .vv pass
+                vfwadd vfwsub \
                 vfwmul vfwred vfwmacc vfwnmacc vfwmsac vfwnmsac )
   fi
 else
@@ -68,7 +67,7 @@ if [ ! -d "$TEST_DIR" ]; then
   mkdir $TEST_DIR
   pushd $TEST_DIR
   # Fallback #2: Generate testcases
-  if [ -n "$GEN_TESTS" ] && [ $GEN_TESTS -eq 1 ]; then
+  if [ "$GEN_TESTS" -eq "1" ]; then
     /bin/bash ../gen-test.sh
   # Fallback #3: Download testcases
   else
@@ -89,12 +88,13 @@ failed=0
 
 for testcase in ${testcases[@]}; do
   echo "Testcase: $testcase"
-  find . -type f -name "${testcase}*" 2>/dev/null | while read -r f; do
+  while read -r f; do
     "$RISCV_TOOLCHAIN_PATH/bin/riscv$XLEN-unknown-elf-objdump" -D "$f" > "$f.dump"
     "$RISCV_TOOLCHAIN_PATH/bin/riscv$XLEN-unknown-elf-objcopy" -O binary "$f" "$f.bin"
     echo "running $SCRIPT_DIR/../../../sim/simx/simx -v $f.bin"
     "$SCRIPT_DIR/../../../sim/simx/simx" -v "$f.bin" > "$f.log"
-    if [ $? -eq 0 ]; then
+    # An exitcode of 1 for vector tests = PASS, 0 = FAIL
+    if [ $? -eq 1 ]; then
       echo "$f PASSED"
       ((passed++))
     else
@@ -103,17 +103,17 @@ for testcase in ${testcases[@]}; do
     fi
     # REG_TESTS=1 informs the script to delete the previous binary after each vector test to save disk space
     # Otherwise, the vector regression tests would run out of disk space eventually
-    if [ -n "$REG_TESTS" ] && [ $REG_TESTS -eq 1 ]; then
+    if [ "$REG_TESTS" -eq "1" ]; then
       cat "$f.log"
       rm -f "$f..bin" "$f.dump" "$f.log" > /dev/null 2>&1
     fi
-  done
+  done <<< $(find . -type f -name "${testcase}*" 2>/dev/null)
 done
 
 popd
 
-if [ $failed -eq 0 ]; then
-  echo "All $total vector tests passed."
+if [ "$failed" -eq "0" ]; then
+  echo "All $passed vector tests passed."
 else
   total=$((passed + failed))
   echo "$failed out of $total vector tests failed."
