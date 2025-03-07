@@ -31,7 +31,7 @@ module VX_wctl_unit import VX_gpu_pkg::*; #(
     localparam LANE_BITS  = `CLOG2(NUM_LANES);
     localparam PID_BITS   = `CLOG2(`NUM_THREADS / NUM_LANES);
     localparam PID_WIDTH  = `UP(PID_BITS);
-    localparam WCTL_WIDTH = $bits(tmc_t) + $bits(wspawn_t) + $bits(split_t) + $bits(join_t) + $bits(barrier_t);
+    localparam WCTL_WIDTH = $bits(tmc_t) + $bits(wspawn_t) + $bits(split_t) + $bits(join_p_t) + $bits(barrier_t);
     localparam DATAW = UUID_WIDTH + NW_WIDTH + NUM_LANES + PC_BITS + NR_BITS + 1 + WCTL_WIDTH + PID_WIDTH + 1 + 1 + DV_STACK_SIZEW;
 
     `UNUSED_VAR (execute_if.data.rs3_data)
@@ -39,7 +39,7 @@ module VX_wctl_unit import VX_gpu_pkg::*; #(
     tmc_t       tmc, tmc_r;
     wspawn_t    wspawn, wspawn_r;
     split_t     split, split_r;
-    join_t      sjoin, sjoin_r;
+    join_p_t    sjoin, sjoin_r;
     barrier_t   barrier, barrier_r;
 
     wire is_wspawn = (execute_if.data.op_type == INST_SFU_WSPAWN);
@@ -175,7 +175,8 @@ module VX_wctl_unit import VX_gpu_pkg::*; #(
     assign warp_ctl_if.tmc     = tmc_r;
     assign warp_ctl_if.wspawn  = wspawn_r;
     assign warp_ctl_if.split   = split_r;
-    assign warp_ctl_if.sjoin   = sjoin_r;
+    assign warp_ctl_if.sjoin.valid = sjoin_r.valid;
+    assign warp_ctl_if.sjoin.is_dvg = (sjoin_r.stack_ptr != dvstack_ptr);
     assign warp_ctl_if.barrier = barrier_r;
 
     for (genvar i = 0; i < NUM_LANES; ++i) begin : g_result_if

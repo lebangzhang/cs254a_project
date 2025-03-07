@@ -136,7 +136,7 @@ module VX_operands import VX_gpu_pkg::*; #(
         .NUM_INPUTS  (`NUM_OPCS),
         .NUM_OUTPUTS (1),
         .DATAW       (OPD_DATAW),
-        .ARBITER     ("R"),
+        .ARBITER     ("P"),
         .OUT_BUF     (3)
     ) output_arb (
         .clk       (clk),

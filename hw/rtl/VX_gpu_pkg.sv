@@ -398,8 +398,13 @@ package VX_gpu_pkg;
     } split_t;
 
     typedef struct packed {
-        logic valid;
+        logic                   valid;
         logic [DV_STACK_SIZEW-1:0] stack_ptr;
+    } join_p_t;
+
+    typedef struct packed {
+        logic                   valid;
+        logic                   is_dvg;
     } join_t;
 
     typedef struct packed {
