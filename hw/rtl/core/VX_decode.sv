@@ -25,6 +25,12 @@
     x``_v.ext = 0; \
     use_``x = 1
 
+`define USED_VREG(x) \
+    x``_v.id = ``x; \
+    x``_v.rtype = 2; \
+    x``_v.ext = 0; \
+    use_``x = 1
+
 module VX_decode import VX_gpu_pkg::*; #(
     parameter `STRING INSTANCE_ID = ""
 ) (
@@ -88,6 +94,19 @@ module VX_decode import VX_gpu_pkg::*; #(
     wire [12:0] b_imm   = {instr[31], instr[7], instr[30:25], instr[11:8], 1'b0};
     wire [20:0] jal_imm = {instr[31], instr[19:12], instr[20], instr[30:21], 1'b0};
 
+`ifdef EXT_V_ENABLE
+    wire [2:0] nf = instr[31:29];
+    wire mew = instr[28];
+    wire [1:0] mop = instr[27:26];
+    wire vm = instr[25];
+    
+    wire [5:0] func6 = instr[31:26];
+
+    wire [1:0] vset = instr[31:30];
+    wire [9:0] zimm = instr[29:20];
+
+`endif
+
     reg [INST_ALU_BITS-1:0] r_type;
     always @(*) begin
         case (func3)
@@ -139,6 +158,39 @@ module VX_decode import VX_gpu_pkg::*; #(
             3'h5: m_type = INST_M_DIVU;
             3'h6: m_type = INST_M_REM;
             3'h7: m_type = INST_M_REMU;
+        endcase
+    end
+`endif
+
+`ifdef EXT_V_ENABLE
+    reg ['INST_VPU_BITS-1:0] v_type;
+    always @(*) begin
+        case (func3)
+            3'd0,
+            3'd3,
+            3'd4: begin
+                case (func6)
+                    6'd0:  v_type = INST_OP_BITS'(INST_VPU_VADD);
+                    6'd2:  v_type = INST_OP_BITS'(INST_VPU_VSUB);
+                    6'd4:  v_type = INST_OP_BITS'(INST_VPU_VMINU);
+                    6'd5:  v_type = INST_OP_BITS'(INST_VPU_VMIN);
+                    6'd6:  v_type = INST_OP_BITS'(INST_VPU_VMAXU);
+                    6'd7:  v_type = INST_OP_BITS'(INST_VPU_VMAX);
+                    6'd9:  v_type = INST_OP_BITS'(INST_ALU_AND);
+                    6'd10: v_type = INST_OP_BITS'(INST_ALU_OR);
+                    6'd11: v_type = INST_OP_BITS'(INST_ALU_XOR);
+                    6'd24: v_type = INST_OP_BITS'(INST_VPU_VMSEQ);
+                    6'd25: v_type = INST_OP_BITS'(INST_VPU_VMSNE);
+                    6'd26: v_type = INST_OP_BITS'(INST_ALU_SLTU);
+                    6'd27: v_type = INST_OP_BITS'(INST_ALU_SLT);
+                    6'd28: v_type = INST_OP_BITS'(INST_VPU_VMSLEU);
+                    6'd29: v_type = INST_OP_BITS'(INST_VPU_VMSLE);
+                    6'd30: v_type = INST_OP_BITS'(INST_VPU_VMSGTU);
+                    6'd31: v_type = INST_OP_BITS'(INST_VPU_VMSGT);
+                    default: v_type = 'x;
+                endcase
+            end
+            default: v_type = 'x;
         endcase
     end
 `endif
@@ -329,7 +381,42 @@ module VX_decode import VX_gpu_pkg::*; #(
                     `USED_IREG (rd);
                 end
             end
-        `ifdef EXT_F_ENABLE
+        `ifdef EXT_V_ENABLE
+            INST_FL: begin
+                if(func3[2] == 1 || func3 == 0) begin
+                    ex_type = EX_LSU;
+                    op_type = INST_OP_BITS'({1'b0, func3});
+                    op_args.lsu.is_store = 0;
+                    op_args.lsu.is_float = opcode[2];
+                    op_args.lsu.offset = u_12;
+                    `USED_IREG (rs1);
+                    `USED_IREG (rd);
+                    rd_v.rtype = REG_TYPE_BITS'(opcode[2]);
+                end
+                else begin
+                    ex_type = EX_VPU;
+                    //TODO: op_type = [Figure out instruction numbering for load/store, may depend on mop, in which case, mop field for op_args.vpu can be removed]
+                    op_args.vpu.nf = nf;
+                    op_args.vpu.mop = mop;
+                    op_args.vpu.mew = mew;
+                    op_args.vpu.width = func3;
+
+                    `USED_IREG (rs1);
+                    `USED_VREG (rd);
+                    case (mop)
+                        2'b00: begin
+                            op_args.vpu.lusumop = rs2;
+                        end
+                        2'b10: begin
+                            `USED_IREG (rs2);
+                        end
+                        default: begin
+                            `USED_VREG (rs2);
+                        end
+                    endcase
+                end
+            end
+        `elsif EXT_F_ENABLE
             INST_FL,
         `endif
             INST_L: begin
@@ -344,7 +431,42 @@ module VX_decode import VX_gpu_pkg::*; #(
                 rd_v.rtype = REG_TYPE_BITS'(opcode[2]);
             `endif
             end
-        `ifdef EXT_F_ENABLE
+        `ifdef EXT_V_ENABLE
+            INST_FS: begin
+                if(func3[2] == 1 || func3 == 0) begin
+                    ex_type = EX_LSU;
+                    op_type = INST_OP_BITS'({1'b1, func3});
+                    op_args.lsu.is_store = 1;
+                    op_args.lsu.is_float = opcode[2];
+                    op_args.lsu.offset = s_imm;
+                    `USED_IREG (rs1);
+                    `USED_IREG (rs2);
+                    rs2_v.rtype = REG_TYPE_BITS'(opcode[2]);
+                end
+                else begin
+                    ex_type = EX_VPU;
+                    //TODO: op_type = [Figure out instruction numbering for load/store, may depend on mop, in which case, mop field for op_args.vpu can be removed]
+                    op_args.vpu.nf = nf;
+                    op_args.vpu.mop = mop;
+                    op_args.vpu.mew = mew;
+                    op_args.vpu.width = func3;
+
+                    `USED_IREG (rs1);
+                    `USED_VREG (rd);
+                    case (mop)
+                        2'b00: begin
+                            op_args.vpu.lusumop = rs2;
+                        end
+                        2'b10: begin
+                            `USED_IREG (rs2);
+                        end
+                        default: begin
+                            `USED_VREG (rs2);
+                        end
+                    endcase
+                end
+            end
+        `elsif EXT_F_ENABLE
             INST_FS,
         `endif
             INST_S: begin
@@ -513,6 +635,59 @@ module VX_decode import VX_gpu_pkg::*; #(
                     default:;
                 endcase
             end
+        `ifdef EXT_V_ENABLE
+            INST_V: begin
+                ex_type = EX_VPU;
+                op_type = v_type;
+                op_args.vpu.vm = vm;
+                
+                case (func3)
+                    3'd0,
+                    3'd1,
+                    3'd2: begin
+                        op_args.vpu.operand_type = OP_TYPE_VV;
+                        `USED_VREG (rs1);
+                        `USED_VREG (rs2);
+                        `USED_VREG (rd);
+                    end
+                    3'd3: begin
+                        op_args.vpu.operand_type = OP_TYPE_VI;
+                        op_args.vpu.use_imm = 1;
+                        op_args.vpu.imm = rs1;
+                        `USED_VREG (rs2);
+                        `USED_VREG (rd);
+                    end
+                    3'd4,
+                    3'd6: begin
+                        op_args.vpu.operand_type = OP_TYPE_VX;
+                        `USED_IREG (rs1);
+                        `USED_VREG (rs2);
+                        `USED_VREG (rd);
+                    end
+                    3'd5: begin
+                        op_args.vpu.operand_type = OP_TYPE_VF;
+                        `USED_FREG (rs1);
+                        `USED_VREG (rs2);
+                        `USED_VREG (rd);
+                    end
+                    3'd7: begin
+                        `USED_IREG (rd);
+                        if(vset == 2'b10) begin
+                            `USED_IREG (rs2);
+                            `USED_IREG (rs1);
+                        end
+                        else if(vset[1] == 1'b0) begin
+                            `USED_IREG (rs1);
+                        end
+                        else begin
+                            op_args.vpu.use_imm = 1;
+                            op_args.vpu.zimm = zimm;
+                            op_args.vpu.imm = rs1;
+                        end
+                    end
+                endcase
+            end
+        `endif
             default:;
         endcase
     end
