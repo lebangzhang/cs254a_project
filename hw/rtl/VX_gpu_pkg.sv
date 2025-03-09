@@ -717,6 +717,7 @@ package VX_gpu_pkg;
     endfunction
 
     function logic [NR_BITS-1:0] to_reg_number(input reg_idx_t reg_idx);
+        // To change "+" to or 
         return NR_BITS'(reg_idx.rtype * RV_REGS) + NR_BITS'(reg_idx.id);
     endfunction
 

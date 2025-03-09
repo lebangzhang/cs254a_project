@@ -67,6 +67,7 @@ module VX_vopc_unit import VX_gpu_pkg::*; #(
     reg [NUM_SRC_OPDS-1:0] opds_needed, opds_needed_n;
     reg [NUM_SRC_OPDS-1:0] opds_busy, opds_busy_n;
     reg [2:0] state, state_n;
+    reg state_reduce, state_reduce_n; //Added 
     wire output_ready;
 
     wire [`SIMD_WIDTH-1:0] simd_out;
@@ -111,9 +112,34 @@ module VX_vopc_unit import VX_gpu_pkg::*; #(
     // Check if is reduction 
     // NOTE: Need a better way of determining is_reduction_signal (if
     // permutation is also considered)
-    wire wb_datatype = writeback_if.data.rd[NR_BITS      - 1 : RV_REGS_BITS];
-    wire wb_rd_id    = writeback_if.data.rd[RV_REGS_BITS - 1 : 0]; 
-    wire is_reduction_signal = writeback_if.valid && _______; 
+
+    // FIFO 
+    // NOTE: To switch to a proper VX_fifo 
+    // TO FIX to a proper structure + Check for fullness ****************
+    VX_writeback_if.data wb_fifo_reduce [15:0];
+    logic [3:0] wb_fifo_head_ptr, wb_fifo_tail_ptr; 
+    logic [3:0] wb_fifo_write, wb_fifo_dequeue;
+    logic [UUID_WIDTH-1:0] wb_fifo_uuid, wb_fifo_uuid_prev;
+
+    always @(posedge clk) begin 
+        wb_fifo_uuid_prev <= wb_fifo_uuid;
+        wb_fifo_uuid      <= writeback_if.data.uuid;
+
+        if(reset) begin 
+            wb_fifo_head_ptr <= 0;
+            wb_fifo_tail_ptr <= 0;
+        end
+        else begin 
+            if(is_reduction_signal && (wb_fifo_uuid_prev != wb_fifo_uuid) ) begin 
+                wb_fifo_reduce [tail_ptr] <= writeback_if.data;
+                tail_ptr <= tail_ptr + 1;
+            end
+
+            if(wb_fifo_dequeue) begin 
+                head_ptr <= head_ptr + 1;
+            end
+        end 
+    end 
 
 
 
@@ -130,8 +156,9 @@ module VX_vopc_unit import VX_gpu_pkg::*; #(
 
     // ** SubModule 4 : Ready to Dispatch --> Dequeue from SB **
     // Don't Dequeue if is a writeback signal
-    wire dequeue = (state == STATE_DISPATCH) && output_ready; 
+    wire dequeue = (state == STATE_DISPATCH) && output_ready;
     assign staging_if.ready = dequeue && simd_eop;
+
 
 
    
@@ -148,29 +175,36 @@ module VX_vopc_unit import VX_gpu_pkg::*; #(
             end 
         end
     end
+
+    wire head = wb_fifo_reduce[head_ptr];
+    wire wb_datatype = writeback_if.data.rd[NR_BITS      - 1 : RV_REGS_BITS];
+    wire wb_rd_id    = writeback_if.data.rd[RV_REGS_BITS - 1 : 0]; 
+    wire is_reduction_signal = writeback_if.valid && _______; 
+
+    wire wb_fifo_empty = (head_ptr == tail_ptr);
     // Check if need to service
-    // TO FIX : This needs to be read from a FIFO instead of the signal directly
-    wire is_reduction_signal = _from_fifo_signal_;
-    wire reduction_service_required = is_reduction_signal && (reduction_counter[wb_rd_id] != '0); // Acts as an synchronous interupt request
-    wire state_switching; // From Dispatch -> Idle
+    wire reduction_service_required = (!wb_fifo_empty) && (reduction_counter[wb_rd_id] != '0)  
+
+
+
 
 
 
 
     // ** SubModule 6 : Only Get required src operands **
     // source registers from scoreboard 
-    // TO FIX ***********************************************
     wire [NUM_SRC_OPDS-1:0][NR_BITS-1:0] src_regs;
     assign src_regs = {rs3, rs2, rs1};
-    wire [NUM_SRC_OPDS-1:0] opds_to_fetch;
 
+    wire [NUM_SRC_OPDS-1:0] opds_to_fetch;
+    
     for (genvar i = 0; i < NUM_SRC_OPDS; ++i) begin : g_opds_to_fetch
         assign opds_to_fetch[i] = (staging_if.data.used_rs[i] && (src_regs[i] != 0));
     end
 
 
 
-    // ** SubModule 7 : FSM **
+    // ** SubModule 6 : FSM **
     // control state machine
     always @(*) begin
         state_n = state;
@@ -179,112 +213,61 @@ module VX_vopc_unit import VX_gpu_pkg::*; #(
 
         case (state)
         STATE_IDLE: begin
-
-            // Start of state
-            state_switching = 0;
-
-            if (reduction_service_required) begin 
-                opds_needed_n =
-                opds_busy_n   = 
-
-            end 
-            else if (staging_if.valid) begin
+            
+            if (staging_if.valid || reduction_service_required) begin
                 opds_needed_n = opds_to_fetch;
                 opds_busy_n = opds_to_fetch;
 
                 if (opds_to_fetch == 0) begin
                     state_n = STATE_DISPATCH;
                 end else begin
+                    // Note: reduction_service is guranteed to route here 
                     state_n = STATE_FETCH;
                 end
-
-
-                lane_id <= '0;
-                finished_collection <= '0;
             end
+
         end
 
         STATE_FETCH: begin
-
-
-            // Assume only Vector inputs for now  
-            /*
             if (vgpr_req_fire) begin
                 opds_needed_n[vgpr_if.req_data.opd_id] = 0;
             end
             if (vgpr_rsp_fire) begin
                 opds_busy_n[vgpr_if.rsp_data.opd_id] = 0;
             end
+            if (vopds_busy_n == 0) begin
+                state_n = STATE_DISPATCH;
+            end
+
+            // Commented out in case future need to read from scalar-rf
+            /*
+            if (gpr_req_fire) begin
+                opds_needed_n[gpr_if.req_data.opd_id] = 0;
+            end
+            if (gpr_rsp_fire) begin
+                opds_busy_n[gpr_if.rsp_data.opd_id] = 0;
+            end
             if (opds_busy_n == 0) begin
                 state_n = STATE_DISPATCH;
             end
-            */  
+            */
         end
 
         STATE_DISPATCH: begin
-
             if (output_ready) begin
-
-                if(lane_id == VLCOUNT) begin  
-                    finished_collection <= 1;
-                end 
-
                 if (simd_eop) begin
                     state_n = STATE_IDLE;
-
-                    // End of State
-                    state_switching = 1;
-
                 end else if (opds_to_fetch != 0) begin
                     opds_needed_n = opds_to_fetch;
                     opds_busy_n = opds_to_fetch;
                     state_n = STATE_FETCH;
                 end
             end
-
         end
         endcase
     end
 
-
-    // ** SubModule 7 : Operands to send to vrf ** 
-    wire [SRC_OPD_WIDTH-1:0] opd_id;
-    reg  [VL_WIDTH-1:0]      lane_id;
-    reg  vopd_fetch_valid;
-    reg  [NUM_SRC_OPDS-1:0][31:0] reg_id;
-    reg  finished_collection;
-
-    // Fetch Requests 
-    /*
-    assign vgpr_if.req_valid = vopd_fetch_valid; // When to turn this off?
-    assign vgpr_if.req_data.opd_id = opd_id;
-    assign vgpr_if.req_data.sid = simd_pid;
-    assign vgpr_if.req_data.wis = staging_if.data.wis; // Need to choose between reduction and scoreboard
-
-    assign vgpr_if.req_data.lane_id = lane_id;
-    assign vgpr_if.req_data.reg_id  = reg_id;
-    */ 
-
-    always @(*) begin 
-        // Check: Has been dispatch (can switch interfaces)
-        if(state_switching && reduction_service_required) begin 
-            // Interface from WB 
-        end 
-        else begin 
-            // Scoreboard Interface
-            vgpr_if.req_valid = vopd_fetch_valid; // When to turn this off?
-            vgpr_if.req_data.opd_id = opd_id;
-            vgpr_if.req_data.sid = simd_pid;
-            vgpr_if.req_data.wis = staging_if.data.wis; // Need to choose between reduction and scoreboard
-            vgpr_if.req_data.lane_id = lane_id;
-            vgpr_if.req_data.reg_id  = reg_id;
-        end 
-    end 
-
-    
-
-
-    // ** SubModule 8 : Operands to send requests to gprf **
+    // ** SubModule 7 : Operands to send requests to gprf (Note: actual sending is by FSM) **
     /*
     wire [SRC_OPD_WIDTH-1:0] opd_id;
     wire opd_fetch_valid;
@@ -304,15 +287,9 @@ module VX_vopc_unit import VX_gpu_pkg::*; #(
     assign gpr_if.req_data.wis = staging_if.data.wis;
     assign gpr_if.req_data.reg_id = src_regs[opd_id];
     */
- 
 
-    // ** SubModule 9  : Operand Fetch Response from vgpr **
-    /*
-    * TO COMPLETE
-    */
 
-    // ** SubModule 10 : Operands Fetch Response from gpr **
-    /*
+    // ** SubModule 8 : Operands Fetch Response **
     reg [NUM_SRC_OPDS-1:0][`SIMD_WIDTH-1:0][`XLEN-1:0] opd_values;
     always @(posedge clk) begin
         if (reset || dequeue) begin
@@ -325,7 +302,7 @@ module VX_vopc_unit import VX_gpu_pkg::*; #(
             end
         end
     end
-    */
+
     
 
     // ** SubModule : state machine update **
@@ -334,7 +311,6 @@ module VX_vopc_unit import VX_gpu_pkg::*; #(
             state <= STATE_IDLE;
             opds_needed <= '0;
             opds_busy <= '0;
-            
         end else begin
             state <= state_n;
             opds_needed <= opds_needed_n;
@@ -372,8 +348,6 @@ module VX_vopc_unit import VX_gpu_pkg::*; #(
     wire output_ready_w;
     assign output_ready = output_ready_w && ~war_dp_check;
     wire output_valid = (state == STATE_DISPATCH) && ~war_dp_check;
-    /*****************************************************************/ 
-
 
 
     // ** SubModule : NonZero Iterator (skip threads) **
@@ -385,7 +359,7 @@ module VX_vopc_unit import VX_gpu_pkg::*; #(
     ) simd_iter (
         .clk     (clk),
         .reset   (reset),
-        .valid_in(finished_collection),
+        .valid_in(staging_if.valid),
         .data_in (staging_if.data.tmask),
         .next    (dequeue),
         `UNUSED_PIN (valid_out),
