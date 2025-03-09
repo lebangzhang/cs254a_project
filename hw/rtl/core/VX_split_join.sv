@@ -83,10 +83,10 @@ module VX_split_join import VX_gpu_pkg::*; #(
         `UNUSED_VAR (wid)
         `UNUSED_VAR (stack_wid)
         assign join_valid = valid && sjoin.valid;
+        assign join_wid = wid;
         assign join_is_dvg = 0;
         assign join_is_else = 0;
-        assign join_wid = '0;
-        assign join_tmask = '0;
+        assign join_tmask = 1'b1;
         assign join_pc = '0;
         assign stack_ptr = '0;
     end

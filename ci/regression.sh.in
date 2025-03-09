@@ -201,6 +201,8 @@ config1()
 
     # warp/threads
     ./ci/blackbox.sh --driver=rtlsim --warps=1 --threads=1 --app=diverge
+    ./ci/blackbox.sh --driver=rtlsim --warps=2 --threads=1 --app=diverge
+    ./ci/blackbox.sh --driver=rtlsim --warps=1 --threads=2 --app=diverge
     ./ci/blackbox.sh --driver=rtlsim --warps=2 --threads=2 --app=diverge
     ./ci/blackbox.sh --driver=rtlsim --warps=2 --threads=8 --app=diverge
     ./ci/blackbox.sh --driver=rtlsim --warps=8 --threads=2 --app=diverge

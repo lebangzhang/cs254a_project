@@ -86,12 +86,26 @@ module VX_ipdom_stack import VX_gpu_pkg::*; #(
     wire [WIDTH-1:0] d0_r, d1_r;
     wire [BRAW_ADDRW-1:0] raddr, waddr;
 
-    if (`NUM_WARPS > 1) begin : g_wN
+    if (DEPTH > 1 && `NUM_WARPS > 1) begin : g_DW
         assign waddr = push ? {wr_ptr_w[wid], wid} : {rd_ptr_w[wid_r], wid_r};
         assign raddr = {rd_ptr_w[wid], wid};
-    end else begin : g_w0
+    end else if (DEPTH > 1) begin : g_D
+        `UNUSED_VAR (wid)
+        `UNUSED_VAR (wid_r)
         assign waddr = push ? wr_ptr_w : rd_ptr_w;
         assign raddr = rd_ptr_w;
+    end else if (`NUM_WARPS > 1) begin : g_W
+        `UNUSED_VAR (rd_ptr_w)
+        `UNUSED_VAR (wr_ptr_w)
+        assign waddr = push ? wid : wid_r;
+        assign raddr = 0;
+    end else begin : g_none
+        `UNUSED_VAR (rd_ptr_w)
+        `UNUSED_VAR (wr_ptr_w)
+        `UNUSED_VAR (wid)
+        `UNUSED_VAR (wid_r)
+        assign waddr = 0;
+        assign raddr = 0;
     end
 
     VX_dp_ram #(
