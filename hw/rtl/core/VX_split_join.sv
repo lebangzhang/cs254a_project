@@ -14,7 +14,8 @@
 `include "VX_define.vh"
 
 module VX_split_join import VX_gpu_pkg::*; #(
-    parameter `STRING INSTANCE_ID = ""
+    parameter `STRING INSTANCE_ID = "",
+    parameter OUT_REG = 0
 ) (
     input  wire                     clk,
     input  wire                     reset,
@@ -44,7 +45,7 @@ module VX_split_join import VX_gpu_pkg::*; #(
     VX_ipdom_stack #(
         .WIDTH (`NUM_THREADS + PC_BITS),
         .DEPTH (DV_STACK_SIZE),
-        .OUT_REG (1)
+        .OUT_REG (OUT_REG)
     ) ipdom_stack (
         .clk   (clk),
         .reset (reset),
@@ -62,7 +63,8 @@ module VX_split_join import VX_gpu_pkg::*; #(
 
     VX_pipe_register #(
         .DATAW  (1 + NW_WIDTH + 1),
-        .RESETW (1)
+        .RESETW (1),
+        .DEPTH  (OUT_REG)
     ) pipe_reg (
         .clk      (clk),
         .reset    (reset),

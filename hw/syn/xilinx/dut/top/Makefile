@@ -1,4 +1,4 @@
-PROJECT = vortex_afu
+PROJECT = VX_afu_wrap
 TOP_LEVEL_ENTITY = $(PROJECT)
 SRC_FILE = $(PROJECT).sv
 FPU_IP = 1

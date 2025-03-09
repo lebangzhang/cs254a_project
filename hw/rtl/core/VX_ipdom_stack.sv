@@ -32,89 +32,78 @@ module VX_ipdom_stack import VX_gpu_pkg::*; #(
     output wire             empty,
     output wire             full
 );
-    wire [`NUM_WARPS-1:0][ADDRW-1:0] rd_ptr, rd_ptr_n, wr_ptr;
-    wire [`NUM_WARPS-1:0]empty_s, full_s;
-    wire d_set_w;
+    localparam DATAW = 1 + WIDTH * 2;
 
-    wire pop_d;
-    wire [NW_WIDTH-1:0] wid_d;
+    wire [`NUM_WARPS-1:0][ADDRW-1:0] rd_ptr_w, wr_ptr_w;
+    wire [`NUM_WARPS-1:0] empty_w, full_w;
+    wire d_set_r;
 
-    `BUFFER_EX(pop_d, pop, 1'b1, 1, OUT_REG);
-    `BUFFER_EX(wid_d, wid, 1'b1, 1, OUT_REG);
+    wire pop_r;
+    wire [NW_WIDTH-1:0] wid_r;
+    `BUFFER_EX({pop_r, wid_r}, {pop, wid}, 1'b1, 1, OUT_REG);
 
     for (genvar i = 0; i < `NUM_WARPS; i++) begin : g_addressing
 
-        reg [ADDRW-1:0] rd_ptr_w, rd_ptr_n_w, wr_ptr_w;
-        reg empty_r_w, full_r_w;
+        reg [ADDRW-1:0] rd_ptr_r, wr_ptr_r;
+        reg empty_r, full_r;
 
-        wire pop_w = pop_d && (wid_d == i);
-        wire push_w = push && (wid == i);
+        wire push_s = push && (wid == i);
+        wire pop_s = pop_r && (wid_r == i);
 
-        always @(*) begin
-            rd_ptr_n_w = rd_ptr_w;
-            if (push_w) begin
-                rd_ptr_n_w = wr_ptr_w;
-            end else if (pop_w) begin
-                rd_ptr_n_w = rd_ptr_w - ADDRW'(d_set_w);
-            end
-        end
+        `RUNTIME_ASSERT(~(push_s && full_r), ("%t: runtime error: writing to a full stack!", $time));
+        `RUNTIME_ASSERT(~(pop_s && empty_r), ("%t: runtime error: reading an empty stack!", $time));
+        `RUNTIME_ASSERT(~(push_s && pop_s),  ("%t: runtime error: push and pop in same cycle not supported!", $time));
 
         always @(posedge clk) begin
             if (reset) begin
-                wr_ptr_w  <= '0;
-                empty_r_w <= 1;
-                full_r_w  <= 0;
-                rd_ptr_w  <= '0;
+                rd_ptr_r <= '0;
+                wr_ptr_r <= '0;
+                empty_r  <= 1;
+                full_r   <= 0;
             end else begin
-                if (push_w) begin
-                    wr_ptr_w  <= wr_ptr_w + ADDRW'(1);
-                    empty_r_w <= 0;
-                    full_r_w  <= (ADDRW'(DEPTH-1) == wr_ptr_w);
-                end else if (pop_w) begin
-                    wr_ptr_w  <= wr_ptr_w - ADDRW'(d_set_w);
-                    empty_r_w <= (rd_ptr_w == 0) && d_set_w;
-                    full_r_w  <= 0;
+                if (push_s) begin
+                    rd_ptr_r <= wr_ptr_r;
+                    wr_ptr_r <= wr_ptr_r + ADDRW'(1);
+                    empty_r  <= 0;
+                    full_r   <= (ADDRW'(DEPTH-1) == wr_ptr_r);
+                end else if (pop_s) begin
+                    rd_ptr_r <= rd_ptr_r - ADDRW'(d_set_r);
+                    wr_ptr_r <= wr_ptr_r - ADDRW'(d_set_r);
+                    empty_r  <= (rd_ptr_r == 0) && d_set_r;
+                    full_r   <= 0;
                 end
-                rd_ptr_w <= rd_ptr_n_w;
             end
         end
 
-        assign rd_ptr[i]   = rd_ptr_w;
-        assign rd_ptr_n[i] = rd_ptr_n_w;
-        assign wr_ptr[i]   = wr_ptr_w;
-        assign empty_s[i]  = empty_r_w;
-        assign full_s[i]   = full_r_w;
+        assign rd_ptr_w[i] = rd_ptr_r;
+        assign wr_ptr_w[i] = wr_ptr_r;
+        assign empty_w[i]  = empty_r;
+        assign full_w[i]   = full_r;
     end
 
-    `RUNTIME_ASSERT(~push || ~full, ("%t: runtime error: writing to a full stack!", $time));
-    `RUNTIME_ASSERT(~pop || ~empty, ("%t: runtime error: reading an empty stack!", $time));
-    `RUNTIME_ASSERT(~push || ~pop,  ("%t: runtime error: push and pop in same cycle not supported!", $time));
-
-    wire [WIDTH-1:0] d0, d1;
-
-    wire [WIDTH * 2:0] wdata = push ? {1'b0, q1, q0} : {1'b1, d1, d0};
+    wire [WIDTH-1:0] d0_r, d1_r;
 
     VX_dp_ram #(
-        .DATAW (1 + WIDTH * 2),
-        .SIZE (DEPTH * `NUM_WARPS),
-        .OUT_REG (OUT_REG),
+        .DATAW    (DATAW),
+        .SIZE     (DEPTH * `NUM_WARPS),
+        .OUT_REG  (OUT_REG),
         .RDW_MODE ("R")
     ) ipdom_store (
         .clk   (clk),
         .reset (reset),
         .read  (pop),
-        .write (push || pop_d),
+        .write (push || pop_r),
         .wren  (1'b1),
-        .waddr (push ? {wid, wr_ptr[wid]} : {wid_d, rd_ptr[wid_d]}),
-        .raddr ({wid, rd_ptr_n[wid]}),
-        .wdata (wdata),
-        .rdata ({d_set_w, d1, d0})
+        .waddr (push ? {wr_ptr_w[wid], wid} : {rd_ptr_w[wid_r], wid_r}),
+        .raddr ({rd_ptr_w[wid], wid}),
+        .wdata (push ? {1'b0, q1, q0} : {1'b1, d1_r, d0_r}),
+        .rdata ({d_set_r, d1_r, d0_r})
     );
 
-    assign d     = d_set_w ? d0 : d1;
-    assign d_set = ~d_set_w;
-    assign q_ptr = wr_ptr;
-    assign empty = empty_s[wid];
-    assign full  = full_s[wid];
+    assign d     = d_set_r ? d0_r : d1_r;
+    assign d_set = ~d_set_r;
+    assign q_ptr = wr_ptr_w;
+    assign empty = empty_w[wid];
+    assign full  = full_w[wid];
 
 endmodule

@@ -361,8 +361,15 @@ module VX_sp_ram #(
     reg [DATAW-1:0] ram [0:SIZE-1];
     `RAM_INITIALIZATION
 
-    always @(posedge clk) begin
-        `RAM_WRITE_WREN
+    if (WRENW != 1) begin : g_wren
+        always @(posedge clk) begin
+            `RAM_WRITE_WREN
+        end
+    end else begin : g_no_wren
+        `UNUSED_VAR (wren)
+        always @(posedge clk) begin
+            `RAM_WRITE_ALL
+        end
     end
 
     if (OUT_REG) begin : g_sync

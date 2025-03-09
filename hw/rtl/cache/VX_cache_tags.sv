@@ -88,7 +88,7 @@ module VX_cache_tags import VX_gpu_pkg::*; #(
         VX_sp_ram #(
             .DATAW (TAG_WIDTH),
             .SIZE  (`CS_LINES_PER_BANK),
-            .RDW_MODE ("W"),
+            .RDW_MODE ("R"),
             .RADDR_REG (1)
         ) tag_store (
             .clk   (clk),
@@ -100,10 +100,13 @@ module VX_cache_tags import VX_gpu_pkg::*; #(
             .wdata (line_wdata),
             .rdata (line_rdata)
         );
-    end
 
-    for (genvar i = 0; i < NUM_WAYS; ++i) begin : g_tag_matches
-        assign tag_matches[i] = read_valid[i] && (line_tag == read_tag[i]);
+        // Fill requests are always followed by MSHR replays that always hit the cache.
+        // We can use a Read-First block RAM with a fill bypass to resolve Read-During-Write hazards.
+        wire fill_bypass;
+        `BUFFER(fill_bypass, do_fill);
+
+        assign tag_matches[i] = (read_valid[i] && (line_tag == read_tag[i])) || fill_bypass;
     end
 
 endmodule

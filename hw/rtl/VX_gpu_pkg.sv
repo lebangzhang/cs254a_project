@@ -90,12 +90,6 @@ package VX_gpu_pkg;
     localparam MEM_REQ_FLAG_LOCAL =  2; // shoud be last since optional
     localparam MEM_FLAGS_WIDTH = (MEM_REQ_FLAG_LOCAL + `LMEM_ENABLED);
 
-    localparam VX_MEM_PORTS =           `L3_MEM_PORTS;
-    localparam VX_MEM_BYTEEN_WIDTH =    `L3_LINE_SIZE;
-    localparam VX_MEM_ADDR_WIDTH =      (`MEM_ADDR_WIDTH - `CLOG2(`L3_LINE_SIZE));
-    localparam VX_MEM_DATA_WIDTH =      (`L3_LINE_SIZE * 8);
-    localparam VX_MEM_TAG_WIDTH =       L3_MEM_TAG_WIDTH;
-
     localparam VX_DCR_ADDR_WIDTH = `VX_DCR_ADDR_BITS;
     localparam VX_DCR_DATA_WIDTH = 32;
 
@@ -649,6 +643,14 @@ package VX_gpu_pkg;
 `else
     localparam L3_MEM_TAG_WIDTH     = `CACHE_BYPASS_TAG_WIDTH(L3_NUM_REQS, `L3_MEM_PORTS, `L3_LINE_SIZE, L3_WORD_SIZE, L3_TAG_WIDTH);
 `endif
+
+    ///////////////////////////////////////////////////////////////////////////
+
+    localparam VX_MEM_PORTS =           `L3_MEM_PORTS;
+    localparam VX_MEM_BYTEEN_WIDTH =    `L3_LINE_SIZE;
+    localparam VX_MEM_ADDR_WIDTH =      (`MEM_ADDR_WIDTH - `CLOG2(`L3_LINE_SIZE));
+    localparam VX_MEM_DATA_WIDTH =      (`L3_LINE_SIZE * 8);
+    localparam VX_MEM_TAG_WIDTH =       L3_MEM_TAG_WIDTH;
 
     /////////////////////////////// Issue parameters //////////////////////////
 
