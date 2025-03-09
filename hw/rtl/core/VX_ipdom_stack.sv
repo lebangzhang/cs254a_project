@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-`include "VX_platform.vh"
+`include "VX_define.vh"
 
 module VX_ipdom_stack import VX_gpu_pkg::*; #(
     parameter WIDTH   = 1,
@@ -32,7 +32,9 @@ module VX_ipdom_stack import VX_gpu_pkg::*; #(
     output wire             empty,
     output wire             full
 );
-    localparam DATAW = 1 + WIDTH * 2;
+    localparam BRAM_DATAW = 1 + WIDTH * 2;
+    localparam BRAM_SIZE  = DEPTH * `NUM_WARPS;
+    localparam BRAW_ADDRW = `LOG2UP(BRAM_SIZE);
 
     wire [`NUM_WARPS-1:0][ADDRW-1:0] rd_ptr_w, wr_ptr_w;
     wire [`NUM_WARPS-1:0] empty_w, full_w;
@@ -82,10 +84,19 @@ module VX_ipdom_stack import VX_gpu_pkg::*; #(
     end
 
     wire [WIDTH-1:0] d0_r, d1_r;
+    wire [BRAW_ADDRW-1:0] raddr, waddr;
+
+    if (`NUM_WARPS > 1) begin : g_wN
+        assign waddr = push ? {wr_ptr_w[wid], wid} : {rd_ptr_w[wid_r], wid_r};
+        assign raddr = {rd_ptr_w[wid], wid};
+    end else begin : g_w0
+        assign waddr = push ? wr_ptr_w : rd_ptr_w;
+        assign raddr = rd_ptr_w;
+    end
 
     VX_dp_ram #(
-        .DATAW    (DATAW),
-        .SIZE     (DEPTH * `NUM_WARPS),
+        .DATAW    (BRAM_DATAW),
+        .SIZE     (BRAM_SIZE),
         .OUT_REG  (OUT_REG),
         .RDW_MODE ("R")
     ) ipdom_store (
@@ -94,8 +105,8 @@ module VX_ipdom_stack import VX_gpu_pkg::*; #(
         .read  (pop),
         .write (push || pop_r),
         .wren  (1'b1),
-        .waddr (push ? {wr_ptr_w[wid], wid} : {rd_ptr_w[wid_r], wid_r}),
-        .raddr ({rd_ptr_w[wid], wid}),
+        .waddr (waddr),
+        .raddr (raddr),
         .wdata (push ? {1'b0, q1, q0} : {1'b1, d1_r, d0_r}),
         .rdata ({d_set_r, d1_r, d0_r})
     );
