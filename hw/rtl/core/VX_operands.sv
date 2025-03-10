@@ -51,6 +51,20 @@ module VX_operands import VX_gpu_pkg::*; #(
     reg [`NUM_OPCS-1:0] select_opcs;
     always @(*) begin
         select_opcs = {`NUM_OPCS{~inorder_full[scoreboard_if.data.wis]}};
+        // LSU cannot handle consurent LD/ST instructions: use same collector
+        if (`NUM_OPCS > 1 && scoreboard_if.data.ex_type == EX_LSU) begin
+            // select collector 0
+            for (int i = 0; i < `NUM_OPCS; ++i) begin
+                if (i != 0) select_opcs[i] = 0;
+            end
+        end
+        // SFU cannot handle consurent WCTL instructions: use same collector
+        if (`NUM_OPCS > 1 && scoreboard_if.data.ex_type == EX_SFU) begin
+            // select collector 1
+            for (int i = 0; i < `NUM_OPCS; ++i) begin
+                if (i != 1) select_opcs[i] = 0;
+            end
+        end
     end
 
     VX_opc_if opc_if();
@@ -67,8 +81,8 @@ module VX_operands import VX_gpu_pkg::*; #(
         ) inorder_lock (
             .clk        (clk),
             .reset      (reset),
-            .aquire_en  (opc_fire),
-            .release_en (operands_fire),
+            .aquire_en  (opc_fire && opc_if.data.wis == i),
+            .release_en (operands_fire && operands_if.data.eop && operands_if.data.wis == i),
             .acquire_id (inorder_ticks[i]),
             .release_id (inorder_tocks[i]),
             .full       (inorder_full[i]),
