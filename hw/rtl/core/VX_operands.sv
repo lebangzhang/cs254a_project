@@ -36,40 +36,48 @@ module VX_operands import VX_gpu_pkg::*; #(
     VX_operands_if.master   operands_if
 );
     localparam NUM_OPDS  = NUM_SRC_OPDS + 1;
-    localparam SCB_DATAW = UUID_WIDTH + ISSUE_WIS_W + `NUM_THREADS + PC_BITS + EX_BITS + INST_OP_BITS + INST_ARGS_BITS + NUM_OPDS + (REG_IDX_BITS * NUM_OPDS);
+    localparam SCB_DATAW = UUID_WIDTH + ISSUE_WIS_W + `NUM_THREADS + PC_BITS + EX_BITS + INST_OP_BITS + INST_ARGS_BITS + NUM_OPDS + (REG_IDX_BITS * NUM_OPDS + OPC_INSN_BITS);
     localparam OPD_DATAW = UUID_WIDTH + ISSUE_WIS_W + SIMD_IDX_W + `SIMD_WIDTH + PC_BITS + EX_BITS + INST_OP_BITS + INST_ARGS_BITS + 1 + NR_BITS + (NUM_SRC_OPDS * `SIMD_WIDTH * `XLEN) + 1 + 1;
 
     VX_gpr_if per_opc_gpr_if[`NUM_OPCS]();
-    VX_scoreboard_if per_opc_scoreboard_if[`NUM_OPCS]();
+    VX_opc_if per_opc_if[`NUM_OPCS]();
     VX_operands_if per_opc_operands_if[`NUM_OPCS]();
 
-    wire [ISSUE_WIS_W-1:0] per_opc_pending_wis[`NUM_OPCS];
-    wire [NUM_REGS-1:0] per_opc_pending_regs[`NUM_OPCS];
+    wire [PER_ISSUE_WARPS-1:0][OPC_INSN_BITS-1:0] inorder_ticks, inorder_tocks;
+    wire [PER_ISSUE_WARPS-1:0] inorder_full;
 
     // collector selection
 
     reg [`NUM_OPCS-1:0] select_opcs;
     always @(*) begin
-        select_opcs = '1;
-        // LSU cannot handle out of order LD/ST instructions: use same collector
-        if (`NUM_OPCS > 1 && scoreboard_if.data.ex_type == EX_LSU) begin
-            // select collector 0
-            for (int i = 0; i < `NUM_OPCS; ++i) begin
-                if (i != 0) select_opcs[i] = 0;
-            end
-        end
-        // SFU cannot handle multiple inflight WCTL instructions
-        // CSR access should be ordered as well: use same collector
-        if (`NUM_OPCS > 1 && scoreboard_if.data.ex_type == EX_SFU) begin
-            // select collector 1
-            for (int i = 0; i < `NUM_OPCS; ++i) begin
-                if (i != 1) select_opcs[i] = 0;
-            end
-        end
+        select_opcs = {`NUM_OPCS{~inorder_full[scoreboard_if.data.wis]}};
+    end
+
+    VX_opc_if opc_if();
+    assign opc_if.valid = scoreboard_if.valid;
+    assign opc_if.data  = {scoreboard_if.data, inorder_ticks[scoreboard_if.data.wis]};
+    assign scoreboard_if.ready = opc_if.ready;
+
+    wire opc_fire = opc_if.valid && opc_if.ready;
+    wire operands_fire = operands_if.valid && operands_if.ready;
+
+    for (genvar i = 0; i < PER_ISSUE_WARPS; ++i) begin : g_inorder_lock
+        VX_ticket_lock #(
+            .N (OPC_INSN_COUNT)
+        ) inorder_lock (
+            .clk        (clk),
+            .reset      (reset),
+            .aquire_en  (opc_fire),
+            .release_en (operands_fire),
+            .acquire_id (inorder_ticks[i]),
+            .release_id (inorder_tocks[i]),
+            .full       (inorder_full[i]),
+            `UNUSED_PIN (empty)
+        );
     end
 
 `IGNORE_UNOPTFLAT_BEGIN
-    `AOS_TO_ITF (per_opc_scoreboard, per_opc_scoreboard_if, `NUM_OPCS, SCB_DATAW)
+    `AOS_TO_ITF (per_opc, per_opc_if, `NUM_OPCS, SCB_DATAW)
 `IGNORE_UNOPTFLAT_END
 
     VX_stream_arb #(
@@ -81,36 +89,24 @@ module VX_operands import VX_gpu_pkg::*; #(
     ) input_arb (
         .clk       (clk),
         .reset     (reset),
-        .valid_in  (scoreboard_if.valid),
-        .data_in   (scoreboard_if.data),
-        .ready_in  (scoreboard_if.ready),
-        .valid_out (per_opc_scoreboard_valid),
-        .data_out  (per_opc_scoreboard_data),
-        .ready_out (per_opc_scoreboard_ready & select_opcs),
+        .valid_in  (opc_if.valid),
+        .data_in   (opc_if.data),
+        .ready_in  (opc_if.ready),
+        .valid_out (per_opc_valid),
+        .data_out  (per_opc_data),
+        .ready_out (per_opc_ready & select_opcs),
         `UNUSED_PIN(sel_out)
     );
 
     for (genvar i = 0; i < `NUM_OPCS; ++i) begin : g_collectors
-        wire [`UP(`NUM_OPCS-1)-1:0][ISSUE_WIS_W-1:0] pending_wis_in;
-        wire [`UP(`NUM_OPCS-1)-1:0][NUM_REGS-1:0] pending_regs_in;
-
-        for (genvar j = 1; j < `NUM_OPCS; ++j) begin : g_pending_wis_in
-            localparam k = (i + j) % `NUM_OPCS;
-            assign pending_wis_in[j-1] = per_opc_pending_wis[k];
-            assign pending_regs_in[j-1] = per_opc_pending_regs[k];
-        end
-
         VX_opc_unit #(
             .INSTANCE_ID (`SFORMATF(("%s-collector%0d", INSTANCE_ID, i))),
             .ISSUE_ID (ISSUE_ID)
         ) opc_unit (
             .clk          (clk),
             .reset        (reset),
-            .pending_wis_in(pending_wis_in),
-            .pending_regs_in(pending_regs_in),
-            .pending_wis  (per_opc_pending_wis[i]),
-            .pending_regs (per_opc_pending_regs[i]),
-            .scoreboard_if(per_opc_scoreboard_if[i]),
+            .dep_id       (inorder_tocks),
+            .opc_if       (per_opc_if[i]),
             .gpr_if       (per_opc_gpr_if[i]),
             .operands_if  (per_opc_operands_if[i])
         );
