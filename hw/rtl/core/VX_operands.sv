@@ -51,16 +51,14 @@ module VX_operands import VX_gpu_pkg::*; #(
     reg [`NUM_OPCS-1:0] select_opcs;
     always @(*) begin
         select_opcs = {`NUM_OPCS{~inorder_full[scoreboard_if.data.wis]}};
-        // LSU cannot handle consurent LD/ST instructions: use same collector
+        // LSU cannot handle consurent LD/ST instructions: always send to collector 0
         if (`NUM_OPCS > 1 && scoreboard_if.data.ex_type == EX_LSU) begin
-            // select collector 0
             for (int i = 0; i < `NUM_OPCS; ++i) begin
                 if (i != 0) select_opcs[i] = 0;
             end
         end
-        // SFU cannot handle consurent WCTL instructions: use same collector
+        // SFU cannot handle consurent WCTL instructions: always send to collector 1
         if (`NUM_OPCS > 1 && scoreboard_if.data.ex_type == EX_SFU) begin
-            // select collector 1
             for (int i = 0; i < `NUM_OPCS; ++i) begin
                 if (i != 1) select_opcs[i] = 0;
             end
