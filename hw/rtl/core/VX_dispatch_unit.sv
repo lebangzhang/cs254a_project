@@ -41,7 +41,7 @@ module VX_dispatch_unit import VX_gpu_pkg::*; #(
     localparam ISSUE_W      = `LOG2UP(`ISSUE_WIDTH);
     localparam IN_DATAW     = UUID_WIDTH + ISSUE_WIS_W + SIMD_IDX_W + `SIMD_WIDTH + INST_OP_BITS + INST_ARGS_BITS + 1 + PC_BITS + NR_BITS + (NUM_SRC_OPDS * `SIMD_WIDTH * `XLEN) + 1 + 1;
     localparam OUT_DATAW    = UUID_WIDTH + NW_WIDTH + NUM_LANES + INST_OP_BITS + INST_ARGS_BITS + 1 + PC_BITS + NR_BITS + (NUM_SRC_OPDS * NUM_LANES * `XLEN) + GPID_WIDTH + 1 + 1;
-    localparam FANOUT_ENABLE= 1/*(`SIMD_WIDTH > (MAX_FANOUT + MAX_FANOUT /2))*/;
+    localparam FANOUT_ENABLE= (`SIMD_WIDTH > (MAX_FANOUT + MAX_FANOUT /2));
 
     localparam DATA_TMASK_OFF = IN_DATAW - (UUID_WIDTH + ISSUE_WIS_W + SIMD_IDX_W + `SIMD_WIDTH);
     localparam DATA_REGS_OFF = 1 + 1;
