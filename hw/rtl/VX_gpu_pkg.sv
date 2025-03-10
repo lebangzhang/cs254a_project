@@ -61,6 +61,9 @@ package VX_gpu_pkg;
     localparam OPC_BITS   = `CLOG2(`NUM_OPCS);
     localparam OPC_WIDTH  = `UP(OPC_BITS);
 
+    localparam OPC_INSN_COUNT = `NUM_OPCS * 2;
+    localparam OPC_INSN_BITS = `CLOG2(OPC_INSN_COUNT);
+
 `ifndef NDEBUG
 	localparam UUID_WIDTH = 44;
 `else
@@ -394,11 +397,6 @@ package VX_gpu_pkg;
     typedef struct packed {
         logic                   valid;
         logic [DV_STACK_SIZEW-1:0] stack_ptr;
-    } join_p_t;
-
-    typedef struct packed {
-        logic                   valid;
-        logic                   is_dvg;
     } join_t;
 
     typedef struct packed {

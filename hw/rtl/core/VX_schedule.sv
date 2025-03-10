@@ -285,7 +285,7 @@ module VX_schedule import VX_gpu_pkg::*; #(
 
     VX_split_join #(
         .INSTANCE_ID (`SFORMATF(("%s-splitjoin", INSTANCE_ID))),
-        .OUT_REG     (0)
+        .OUT_REG     (1)
     ) split_join (
         .clk        (clk),
         .reset      (reset),

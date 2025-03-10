@@ -14,21 +14,21 @@
 `include "VX_define.vh"
 
 module VX_ipdom_stack import VX_gpu_pkg::*; #(
-    parameter WIDTH   = 1,
-    parameter DEPTH   = 1,
-    parameter ADDRW   = `LOG2UP(DEPTH),
-    parameter OUT_REG = 0
+    parameter WIDTH = 1,
+    parameter DEPTH = 1,
+    parameter ADDRW = `LOG2UP(DEPTH)
 ) (
     input  wire             clk,
     input  wire             reset,
     input wire [NW_WIDTH-1:0] wid,
-    input  wire [WIDTH-1:0] q0,
-    input  wire [WIDTH-1:0] q1,
-    output wire [WIDTH-1:0] d,
-    output wire             d_set,
-    output wire [`NUM_WARPS-1:0][ADDRW-1:0] q_ptr,
+    input  wire [WIDTH-1:0] d0,
+    input  wire [WIDTH-1:0] d1,
+    input  wire [ADDRW-1:0] rd_ptr,
     input  wire             push,
     input  wire             pop,
+    output wire [WIDTH-1:0] q_val,
+    output wire             q_idx,
+    output wire [`NUM_WARPS-1:0][ADDRW-1:0] wr_ptr,
     output wire             empty,
     output wire             full
 );
@@ -36,21 +36,16 @@ module VX_ipdom_stack import VX_gpu_pkg::*; #(
     localparam BRAM_SIZE  = DEPTH * `NUM_WARPS;
     localparam BRAW_ADDRW = `LOG2UP(BRAM_SIZE);
 
-    wire [`NUM_WARPS-1:0][ADDRW-1:0] rd_ptr_w, wr_ptr_w;
+    wire [`NUM_WARPS-1:0][ADDRW-1:0] wr_ptr_w;
     wire [`NUM_WARPS-1:0] empty_w, full_w;
-    wire d_set_r;
-
-    wire pop_r;
-    wire [NW_WIDTH-1:0] wid_r;
-    `BUFFER_EX({pop_r, wid_r}, {pop, wid}, 1'b1, 1, OUT_REG);
 
     for (genvar i = 0; i < `NUM_WARPS; i++) begin : g_addressing
 
-        reg [ADDRW-1:0] rd_ptr_r, wr_ptr_r;
+        reg [ADDRW-1:0] wr_ptr_r;
         reg empty_r, full_r;
 
         wire push_s = push && (wid == i);
-        wire pop_s = pop_r && (wid_r == i);
+        wire pop_s = pop && (wid == i);
 
         `RUNTIME_ASSERT(~(push_s && full_r), ("%t: runtime error: writing to a full stack!", $time));
         `RUNTIME_ASSERT(~(pop_s && empty_r), ("%t: runtime error: reading an empty stack!", $time));
@@ -58,78 +53,71 @@ module VX_ipdom_stack import VX_gpu_pkg::*; #(
 
         always @(posedge clk) begin
             if (reset) begin
-                rd_ptr_r <= '0;
                 wr_ptr_r <= '0;
                 empty_r  <= 1;
                 full_r   <= 0;
             end else begin
                 if (push_s) begin
-                    rd_ptr_r <= wr_ptr_r;
                     wr_ptr_r <= wr_ptr_r + ADDRW'(1);
                     empty_r  <= 0;
                     full_r   <= (ADDRW'(DEPTH-1) == wr_ptr_r);
                 end else if (pop_s) begin
-                    rd_ptr_r <= rd_ptr_r - ADDRW'(d_set_r);
-                    wr_ptr_r <= wr_ptr_r - ADDRW'(d_set_r);
-                    empty_r  <= (rd_ptr_r == 0) && d_set_r;
+                    wr_ptr_r <= wr_ptr_r - ADDRW'(q_idx);
+                    empty_r  <= (rd_ptr == 0) && q_idx;
                     full_r   <= 0;
                 end
             end
         end
 
-        assign rd_ptr_w[i] = rd_ptr_r;
         assign wr_ptr_w[i] = wr_ptr_r;
         assign empty_w[i]  = empty_r;
         assign full_w[i]   = full_r;
     end
 
-    wire [WIDTH-1:0] d0_r, d1_r;
     wire [BRAW_ADDRW-1:0] raddr, waddr;
 
     if (DEPTH > 1 && `NUM_WARPS > 1) begin : g_DW
-        assign waddr = push ? {wr_ptr_w[wid], wid} : {rd_ptr_w[wid_r], wid_r};
-        assign raddr = {rd_ptr_w[wid], wid};
+        assign waddr = push ? {wr_ptr_w[wid], wid} : {rd_ptr, wid};
+        assign raddr = {rd_ptr, wid};
     end else if (DEPTH > 1) begin : g_D
         `UNUSED_VAR (wid)
-        `UNUSED_VAR (wid_r)
-        assign waddr = push ? wr_ptr_w : rd_ptr_w;
-        assign raddr = rd_ptr_w;
+        assign waddr = push ? wr_ptr_w : rd_ptr;
+        assign raddr = rd_ptr;
     end else if (`NUM_WARPS > 1) begin : g_W
-        `UNUSED_VAR (rd_ptr_w)
+        `UNUSED_VAR (rd_ptr)
         `UNUSED_VAR (wr_ptr_w)
-        assign waddr = push ? wid : wid_r;
+        assign waddr = push ? wid : wid;
         assign raddr = 0;
     end else begin : g_none
-        `UNUSED_VAR (rd_ptr_w)
+        `UNUSED_VAR (rd_ptr)
         `UNUSED_VAR (wr_ptr_w)
         `UNUSED_VAR (wid)
-        `UNUSED_VAR (wid_r)
         assign waddr = 0;
         assign raddr = 0;
     end
 
+    wire [WIDTH-1:0] q0, q1;
+
     VX_dp_ram #(
         .DATAW    (BRAM_DATAW),
         .SIZE     (BRAM_SIZE),
-        .OUT_REG  (OUT_REG),
         .RDW_MODE ("R"),
         .RADDR_REG(1)
     ) ipdom_store (
         .clk   (clk),
         .reset (reset),
         .read  (pop),
-        .write (push || pop_r),
+        .write (push || pop),
         .wren  (1'b1),
         .waddr (waddr),
         .raddr (raddr),
-        .wdata (push ? {1'b0, q1, q0} : {1'b1, d1_r, d0_r}),
-        .rdata ({d_set_r, d1_r, d0_r})
+        .wdata (push ? {1'b0, d1, d0} : {1'b1, q1, q0}),
+        .rdata ({q_idx, q1, q0})
     );
 
-    assign d     = d_set_r ? d0_r : d1_r;
-    assign d_set = ~d_set_r;
-    assign q_ptr = wr_ptr_w;
-    assign empty = empty_w[wid];
-    assign full  = full_w[wid];
+    assign q_val  = q_idx ? q0 : q1;
+    assign wr_ptr = wr_ptr_w;
+    assign empty  = empty_w[wid];
+    assign full   = full_w[wid];
 
 endmodule

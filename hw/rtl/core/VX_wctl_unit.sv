@@ -31,16 +31,16 @@ module VX_wctl_unit import VX_gpu_pkg::*; #(
     localparam LANE_BITS  = `CLOG2(NUM_LANES);
     localparam PID_BITS   = `CLOG2(`NUM_THREADS / NUM_LANES);
     localparam PID_WIDTH  = `UP(PID_BITS);
-    localparam WCTL_WIDTH = $bits(tmc_t) + $bits(wspawn_t) + $bits(split_t) + $bits(join_p_t) + $bits(barrier_t);
-    localparam DATAW = UUID_WIDTH + NW_WIDTH + NUM_LANES + PC_BITS + NR_BITS + 1 + WCTL_WIDTH + PID_WIDTH + 1 + 1 + DV_STACK_SIZEW;
+    localparam WCTL_WIDTH = $bits(tmc_t) + $bits(wspawn_t) + $bits(split_t) + $bits(join_t) + $bits(barrier_t);
+    localparam DATAW = UUID_WIDTH + NW_WIDTH + NUM_LANES + PC_BITS + NR_BITS + 1 + PID_WIDTH + 1 + 1 + DV_STACK_SIZEW;
 
     `UNUSED_VAR (execute_if.data.rs3_data)
 
-    tmc_t       tmc, tmc_r;
-    wspawn_t    wspawn, wspawn_r;
-    split_t     split, split_r;
-    join_p_t    sjoin, sjoin_r;
-    barrier_t   barrier, barrier_r;
+    tmc_t       tmc;
+    wspawn_t    wspawn;
+    split_t     split;
+    join_t      sjoin;
+    barrier_t   barrier;
 
     wire is_wspawn = (execute_if.data.op_type == INST_SFU_WSPAWN);
     wire is_tmc    = (execute_if.data.op_type == INST_SFU_TMC);
@@ -124,9 +124,6 @@ module VX_wctl_unit import VX_gpu_pkg::*; #(
     assign split.else_tmask = ntaken_tmask;
     assign split.next_pc    = execute_if.data.PC + PC_BITS'(2);
 
-    assign warp_ctl_if.dvstack_wid = execute_if.data.wid;
-    wire [DV_STACK_SIZEW-1:0] dvstack_ptr;
-
     // join
 
     assign sjoin.valid      = is_join;
@@ -156,6 +153,9 @@ module VX_wctl_unit import VX_gpu_pkg::*; #(
 
     // response
 
+    assign warp_ctl_if.dvstack_wid = execute_if.data.wid;
+    wire [DV_STACK_SIZEW-1:0] dvstack_ptr;
+
     VX_elastic_buffer #(
         .DATAW (DATAW),
         .SIZE  (2)
@@ -164,20 +164,24 @@ module VX_wctl_unit import VX_gpu_pkg::*; #(
         .reset     (reset),
         .valid_in  (execute_if.valid),
         .ready_in  (execute_if.ready),
-        .data_in   ({execute_if.data.uuid, execute_if.data.wid, execute_if.data.tmask, execute_if.data.PC, execute_if.data.rd, execute_if.data.wb, execute_if.data.pid, execute_if.data.sop, execute_if.data.eop, {tmc,   wspawn,   split,   sjoin,   barrier},   warp_ctl_if.dvstack_ptr}),
-        .data_out  ({result_if.data.uuid,  result_if.data.wid,  result_if.data.tmask,  result_if.data.PC,  result_if.data.rd,  result_if.data.wb,  result_if.data.pid,  result_if.data.sop,  result_if.data.eop,  {tmc_r, wspawn_r, split_r, sjoin_r, barrier_r}, dvstack_ptr}),
+        .data_in   ({execute_if.data.uuid, execute_if.data.wid, execute_if.data.tmask, execute_if.data.PC, execute_if.data.rd, execute_if.data.wb, execute_if.data.pid, execute_if.data.sop, execute_if.data.eop, warp_ctl_if.dvstack_ptr}),
+        .data_out  ({result_if.data.uuid,  result_if.data.wid,  result_if.data.tmask,  result_if.data.PC,  result_if.data.rd,  result_if.data.wb,  result_if.data.pid,  result_if.data.sop,  result_if.data.eop,  dvstack_ptr}),
         .valid_out (result_if.valid),
         .ready_out (result_if.ready)
     );
 
-    assign warp_ctl_if.valid   = result_if.valid && result_if.ready && result_if.data.eop;
-    assign warp_ctl_if.wid     = result_if.data.wid;
-    assign warp_ctl_if.tmc     = tmc_r;
-    assign warp_ctl_if.wspawn  = wspawn_r;
-    assign warp_ctl_if.split   = split_r;
-    assign warp_ctl_if.sjoin.valid = sjoin_r.valid;
-    assign warp_ctl_if.sjoin.is_dvg = (sjoin_r.stack_ptr != dvstack_ptr);
-    assign warp_ctl_if.barrier = barrier_r;
+    wire execute_fire = execute_if.valid && execute_if.ready;
+    wire wctl_valid = execute_fire && execute_if.data.eop;
+
+    VX_pipe_register #(
+        .DATAW (1 + NW_WIDTH + WCTL_WIDTH)
+    ) wctl_reg (
+        .clk      (clk),
+        .reset    (reset),
+        .enable   (1'b1),
+        .data_in  ({wctl_valid,        execute_if.data.wid, tmc,             wspawn,             split,             sjoin,             barrier}),
+        .data_out ({warp_ctl_if.valid, warp_ctl_if.wid,     warp_ctl_if.tmc, warp_ctl_if.wspawn, warp_ctl_if.split, warp_ctl_if.sjoin, warp_ctl_if.barrier})
+    );
 
     for (genvar i = 0; i < NUM_LANES; ++i) begin : g_result_if
         assign result_if.data.data[i] = `XLEN'(dvstack_ptr);

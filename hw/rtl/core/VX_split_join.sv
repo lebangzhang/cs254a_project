@@ -34,61 +34,73 @@ module VX_split_join import VX_gpu_pkg::*; #(
 );
     `UNUSED_SPARAM (INSTANCE_ID)
 
+    wire split_valid = valid && split.valid;
+    wire sjoin_valid = valid && sjoin.valid;
+
     if (NT_BITS != 0) begin : g_enable
-        wire [`NUM_WARPS-1:0][DV_STACK_SIZEW-1:0] ipdom_q_ptr;
+        wire [`NUM_WARPS-1:0][DV_STACK_SIZEW-1:0] ipdom_wr_ptr;
+        wire [`NUM_THREADS-1:0] ipdom_tmask;
+        wire [PC_BITS-1:0] ipdom_pc;
+        wire ipdom_idx;
 
-        wire [(`NUM_THREADS+PC_BITS)-1:0] ipdom_q0 = {split.then_tmask | split.else_tmask, PC_BITS'(0)};
-        wire [(`NUM_THREADS+PC_BITS)-1:0] ipdom_q1 = {split.else_tmask, split.next_pc};
+        wire [(`NUM_THREADS + PC_BITS)-1:0] ipdom_d0 = {split.then_tmask | split.else_tmask, PC_BITS'(0)};
+        wire [(`NUM_THREADS + PC_BITS)-1:0] ipdom_d1 = {split.else_tmask, split.next_pc};
 
-        wire ipdom_push = valid && split.valid && split.is_dvg;
-        wire ipdom_pop  = valid && sjoin.valid && sjoin.is_dvg;
+        wire sjoin_is_dvg = (sjoin.stack_ptr != ipdom_wr_ptr[wid]);
+
+        wire ipdom_push = split_valid && split.is_dvg;
+        wire ipdom_pop  = sjoin_valid && sjoin_is_dvg;
 
         VX_ipdom_stack #(
             .WIDTH (`NUM_THREADS + PC_BITS),
-            .DEPTH (DV_STACK_SIZE),
-            .OUT_REG (OUT_REG)
+            .DEPTH (DV_STACK_SIZE)
         ) ipdom_stack (
             .clk   (clk),
             .reset (reset),
             .wid   (wid),
-            .q0    (ipdom_q0),
-            .q1    (ipdom_q1),
-            .d     ({join_tmask, join_pc}),
-            .d_set (join_is_else),
-            .q_ptr (ipdom_q_ptr),
+            .d0    (ipdom_d0),
+            .d1    (ipdom_d1),
             .push  (ipdom_push),
             .pop   (ipdom_pop),
+            .rd_ptr(sjoin.stack_ptr),
+            .q_val ({ipdom_tmask, ipdom_pc}),
+            .q_idx (ipdom_idx),
+            .wr_ptr(ipdom_wr_ptr),
             `UNUSED_PIN (empty),
             `UNUSED_PIN (full)
         );
 
         VX_pipe_register #(
-            .DATAW  (1 + NW_WIDTH + 1),
+            .DATAW  (1 + NW_WIDTH + 1 +  1 + `NUM_THREADS + PC_BITS),
             .RESETW (1),
             .DEPTH  (OUT_REG)
         ) pipe_reg (
             .clk      (clk),
             .reset    (reset),
             .enable   (1'b1),
-            .data_in  ({valid && sjoin.valid, wid,      sjoin.is_dvg}),
-            .data_out ({join_valid,           join_wid, join_is_dvg})
+            .data_in  ({sjoin_valid, wid,      sjoin_is_dvg, ~ipdom_idx,   ipdom_tmask, ipdom_pc}),
+            .data_out ({join_valid,  join_wid, join_is_dvg,  join_is_else, join_tmask,  join_pc})
         );
 
-        assign stack_ptr = ipdom_q_ptr[stack_wid];
+        assign stack_ptr = ipdom_wr_ptr[stack_wid];
+
     end else begin : g_disable
+
         `UNUSED_VAR (clk)
         `UNUSED_VAR (reset)
         `UNUSED_VAR (split)
         `UNUSED_VAR (sjoin)
         `UNUSED_VAR (wid)
         `UNUSED_VAR (stack_wid)
-        assign join_valid = valid && sjoin.valid;
+        `UNUSED_VAR (split_valid)
+        assign join_valid = sjoin_valid;
         assign join_wid = wid;
         assign join_is_dvg = 0;
         assign join_is_else = 0;
         assign join_tmask = 1'b1;
         assign join_pc = '0;
         assign stack_ptr = '0;
+        
     end
 
 endmodule
