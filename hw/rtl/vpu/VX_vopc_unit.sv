@@ -33,10 +33,26 @@ module VX_vopc_unit import VX_gpu_pkg::*; #(
     output wire [ISSUE_WIS_W-1:0] pending_wis,
     output wire [NUM_REGS-1:0] pending_regs,
 
+
+    // Scoreboard Interface 
     VX_scoreboard_if.slave  scoreboard_if,
+
+    // Writeback Interface 
     VX_writeback_if.slave   writeback_if,
+    
+    /*
+    TO FIX
+    VX_writeback_if.slave   writeback_in_if,
+
+    VX_writeback_if.master   writeback_out_if, // -> To vgpr writeback interface  
+    */
+    // General Purpose Reg File
     VX_gpr_if.master        gpr_if,
+
+    // Vector Reg File 
     VX_vgpr_if.master       vgpr_if,
+
+    // To Dispatch Unit
     VX_operands_if.master   operands_if
 );
     `UNUSED_SPARAM (INSTANCE_ID)
@@ -50,9 +66,10 @@ module VX_vopc_unit import VX_gpu_pkg::*; #(
     localparam STATE_FETCH    = 1;
     localparam STATE_DISPATCH = 2;
 
+
+
     VX_scoreboard_if staging_if();
 
-    reg [NUM_SRC_OPDS-1:0] opds_needed, opds_needed_n;
     reg [NUM_SRC_OPDS-1:0] opds_busy, opds_busy_n;
     reg [2:0] state, state_n;
     wire output_ready;
@@ -61,6 +78,9 @@ module VX_vopc_unit import VX_gpu_pkg::*; #(
     wire [SIMD_IDX_W-1:0] simd_pid;
     wire simd_sop, simd_eop;
 
+
+    // ** SubModule 1 : Handle Scoreboard Interface **
+    // Just a pipeline buffer to hold outputs from SB
     VX_pipe_buffer #(
         .DATAW (SCB_DATAW)
     ) stanging_buf (
@@ -74,115 +94,399 @@ module VX_vopc_unit import VX_gpu_pkg::*; #(
         .ready_out(staging_if.ready)
     );
 
-    //wire enqueue = (state == STATE_IDLE) && staging_if.valid;
-    wire dequeue = (state == STATE_DISPATCH) && output_ready;
 
-    assign staging_if.ready = dequeue && simd_eop;
+    // Dest Register Number 
+    wire [NR_BITS-1:0] rd = to_reg_number(staging_if.data.rd);
 
+    // Assume: Only Vector Inputs 
+    // --> Assume: Collector Selection by voperands 
+    // --> Assume: No Permutation Insn 
+    wire [NR_BITS-1:0] rs1 = to_reg_number(staging_if.data.rd);
+    wire [NR_BITS-1:0] rs2 = to_reg_number(staging_if.data.rd);
+    wire [NR_BITS-1:0] rs3 = to_reg_number(staging_if.data.rd);
+
+    /*
+    wire is_reduction_instruction = staging_if.data.op_arg.vpu.is_reduction; 
+    */
+
+    /* 
+    // For reduction opc
+    always@(*)
+    if(staging_if.valid && staging_if.data.op_arg.vpu.is_reduction) begin 
+        then look at writeback ==> check if valid
+        check if staging PC ==> matches current instruction
+    end
+    */
+
+    // ** SubModule 2 : Handle Writeback Interface **
+    /*
+    // Check if is reduction 
+    // NOTE: Need a better way of determining is_reduction_signal (if
+    // permutation is also considered)
+
+    // Just check for program counter <---- *****
+    wire wb_datatype = writeback_if.data.rd[NR_BITS      - 1 : RV_REGS_BITS];
+    wire wb_rd_id    = writeback_if.data.rd[RV_REGS_BITS - 1 : 0]; 
+
+    // Rename: is_wb_reduction = (wb.data.PC == reduce_pc)
+    wire is_reduction_signal = writeback_if.valid && _______; 
+    */
+
+
+    // ** SubModule 3 : Request and Response fire signals ** 
+    // GP Reg File: Fire Request + Fire Response 
     wire gpr_req_fire = gpr_if.req_valid && gpr_if.req_ready;
     wire gpr_rsp_fire = gpr_if.rsp_valid;
 
-    wire [NR_BITS-1:0] rd  = to_reg_number(staging_if.data.rd);
-    wire [NR_BITS-1:0] rs1 = to_reg_number(staging_if.data.rs1);
-    wire [NR_BITS-1:0] rs2 = to_reg_number(staging_if.data.rs2);
-    wire [NR_BITS-1:0] rs3 = to_reg_number(staging_if.data.rs3);
+    // Vec Reg File: Fire Request + Fire Response 
+    wire vgpr_req_fire = vgpr_if.req_valid && vgpr_if.req_ready;
+    wire vgpr_rsp_fire = vgpr_if.rsp_valid;
 
+
+
+    // ** SubModule 4 : Dequeue Signals **
+
+    // dequeue       : True if a request is sent out to dispatch ==> synchronizes both state machines
+    // next_simd     : Special case of dequeue when last lane (for gpr) 
+    // last_dispatch : Special case of next_simd when eop 
+    wire dequeue       = (gp_state == STATE_DISPATH) && (v_state == STATE_DISPATCH) && output_ready; 
+    wire next_simd     = dequeue && (lane_counter == VLCOUNT); 
+    wire last_dispatch = next_simd && (simd_eop);
+
+
+    // Pop from staging buff
+    assign staging_if.ready = last_dispatch;
+
+
+   
+    // ** SubModule 5 : Writeback Reduction Servicing **
+    /*
+    // ** TO FIX UP 
+    // Reduction info 
+    reg [31:0][NUM_SRC_OPDS - 1 : 0] reduction_counter;
+    reg [31:0][NUM_SRC_OPDS - 1 : 0] reduction_src;
+
+    always @(posedge clk) begin 
+        if(reset) begin
+                reduction_counter[i]  <= '0;
+                reduction_src[i]      <= '0;
+            end 
+        end
+    end
+    */
+
+
+    // ** SubModule 6 : Only Get required src operands + Identify type **
     wire [NUM_SRC_OPDS-1:0][NR_BITS-1:0] src_regs;
     assign src_regs = {rs3, rs2, rs1};
 
-    wire [NUM_SRC_OPDS-1:0] opds_to_fetch;
-    for (genvar i = 0; i < NUM_SRC_OPDS; ++i) begin : g_opds_to_fetch
-        assign opds_to_fetch[i] = staging_if.data.used_rs[i] && (src_regs[i] != 0);
+    wire [NUM_SRC_OPDS-1:0][6-1:0] v_src_regs;
+    wire [NUM_SRC_OPDS-1:0][NR_BITS-1:0] gp_src_regs;
+
+    wire [NUM_SRC_OPDS-1:0] v_opds_to_fetch;
+    wire [NUM_SRC_OPDS-1:0] gp_opds_to_fetch;
+
+    wire [NUM_SRC_OPDS-1:0] v_opds_mask;
+    wire [NUM_SRC_OPDS-1:0] gp_opds_mask;
+    
+    // Differentiate based on operand type
+    for (genvar i = 0; i < NUM_SRC_OPDS; ++i) begin : g_opds_to_fetch 
+        always@(*) begin 
+
+            // TO FIX Vector Type to a param
+            if(src_regs[i][NR_BITS-1 : 6] == 2) begin 
+                v_src_regs[i]  = src_regs[i][5:0];
+                v_opds_to_fetch[i] = (staging_if.data.used_rs[i] && (src_regs[i] != 0));
+
+                v_opds_mask = 1;
+                gp_opds_mask = 0;
+
+            end else begin 
+                gp_src_regs[i] = src_regs[i];
+                gp_opds_to_fetch[i] = (staging_if.data.used_rs[i] && (src_regs[i] != 0));
+
+                v_opds_mask = 0;
+                gp_opds_mask = 1;
+            end
+        end
     end
 
-    // control state machine
+
+    // ** SubModule 8 : FSM for gprf **
+    reg [2:0] gp_state, gp_state_n;
+    reg [NUM_SRC_OPDS-1:0] gp_opds_needed, gp_opds_needed_n;
+    reg [NUM_SRC_OPDS-1:0] gp_opds_busy, gp_opds_busy_n;
+
+
     always @(*) begin
-        state_n = state;
-        opds_needed_n = opds_needed;
-        opds_busy_n = opds_busy;
-        case (state)
-        STATE_IDLE: begin
+        gp_state_n = gp_state;
+        gp_opds_needed_n = gp_opds_needed;
+        gp_opds_busy_n = gp_opds_needed;
+
+        case (gp_state) 
+
+        STATE_IDLE: begin    
             if (staging_if.valid) begin
-                opds_needed_n = opds_to_fetch;
-                opds_busy_n = opds_to_fetch;
-                if (opds_to_fetch == 0) begin
-                    state_n = STATE_DISPATCH;
+                gp_opds_needed_n = gp_opds_to_fetch;
+                gp_opds_busy_n = gp_opds_to_fetch;
+                    
+                if (gp_opds_to_fetch == 0) begin
+                    gp_state_n = STATE_DISPATCH;
                 end else begin
-                    state_n = STATE_FETCH;
+                    gp_state_n = STATE_FETCH;
                 end
             end
         end
+
         STATE_FETCH: begin
             if (gpr_req_fire) begin
-                opds_needed_n[gpr_if.req_data.opd_id] = 0;
+                gp_opds_needed_n[gpr_if.req_data.opd_id] = 0;
             end
             if (gpr_rsp_fire) begin
-                opds_busy_n[gpr_if.rsp_data.opd_id] = 0;
+                gp_opds_busy_n[gpr_if.rsp_data.opd_id] = 0;
             end
-            if (opds_busy_n == 0) begin
-                state_n = STATE_DISPATCH;
+
+            if (gp_opds_busy_n == 0) begin
+                gp_state_n = STATE_DISPATCH;
             end
         end
+            
         STATE_DISPATCH: begin
-            if (output_ready) begin
-                if (simd_eop) begin
-                    state_n = STATE_IDLE;
-                end else if (opds_to_fetch != 0) begin
-                    opds_needed_n = opds_to_fetch;
-                    opds_busy_n = opds_to_fetch;
-                    state_n = STATE_FETCH;
-                end
-            end
+            if (output_ready) begin 
+
+                if (last_dispatch) begin 
+                    gp_state_n = STATE_IDLE;
+
+                end else if ( (next_simd) && (gp_opds_to_fetch != 0)  )begin 
+                    gp_opds_needed_n = gp_opds_to_fetch;
+                    gp_opds_busy_n   = gp_opds_to_fetch;
+                    gp_state_n = STATE_FETCH; 
+                end 
+
+            end 
         end
         endcase
     end
 
-    wire [SRC_OPD_WIDTH-1:0] opd_id;
-    wire opd_fetch_valid;
+
+    // ** SubModule 9 : FSM for vrf **
+    reg [2:0] v_state, v_state_n;
+    reg [NUM_SRC_OPDS-1:0] v_opds_needed, v_opds_needed_n;
+    reg [NUM_SRC_OPDS-1:0] v_opds_busy, v_opds_busy_n;
+
+    // TO FIX: NEED TO KNOW ACTUAL SIZE 
+    reg ext_counter, ext_counter_n;
+    reg [VL_WIDTH-1:0] lane_counter, lane_counter_n;
+
+    always @(*) begin
+        v_state_n = v_state;
+        v_opds_needed_n = v_opds_needed;
+        v_opds_busy_n = v_opds_needed;
+
+        case (v_state)
+        STATE_IDLE: begin
+           
+            if (staging_if.valid) begin 
+                v_opds_needed_n = v_opds_to_fetch;
+                v_opds_busy_n = v_opds_to_fetch;
+
+                lane_counter = 0;
+                    
+                if (v_opds_to_fetch == 0) begin
+                    v_state_n = STATE_DISPATCH;
+                end else begin
+                    v_state_n = STATE_FETCH;
+                end
+            end
+        end
+
+        STATE_FETCH: begin
+            if (vgpr_req_fire) begin
+                v_opds_needed_n[vgpr_if.req_data.opd_id] = 0;
+            end
+            if (vgpr_rsp_fire) begin
+                v_opds_busy_n[vgpr_if.rsp_data.opd_id] = 0;
+            end
+            if (v_opds_busy_n == 0) begin
+                v_state_n = STATE_DISPATCH;
+            end
+        end
+
+        STATE_DISPATCH: begin
+
+            if(output_ready) begin 
+
+                // Last Packet + Last Lane 
+                if (last_dispatch) begin 
+                    v_state_n = STATE_IDLE;
+
+                end else if (dequeue) begin 
+
+                    // Get Next Lane 
+                    if(lane_counter == VLCOUNT) begin 
+                        lane_counter_n = '0; 
+                    end else begin 
+                        lane_counter_n = lane_counter + 1;
+                    end 
+                    
+                    if (v_opds_to_fetch != 0) begin 
+                        v_opds_needed_n = v_opds_to_fetch;
+                        v_opds_busy_n   = v_opds_to_fetch;
+                        v_state_n = STATE_FETCH;
+                    end 
+                end 
+
+            end 
+        end
+        endcase
+    end
+
+
+
+    // For the following sections
+    reg [NUM_SRC_OPDS-1:0][`SIMD_WIDTH-1:0][`XLEN-1:0] overall_opd_values;
+
+    // ** SubModule 10 : Control to gprf **
+    
+    wire [SRC_OPD_WIDTH-1:0] gp_opd_id;
+    wire gp_opd_fetch_valid;
 
     VX_priority_encoder #(
         .N (NUM_SRC_OPDS)
     ) opd_id_sel (
-        .data_in   (opds_needed),
-        .index_out (opd_id),
-        .valid_out (opd_fetch_valid),
+        .data_in   (gp_opds_needed),
+        .index_out (gp_opd_id),
+        .valid_out (gp_opd_fetch_valid),
         `UNUSED_PIN (onehot_out)
     );
 
     // operands fetch request
-    assign gpr_if.req_valid = opd_fetch_valid;
-    assign gpr_if.req_data.opd_id = opd_id;
+    assign gpr_if.req_valid = gp_opd_fetch_valid;
+    assign gpr_if.req_data.opd_id = gp_opd_id;
+
     assign gpr_if.req_data.sid = simd_pid;
     assign gpr_if.req_data.wis = staging_if.data.wis;
-    assign gpr_if.req_data.reg_id = src_regs[opd_id];
+    
+    assign gpr_if.req_data.reg_id = gp_src_regs[opd_id];
+
+
 
     // operands fetch response
-    reg [NUM_SRC_OPDS-1:0][`SIMD_WIDTH-1:0][`XLEN-1:0] opd_values;
     always @(posedge clk) begin
-        if (reset || dequeue) begin
+
+        if (reset || next_simd) begin
             for (integer i = 0; i < NUM_SRC_OPDS; ++i) begin
-                opd_values[i] <= '0;
+                if(gp_opds_mask[i] == 1) begin 
+                    overall_opd_values[i] <= '0;
+                end 
             end
+
         end else begin
             if (gpr_rsp_fire) begin
-                opd_values[gpr_if.rsp_data.opd_id] <= gpr_if.rsp_data.data;
+                overall_opd_values[gpr_if.rsp_data.opd_id] <= gpr_if.rsp_data.data;
             end
         end
     end
 
-    // state machine update
+
+
+    /*
+    // Accumulates Partial Writes from WB interface (for reduction)
+    for (genvar i = 0; i < SIMD_WIDTH; i++) begin 
+
+        if(wb_if.tmask[simd_id * SIMD_WIDTH + i] == 1) begin 
+           temp_data[i] = wb_if.data.data[simd_id * SIMD_WIDTH + i];
+           temp_simd[i] = 1;
+        end 
+    end 
+
+    always@(*) begin 
+        if( 1 == &temp_simd ) begin 
+            // Got all temp data
+            // Start issue next addition
+        end 
+    end
+    */
+
+
+    // ** SubModule 11 : Operand Fetch Response from vgpr **
+    wire [SRC_OPD_WIDTH-1:0] v_opd_id;
+    wire v_opd_fetch_valid;
+
+    VX_priority_encoder #(
+        .N (NUM_SRC_OPDS)
+    ) opd_id_sel (
+        .data_in   (v_opds_needed),
+        .index_out (v_opd_id),
+        .valid_out (v_opd_fetch_valid),
+        `UNUSED_PIN (onehot_out)
+    );
+
+    // operands fetch request
+    assign vgpr_if.req_valid = v_opd_fetch_valid;
+    assign vgpr_if.req_data.opd_id = v_opd_id;
+   
+    assign vgpr_if.req_data.sid = simd_pid;
+    assign vgpr_if.req_data.wis = staging_if.data.wis;
+
+    assign vgpr_if.req_data.lane_id = lane_counter;
+    assign vgpr_if.req_data.reg_id = v_src_regs[v_opd_id];
+
+    // operands fetch response
     always @(posedge clk) begin
-        if (reset) begin
-            state <= STATE_IDLE;
-            opds_needed <= '0;
-            opds_busy <= '0;
+
+        // Note: dequeue means alrd sent out to dispatch
+        if (reset || dequeue) begin
+            for (integer i = 0; i < NUM_SRC_OPDS; ++i) begin
+                
+                if(v_opds_mask[i] == 1) begin 
+                    overall_opd_values[i] <= '0;
+                end 
+                
+            end
         end else begin
-            state <= state_n;
-            opds_needed <= opds_needed_n;
-            opds_busy <= opds_busy_n;
+            if (vgpr_rsp_fire) begin
+                overall_opd_values[vgpr_if.rsp_data.opd_id] <= vgpr_if.rsp_data.data;
+            end
         end
     end
 
+
+
+
+    // ** SubModule 12 : state machine update **
+    // ******************
+    always @(posedge clk) begin
+        if (reset) begin
+            gp_state <= STATE_IDLE;
+            v_state  <= STATE_IDLE;
+
+            gp_opds_needed <= '0;
+            gp_opds_busy <= '0;
+
+            v_opds_needed <= '0;
+            v_opds_busy <= '0;
+            
+        end else begin
+            
+            gp_state <= gp_state_n;
+            v_state <= v_state_n;
+
+
+            gp_opds_needed <= gp_opds_needed_n;
+            gp_opds_busy <= gp_opds_busy_n;
+
+            v_opds_needed <= v_opds_needed_n;
+            v_opds_busy <= v_opds_busy_n;
+
+        end
+    end
+
+
+
+
+    // TO LEAVE AS IT IS **************************************************
+    // TO ADD FOR REDUCTION UNIT 
     // output pending reqs
     assign pending_wis = staging_if.data.wis;
     reg [NUM_REGS-1:0] pending_regs_r;
@@ -206,11 +510,16 @@ module VX_vopc_unit import VX_gpu_pkg::*; #(
     end
     wire war_dp_check = staging_if.data.wb && (other_pending_regs[rd] != 0);
 
-    wire output_ready_w;
+    /*****************************************************************/ 
+    // Set Ready to dispatch signal 
     assign output_ready = output_ready_w && ~war_dp_check;
-    wire output_valid = (state == STATE_DISPATCH) && ~war_dp_check;
+    wire output_valid = (gp_state == STATE_DISPATCH) && (v_state == STATE_DISPATCH) && ~war_dp_check;
 
+
+
+    // ** SubModule : NonZero Iterator (skip threads) **
     // simd iterator
+    // NOT SURE ABOUT THIS *****************
     VX_nz_iterator #(
         .DATAW   (`SIMD_WIDTH),
         .N       (SIMD_COUNT),
@@ -218,17 +527,18 @@ module VX_vopc_unit import VX_gpu_pkg::*; #(
     ) simd_iter (
         .clk     (clk),
         .reset   (reset),
-        .valid_in(staging_if.valid),
+        .valid_in(finished_collection), // Need to fix 
         .data_in (staging_if.data.tmask),
-        .next    (dequeue),
+        .next    (next_simd),
         `UNUSED_PIN (valid_out),
         .data_out(simd_out),
         .pid     (simd_pid),
         .sop     (simd_sop),
-        .eop     (simd_eop)
+        .eop     (simd_eop) 
     );
 
-    // instruction dispatch
+
+    // ** SubModule : Send to Dispatch **
     VX_elastic_buffer #(
         .DATAW   (OUT_DATAW),
         .SIZE    (0),
@@ -240,6 +550,8 @@ module VX_vopc_unit import VX_gpu_pkg::*; #(
         .data_in  ({
             staging_if.data.uuid,
             staging_if.data.wis,
+
+            // TO FIX: MIGHT NEED TO MODIFY
             simd_pid,
             simd_out,
             staging_if.data.PC,
@@ -248,11 +560,12 @@ module VX_vopc_unit import VX_gpu_pkg::*; #(
             staging_if.data.op_args,
             staging_if.data.wb,
             rd,
-            opd_values[0],
-            opd_values[1],
-            opd_values[2],
+            overall_opd_values[0],
+            overall_opd_values[1],
+            overall_opd_values[2],
             simd_sop,
-            simd_eop
+
+            last_dispatch 
         }),
         .ready_in (output_ready_w),
         .valid_out(operands_if.valid),
@@ -260,6 +573,9 @@ module VX_vopc_unit import VX_gpu_pkg::*; #(
         .ready_out(operands_if.ready)
     );
 
+
+
+    // NOT YET FIX *******************
     `ifdef DBG_TRACE_PIPELINE
     always @(posedge clk) begin
         if (scoreboard_if.valid && scoreboard_if.ready) begin

@@ -48,8 +48,8 @@ module VX_mem_unit import VX_gpu_pkg::*; #(
 
     for (genvar i = 0; i < `NUM_LSU_BLOCKS; ++i) begin : g_lmem_switches
         VX_lmem_switch #(
-            .REQ0_OUT_BUF (1),
-            .REQ1_OUT_BUF (0),
+            .GLOBAL_OUT_BUF(1),
+            .LOCAL_OUT_BUF(1),
             .RSP_OUT_BUF  (1),
             .ARBITER      ("P")
         ) lmem_switch (

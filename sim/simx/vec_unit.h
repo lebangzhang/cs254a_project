@@ -12,6 +12,16 @@ class Core;
 
 class VecUnit : public SimObject<VecUnit> {
 public:
+  struct TraceData : public ITraceData {
+    using Ptr = std::shared_ptr<TraceData>;
+    std::vector<std::vector<mem_addr_size_t>> mem_addrs;
+    TraceData(uint32_t num_lanes) : mem_addrs(num_lanes) {
+        for (uint32_t i = 0; i < num_lanes; ++i) {
+            mem_addrs.at(i).reserve(4);
+        }
+    }
+  };
+
   struct PerfStats {
     uint64_t reads;
     uint64_t writes;
@@ -33,6 +43,9 @@ public:
       return *this;
     }
   };
+
+  std::vector<SimPort<MemReq>> MemReqs;
+  std::vector<SimPort<MemRsp>> MemRsps;
 
   SimPort<instr_trace_t*> Input;
   SimPort<instr_trace_t*> Output;

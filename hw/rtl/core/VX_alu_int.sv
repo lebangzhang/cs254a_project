@@ -177,7 +177,8 @@ module VX_alu_int import VX_gpu_pkg::*; #(
     wire is_less  = br_result[0];
     wire is_equal = br_result[1];
 
-    wire br_enable = is_br_op_r && result_if.valid && result_if.ready && result_if.data.eop;
+    wire result_fire = result_if.valid && result_if.ready;
+    wire br_enable = result_fire && is_br_op_r && result_if.data.eop;
     wire br_taken = ((is_br_less ? is_less : is_equal) ^ is_br_neg) | is_br_static;
     wire [PC_BITS-1:0] br_dest = is_br_static ? br_result[1 +: PC_BITS] : cbr_dest_r;
     wire [NW_WIDTH-1:0] br_wid;

@@ -78,7 +78,7 @@ module VX_voperands import VX_gpu_pkg::*; #(
         .NUM_OUTPUTS (`NUM_OPCS),
         .DATAW       (SCB_DATAW),
         .ARBITER     ("P"),
-        .OUT_BUF     (0)
+        .OUT_BUF     (0) // If set to 3 --> Becomes elastic Buffer
     ) input_arb (
         .clk       (clk),
         .reset     (reset),
@@ -90,6 +90,7 @@ module VX_voperands import VX_gpu_pkg::*; #(
         .ready_out (per_opc_scoreboard_ready & select_opcs),
         `UNUSED_PIN(sel_out)
     );
+
 
     for (genvar i = 0; i < `NUM_OPCS; ++i) begin : g_collectors
         wire [`UP(`NUM_OPCS-1)-1:0][ISSUE_WIS_W-1:0] pending_wis_in;
@@ -149,6 +150,13 @@ module VX_voperands import VX_gpu_pkg::*; #(
         .writeback_if (writeback_if),
         .gpr_if       (per_opc_gpr_if)
     );
+
+
+
+    // Need Crossbar here
+
+
+
 
     VX_vgpr_unit #(
         .INSTANCE_ID (`SFORMATF(("%s-vgpr", INSTANCE_ID))),

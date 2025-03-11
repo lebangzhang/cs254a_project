@@ -19,7 +19,7 @@ interface VX_gpr_if import VX_gpu_pkg::*; ();
         logic [SRC_OPD_WIDTH-1:0]   opd_id;
         logic [ISSUE_WIS_W-1:0]     wis;
         logic [SIMD_IDX_W-1:0]      sid;
-        logic [NR_BITS-1:0]         reg_id;
+        logic [NR_BITS-1:0]         reg_id; // Note: will be fixed in the future
     } req_data_t;
 
     typedef struct packed {
