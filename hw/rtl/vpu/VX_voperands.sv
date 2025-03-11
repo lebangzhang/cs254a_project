@@ -78,7 +78,7 @@ module VX_voperands import VX_gpu_pkg::*; #(
         .NUM_OUTPUTS (`NUM_OPCS),
         .DATAW       (SCB_DATAW),
         .ARBITER     ("P"),
-        .OUT_BUF     (0)
+        .OUT_BUF     (0) // If set to 3 --> Becomes elastic Buffer
     ) input_arb (
         .clk       (clk),
         .reset     (reset),
@@ -90,13 +90,6 @@ module VX_voperands import VX_gpu_pkg::*; #(
         .ready_out (per_opc_scoreboard_ready & select_opcs),
         `UNUSED_PIN(sel_out)
     );
-
-
-    // NEED TO FIX ***** NOT TOO SURE 
-    // Adding new interface to filter for reduce operations (so it doesn't get written into regfile)
-    VX_writeback_if writeback_if_filter();
-    // How to connect 2 interfaces together?
-
 
 
     for (genvar i = 0; i < `NUM_OPCS; ++i) begin : g_collectors
@@ -136,7 +129,7 @@ module VX_voperands import VX_gpu_pkg::*; #(
                 .pending_wis  (per_opc_pending_wis[i]),
                 .pending_regs (per_opc_pending_regs[i]),
                 .scoreboard_if(per_opc_scoreboard_if[i]),
-                .writeback_if (writeback_if_filter),
+                .writeback_if (writeback_if),
                 .gpr_if       (per_opc_gpr_if[i]),
                 .vgpr_if      (vgpr_if),
                 .operands_if  (per_opc_operands_if[i])
@@ -154,7 +147,7 @@ module VX_voperands import VX_gpu_pkg::*; #(
     `ifdef PERF_ENABLE
         .perf_stalls  (perf_stalls),
     `endif
-        .writeback_if (writeback_if_filter),
+        .writeback_if (writeback_if),
         .gpr_if       (per_opc_gpr_if)
     );
 
@@ -175,7 +168,7 @@ module VX_voperands import VX_gpu_pkg::*; #(
     `ifdef PERF_ENABLE
         `UNUSED_PIN (perf_stalls),
     `endif
-        .writeback_if (writeback_if_filter),
+        .writeback_if (writeback_if),
         .vgpr_if      (vgpr_if)
     );
 

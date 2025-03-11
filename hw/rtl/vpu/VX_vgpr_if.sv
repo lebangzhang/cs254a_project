@@ -20,12 +20,14 @@ interface VX_vgpr_if import VX_gpu_pkg::*; ();
         logic [ISSUE_WIS_W-1:0]     wis;
         logic [SIMD_IDX_W-1:0]      sid;
         logic [VL_WIDTH-1:0]        lane_id;
-        logic [NUM_SRC_OPDS-1:0][31:0] reg_id;
+        // logic [NUM_SRC_OPDS-1:0][5:0] reg_id;
+        logic [5:0] reg_id;
     } req_data_t;
 
     typedef struct packed {
         logic [1:0] opd_id;
-        logic [NUM_SRC_OPDS-1:0][`SIMD_WIDTH-1:0][`XLEN-1:0] data;
+        //logic [NUM_SRC_OPDS-1:0][`SIMD_WIDTH-1:0][`XLEN-1:0] data;
+        logic [`SIMD_WIDTH-1:0][`XLEN-1:0] data;
     } rsp_data_t;
 
     logic req_valid;
