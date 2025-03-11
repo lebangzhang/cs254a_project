@@ -185,15 +185,15 @@ module VX_vopc_unit import VX_gpu_pkg::*; #(
                 v_src_regs[i]  = src_regs[i][5:0];
                 v_opds_to_fetch[i] = (staging_if.data.used_rs[i] && (src_regs[i] != 0));
 
-                v_opds_mask = 1;
-                gp_opds_mask = 0;
+                v_opds_mask[i] = 1;
+                gp_opds_mask[i] = 0;
 
             end else begin
                 gp_src_regs[i] = src_regs[i];
                 gp_opds_to_fetch[i] = (staging_if.data.used_rs[i] && (src_regs[i] != 0));
 
-                v_opds_mask = 0;
-                gp_opds_mask = 1;
+                v_opds_mask[i] = 0;
+                gp_opds_mask[i] = 1;
             end
         end*/
     end
@@ -488,7 +488,7 @@ module VX_vopc_unit import VX_gpu_pkg::*; #(
     ) simd_iter (
         .clk     (clk),
         .reset   (reset),
-        .valid_in(finished_collection), // Need to fix
+        .valid_in(staging_if.valid), 
         .data_in (staging_if.data.tmask),
         .next    (next_simd),
         `UNUSED_PIN (valid_out),
