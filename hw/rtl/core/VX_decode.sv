@@ -154,12 +154,12 @@ module VX_decode import VX_gpu_pkg::*; #(
     wire [2:0]    nf = instr[31:29];
     wire         mew = instr[28];
     wire [1:0]   mop = instr[27:26];
-    wire           m = instr[25];
+    wire          vm = instr[25];
     wire [5:0] func6 = instr[31:26];
     wire [1:0]  vset = instr[31:30];
     wire [9:0]  zimm = instr[29:20];
 
-    reg ['INST_VPU_BITS-1:0] v_type;
+    reg [INST_VPU_BITS-1:0] v_type;
     always @(*) begin
         case (func6)
             6'd0:  v_type = INST_OP_BITS'(INST_VPU_VADD);
@@ -182,6 +182,7 @@ module VX_decode import VX_gpu_pkg::*; #(
             default: v_type = 'x;
         endcase
     end
+    `STATIC_ASSERT($bits(vpu_args_t) == $bits(op_args_t), ("vpu_args_t size mismatch: current=%0d, expected=%0d", $bits(vpu_args_t), $bits(op_args_t)));
 `endif
 
     `STATIC_ASSERT($bits(alu_args_t)  == $bits(op_args_t), ("alu_args_t size mismatch: current=%0d, expected=%0d", $bits(alu_args_t), $bits(op_args_t)));

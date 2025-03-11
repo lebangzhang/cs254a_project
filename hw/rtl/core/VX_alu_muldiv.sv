@@ -46,7 +46,7 @@ module VX_alu_muldiv import VX_gpu_pkg::*; #(
     wire [NUM_LANES-1:0][`XLEN-1:0] mul_result_out;
     wire [UUID_WIDTH-1:0] mul_uuid_out;
     wire [NW_WIDTH-1:0] mul_wid_out;
-    wire [NUM_LANES-1:0] mul_lid_out;
+    wire [VL_WIDTH-1:0] mul_lid_out;
     wire [NUM_LANES-1:0] mul_tmask_out;
     wire [PC_BITS-1:0] mul_PC_out;
     wire [NR_BITS-1:0] mul_rd_out;
@@ -203,7 +203,7 @@ module VX_alu_muldiv import VX_gpu_pkg::*; #(
     wire [NUM_LANES-1:0][`XLEN-1:0] div_result_out;
     wire [UUID_WIDTH-1:0] div_uuid_out;
     wire [NW_WIDTH-1:0] div_wid_out;
-    wire [NUM_LANES-1:0] div_lid_out;
+    wire [VL_WIDTH-1:0] div_lid_out;
     wire [NUM_LANES-1:0] div_tmask_out;
     wire [PC_BITS-1:0] div_PC_out;
     wire [NR_BITS-1:0] div_rd_out;

@@ -145,7 +145,7 @@ package VX_gpu_pkg;
     localparam INST_S =          7'b0100011; // store instructions
     localparam INST_I =          7'b0010011; // immediate instructions
     localparam INST_R =          7'b0110011; // register instructions
-    localparam INST_V            7'b1010111; // vector instructions
+    localparam INST_V =          7'b1010111; // vector instructions
     localparam INST_FENCE =      7'b0001111; // Fence instructions
     localparam INST_SYS =        7'b1110011; // system instructions
 
@@ -401,8 +401,6 @@ package VX_gpu_pkg;
     localparam INST_VPU_VSETVL =    5'b10111;
     localparam INST_VPU_VSETVLI =   5'b10110;
     localparam INST_VPU_VSETIVLI =  5'b11110;
-    localparam INST_VPU_BITS =      6;
-
     // Vector Arithmetic Instructions
     localparam INST_VPU_VADD =      6'b100000;
     localparam INST_VPU_VSUB =      6'b111111;
@@ -436,6 +434,11 @@ package VX_gpu_pkg;
     localparam INST_VPU_VSLIDE1UP = 6'b111011;
     localparam INST_VPU_VSLIDE1DOWN=6'b111100;
     localparam INST_VPU_VMV_SX =    6'b111101;
+
+    localparam INST_VPU_BITS =      4;
+
+    localparam VPU_TYPE_XXX0 =     0;
+    localparam VPU_TYPE_XXX1 =     1;
 
 ///////////////////////////////////////////////////////////////////////////////
 
