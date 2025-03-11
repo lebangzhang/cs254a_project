@@ -16,6 +16,7 @@
 `TRACING_OFF
 module VX_nz_iterator #(
   parameter DATAW = 8,  // Bit-width of each data element
+  parameter KEYW  = DATAW, // Bit-width of the key
   parameter N = 4,      // Number of elements in the stream
   parameter OUT_REG = 0, // Output register
   parameter LPID_WIDTH = `LOG2UP(N)
@@ -38,7 +39,7 @@ module VX_nz_iterator #(
 
         wire [N-1:0] packet_valids;
         for (genvar i = 0; i < N; ++i) begin : g_packet_valids
-            assign packet_valids[i] = (| data_in[i]);
+            assign packet_valids[i] = (| data_in[i][KEYW-1:0]);
         end
 
         wire [N-1:0][LPID_WIDTH-1:0] packet_ids;
