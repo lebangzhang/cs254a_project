@@ -8,10 +8,10 @@ class VecUnit::Impl {
 public:
   Impl(VecUnit* simobject, const Arch& arch, Core* core)
       : simobject_(simobject)
-      , num_lanes_(1) // Should the vec_unit have more than 1 lane?
-      , pending_reqs_(1)
       , core_(core)
       , vpu_states_(arch.num_warps(), arch.num_threads())
+      , num_lanes_(1) // Should the vec_unit have more than 1 lane?
+      , pending_reqs_(1)
   {
     this->clear();
   }
