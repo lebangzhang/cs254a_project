@@ -13,13 +13,6 @@
 
 `include "VX_define.vh"
 
-// reset all GPRs in debug mode
-`ifdef SIMULATION
-`ifndef NDEBUG
-`define GPR_RESET
-`endif
-`endif
-
 module VX_opc_unit import VX_gpu_pkg::*; #(
     parameter `STRING INSTANCE_ID = "",
     parameter ISSUE_ID = 0
@@ -27,24 +20,24 @@ module VX_opc_unit import VX_gpu_pkg::*; #(
     input wire              clk,
     input wire              reset,
 
-    input wire [PER_ISSUE_WARPS-1:0][OPC_INSN_BITS-1:0] dep_id,
+    input reg [`NUM_OPCS-1:0] wait_mask,
 
-    VX_opc_if.slave       opc_if,
-    VX_gpr_if.master      gpr_if,
-    VX_operands_if.master operands_if
+    VX_scoreboard_if.slave  scoreboard_if,
+    VX_gpr_if.master        gpr_if,
+    VX_operands_if.master   operands_if
 );
     `UNUSED_SPARAM (INSTANCE_ID)
     `UNUSED_PARAM (ISSUE_ID)
 
-    localparam NUM_OPDS = NUM_SRC_OPDS + 1;
-    localparam SCB_DATAW = UUID_WIDTH + ISSUE_WIS_W + `NUM_THREADS + PC_BITS + EX_BITS + INST_OP_BITS + INST_ARGS_BITS + NUM_OPDS + (NUM_OPDS * REG_IDX_BITS + OPC_INSN_BITS);
+    localparam NUM_OPDS  = NUM_SRC_OPDS + 1;
+    localparam SCB_DATAW = UUID_WIDTH + ISSUE_WIS_W + `NUM_THREADS + PC_BITS + EX_BITS + INST_OP_BITS + INST_ARGS_BITS + NUM_OPDS + (NUM_OPDS * REG_IDX_BITS);
     localparam OUT_DATAW = UUID_WIDTH + ISSUE_WIS_W + SIMD_IDX_W + `SIMD_WIDTH + PC_BITS + EX_BITS + INST_OP_BITS + INST_ARGS_BITS + 1 + NR_BITS + (NUM_SRC_OPDS * `SIMD_WIDTH * `XLEN) + 1 + 1;
 
     localparam STATE_IDLE     = 0;
     localparam STATE_FETCH    = 1;
     localparam STATE_DISPATCH = 2;
 
-    VX_opc_if staging_if();
+    VX_scoreboard_if staging_if();
 
     reg [NUM_SRC_OPDS-1:0] opds_needed, opds_needed_n;
     reg [NUM_SRC_OPDS-1:0] opds_busy, opds_busy_n;
@@ -60,9 +53,9 @@ module VX_opc_unit import VX_gpu_pkg::*; #(
     ) stanging_buf (
         .clk      (clk),
         .reset    (reset),
-        .valid_in (opc_if.valid),
-        .data_in  (opc_if.data),
-        .ready_in (opc_if.ready),
+        .valid_in (scoreboard_if.valid),
+        .data_in  (scoreboard_if.data),
+        .ready_in (scoreboard_if.ready),
         .valid_out(staging_if.valid),
         .data_out (staging_if.data),
         .ready_out(staging_if.ready)
@@ -81,8 +74,7 @@ module VX_opc_unit import VX_gpu_pkg::*; #(
     wire [NR_BITS-1:0] stg_rs2 = to_reg_number(staging_if.data.rs2);
     wire [NR_BITS-1:0] stg_rs3 = to_reg_number(staging_if.data.rs3);
 
-    wire [NUM_SRC_OPDS-1:0][NR_BITS-1:0] stg_src_regs;
-    assign stg_src_regs = {stg_rs3, stg_rs2, stg_rs1};
+    wire [NUM_SRC_OPDS-1:0][NR_BITS-1:0] stg_src_regs = {stg_rs3, stg_rs2, stg_rs1};
 
     wire [NUM_SRC_OPDS-1:0] opds_to_fetch;
     for (genvar i = 0; i < NUM_SRC_OPDS; ++i) begin : g_opds_to_fetch
@@ -177,8 +169,8 @@ module VX_opc_unit import VX_gpu_pkg::*; #(
         end
     end
 
-    // instruction should be dispatched in order to avoid WAR hazards
-    wire dep_check_ready = (staging_if.data.dep_id == dep_id[staging_if.data.wis]);
+    // wait for dependency check
+    wire dep_check_ready = (wait_mask == 0);
 
     wire output_ready_w;
     assign output_ready = output_ready_w && dep_check_ready;
@@ -236,12 +228,12 @@ module VX_opc_unit import VX_gpu_pkg::*; #(
 
 `ifdef DBG_TRACE_PIPELINE
     always @(posedge clk) begin
-        if (opc_if.valid && opc_if.ready) begin
-            `TRACE(1, ("%t: %s-input: wid=%0d, PC=0x%0h, ex=", $time, INSTANCE_ID, wis_to_wid(opc_if.data.wis, ISSUE_ID), {opc_if.data.PC, 1'b0}))
-            trace_ex_type(1, opc_if.data.ex_type);
+        if (scoreboard_if.valid && scoreboard_if.ready) begin
+            `TRACE(1, ("%t: %s-input: wid=%0d, PC=0x%0h, ex=", $time, INSTANCE_ID, wis_to_wid(scoreboard_if.data.wis, ISSUE_ID), {scoreboard_if.data.PC, 1'b0}))
+            trace_ex_type(1, scoreboard_if.data.ex_type);
             `TRACE(1, (", op="))
-            trace_ex_op(1, opc_if.data.ex_type, opc_if.data.op_type, opc_if.data.op_args);
-            `TRACE(1, (", tmask=%b, wb=%b, used_rs=%b, rd=%0d, rs1=%0d, rs2=%0d, rs3=%0d (#%0d)\n", opc_if.data.tmask, opc_if.data.wb, opc_if.data.used_rs, to_reg_number(opc_if.data.rd), to_reg_number(opc_if.data.rs1), to_reg_number(opc_if.data.rs2), to_reg_number(opc_if.data.rs3), opc_if.data.uuid))
+            trace_ex_op(1, scoreboard_if.data.ex_type, scoreboard_if.data.op_type, scoreboard_if.data.op_args);
+            `TRACE(1, (", tmask=%b, wb=%b, used_rs=%b, rd=%0d, rs1=%0d, rs2=%0d, rs3=%0d (#%0d)\n", scoreboard_if.data.tmask, scoreboard_if.data.wb, scoreboard_if.data.used_rs, to_reg_number(scoreboard_if.data.rd), to_reg_number(scoreboard_if.data.rs1), to_reg_number(scoreboard_if.data.rs2), to_reg_number(scoreboard_if.data.rs3), scoreboard_if.data.uuid))
         end
         if (gpr_if.req_valid && gpr_if.req_ready) begin
             `TRACE(1, ("%t: %s-gpr-req: opd=%0d, wis=%0d, sid=%0d, reg=%0d\n", $time, INSTANCE_ID, gpr_if.req_data.opd_id, wis_to_wid(gpr_if.req_data.wis, ISSUE_ID), gpr_if.req_data.sid, gpr_if.req_data.reg_id))

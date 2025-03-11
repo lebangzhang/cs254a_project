@@ -307,8 +307,20 @@ module VX_dp_ram #(
     `RAM_INITIALIZATION
 
     if (WRENW != 1) begin : g_wren
+        reg [DATAW-1:0] wdata_n;
+        always @(*) begin
+            wdata_n = ram[waddr];
+            for (integer i = 0; i < WRENW; ++i) begin
+                if (wren[i]) begin
+                    wdata_n[i * WSELW +: WSELW] = wdata[i * WSELW +: WSELW];
+                end
+            end
+        end
         always @(posedge clk) begin
-            `RAM_WRITE_WREN
+            `RAM_RESET_BLOCK
+            if (write) begin
+                ram[waddr] <= wdata_n;
+            end
         end
     end else begin : g_no_wren
         `UNUSED_VAR (wren)
