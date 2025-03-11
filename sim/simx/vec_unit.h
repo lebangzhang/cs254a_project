@@ -44,6 +44,9 @@ public:
     }
   };
 
+  std::vector<SimPort<MemReq>> MemReqs;
+  std::vector<SimPort<MemRsp>> MemRsps;
+
   SimPort<instr_trace_t*> Input;
   SimPort<instr_trace_t*> Output;
 
