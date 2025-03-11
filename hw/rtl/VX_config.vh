@@ -88,8 +88,12 @@
 `endif
 `endif
 
+`ifdef EXT_V_ENABLE
 `ifndef VLEN
-`define VLEN 256
+`define VLEN (4 * `XLEN)
+`endif
+`else
+`define VLEN `XLEN
 `endif
 
 `ifndef NUM_CLUSTERS

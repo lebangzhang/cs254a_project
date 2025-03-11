@@ -42,12 +42,12 @@ module VX_gpr_unit import VX_gpu_pkg::*; #(
     localparam BANK_SEL_BITS = `CLOG2(NUM_BANKS);
     localparam BANK_SEL_WIDTH = `UP(BANK_SEL_BITS);
     localparam GPR_BANK_DATAW = `SIMD_WIDTH * `XLEN;
-    localparam GPR_BANK_SIZE = (PER_ISSUE_WARPS * NUM_REGS * SIMD_COUNT) / NUM_BANKS;
+    localparam GPR_BANK_SIZE = (PER_ISSUE_WARPS * NUM_S_REGS * SIMD_COUNT) / NUM_BANKS;
     localparam GPR_BANK_ADDRW = `CLOG2(GPR_BANK_SIZE);
     localparam BANKID_WIS_BITS = (BANK_SEL_BITS > 1 && ISSUE_WIS_BITS != 0) ? 1 : 0;
     localparam BANKID_REG_BITS = BANK_SEL_BITS - BANKID_WIS_BITS;
     localparam PER_BANK_WIS_BITS = ISSUE_WIS_BITS - BANKID_WIS_BITS;
-    localparam PER_BANK_REG_BITS = NR_BITS - BANKID_REG_BITS;
+    localparam PER_BANK_REG_BITS = NR_S_BITS - BANKID_REG_BITS;
     localparam PER_BANK_WIS_WIDTH = `UP(PER_BANK_WIS_BITS);
     localparam PER_BANK_REG_WIDTH = `UP(PER_BANK_REG_BITS);
     localparam GPR_REQ_DATAW = SRC_OPD_WIDTH + SIMD_IDX_BITS + PER_BANK_WIS_BITS + PER_BANK_REG_BITS;
@@ -81,17 +81,22 @@ module VX_gpr_unit import VX_gpu_pkg::*; #(
     `UNUSED_VAR (bank_req_wis)
     `UNUSED_VAR (writeback_if.data.sid)
     `UNUSED_VAR (writeback_if.data.wis)
+    `UNUSED_VAR (writeback_if.data.lid)
 
     for (genvar i = 0; i < NUM_REQS; ++i) begin : g_gpr_req
         assign gpr_req_valid[i] = gpr_if[i].req_valid;
         if (SIMD_IDX_BITS != 0 || PER_BANK_WIS_BITS != 0) begin : g_simd_wis
             wire [SIMD_IDX_BITS + PER_BANK_WIS_BITS-1:0] tmp;
             `CONCAT(tmp, gpr_if[i].req_data.sid, gpr_if[i].req_data.wis[ISSUE_WIS_W-1:BANKID_WIS_BITS], SIMD_IDX_BITS, PER_BANK_WIS_BITS);
-            assign gpr_req_data[i] = {gpr_if[i].req_data.opd_id, tmp, gpr_if[i].req_data.reg_id[NR_BITS-1:BANKID_REG_BITS]};
+            assign gpr_req_data[i] = {gpr_if[i].req_data.opd_id, tmp, gpr_if[i].req_data.reg_id[NR_S_BITS-1:BANKID_REG_BITS]};
         end else begin : g_no_simd_wis
-            assign gpr_req_data[i] = {gpr_if[i].req_data.opd_id, gpr_if[i].req_data.reg_id[NR_BITS-1:BANKID_REG_BITS]};
+            assign gpr_req_data[i] = {gpr_if[i].req_data.opd_id, gpr_if[i].req_data.reg_id[NR_S_BITS-1:BANKID_REG_BITS]};
         end
-        `CONCAT(gpr_req_bank_idx[i], gpr_if[i].req_data.wis[BANKID_WIS_BITS-1:0], gpr_if[i].req_data.reg_id[BANKID_REG_BITS-1:0], BANKID_WIS_BITS, BANKID_REG_BITS)
+        if (BANK_SEL_BITS != 0) begin : g_gpr_req_bank_idx
+            `CONCAT(gpr_req_bank_idx[i], gpr_if[i].req_data.wis[BANKID_WIS_BITS-1:0], gpr_if[i].req_data.reg_id[BANKID_REG_BITS-1:0], BANKID_WIS_BITS, BANKID_REG_BITS)
+        end else begin : g_gpr_req_bank_idx
+            assign gpr_req_bank_idx[i] = '0;
+        end
         `UNUSED_VAR (gpr_if[i].req_data.sid)
         `UNUSED_VAR (gpr_if[i].req_data.wis)
         assign gpr_if[i].req_ready = gpr_req_ready[i];
@@ -126,9 +131,9 @@ module VX_gpr_unit import VX_gpu_pkg::*; #(
     if (SIMD_IDX_BITS != 0 || PER_BANK_WIS_BITS != 0) begin : g_bank_wr_addr
         wire [SIMD_IDX_BITS + PER_BANK_WIS_BITS-1:0] tmp;
         `CONCAT(tmp, writeback_if.data.sid, writeback_if.data.wis[ISSUE_WIS_W-1:BANKID_WIS_BITS], SIMD_IDX_BITS, PER_BANK_WIS_BITS);
-        assign bank_wr_addr = {tmp, writeback_if.data.rd[NR_BITS-1:BANKID_REG_BITS]};
+        assign bank_wr_addr = {tmp, writeback_if.data.rd[NR_S_BITS-1:BANKID_REG_BITS]};
     end else begin : g_bank_wr_addr_reg
-        assign bank_wr_addr = writeback_if.data.rd[NR_BITS-1:BANKID_REG_BITS];
+        assign bank_wr_addr = writeback_if.data.rd[NR_S_BITS-1:BANKID_REG_BITS];
     end
 
     wire [BANK_SEL_WIDTH-1:0] bank_wr_id;
@@ -163,6 +168,7 @@ module VX_gpr_unit import VX_gpu_pkg::*; #(
         if (BANK_SEL_BITS != 0) begin : g_bank_wr_enabled_multibanks
             assign bank_wr_enabled = writeback_if.valid && (bank_wr_id == BANK_SEL_BITS'(b));
         end else begin : g_bank_wr_enabled
+            `UNUSED_VAR (bank_wr_id)
             assign bank_wr_enabled = writeback_if.valid;
         end
 

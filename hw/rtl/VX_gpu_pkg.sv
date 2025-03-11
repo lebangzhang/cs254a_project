@@ -37,19 +37,28 @@ package VX_gpu_pkg;
 
 `ifdef EXT_V_ENABLE
     localparam REG_TYPES = 3;
+    localparam NUM_S_REGS = 2 * RV_REGS;
 `else
 `ifdef EXT_F_ENABLE
 	localparam REG_TYPES = 2;
+    localparam NUM_S_REGS = 2 * RV_REGS;
 `else
 	localparam REG_TYPES = 1;
+    localparam NUM_S_REGS = 1 * RV_REGS;
 `endif
 `endif
 
-	localparam REG_TYPE_BITS = `LOG2UP(REG_TYPES);
+    localparam NUM_V_REGS = 1 * RV_REGS;
 
 	localparam NUM_REGS = (REG_TYPES * RV_REGS);
 
+	localparam REG_TYPE_BITS = `LOG2UP(REG_TYPES);
+
 	localparam NR_BITS = `CLOG2(NUM_REGS);
+
+    localparam NR_S_BITS = `CLOG2(NUM_S_REGS);
+
+    localparam NR_V_BITS = `CLOG2(NUM_V_REGS);
 
 	localparam REG_EXT_BITS = 2;
 
@@ -119,14 +128,10 @@ package VX_gpu_pkg;
 
     //////////////////////////////// Vector ISA ///////////////////////////////
 
-`ifdef EXT_V_ENABLE
-
     localparam VLENB    = `VLEN / 8;
     localparam VL_COUNT = `VLEN / `XLEN;
     localparam VL_BITS  = `CLOG2(VL_COUNT);
     localparam VL_WIDTH = `UP(VL_BITS);
-
-`endif
 
     ///////////////////////////////////////////////////////////////////////////
 
@@ -717,7 +722,7 @@ package VX_gpu_pkg;
     endfunction
 
     function logic [NR_BITS-1:0] to_reg_number(input reg_idx_t reg_idx);
-        // To change "+" to or 
+        // To change "+" to or
         return NR_BITS'(reg_idx.rtype * RV_REGS) + NR_BITS'(reg_idx.id);
     endfunction
 

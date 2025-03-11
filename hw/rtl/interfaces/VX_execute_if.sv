@@ -20,6 +20,7 @@ interface VX_execute_if import VX_gpu_pkg::*; #(
     typedef struct packed {
         logic [UUID_WIDTH-1:0]          uuid;
         logic [NW_WIDTH-1:0]            wid;
+        logic [VL_WIDTH-1:0]            lid;
         logic [NUM_LANES-1:0]           tmask;
         logic [PC_BITS-1:0]             PC;
         logic [INST_ALU_BITS-1:0]       op_type;

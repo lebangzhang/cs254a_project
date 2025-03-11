@@ -19,6 +19,7 @@ interface VX_dispatch_if import VX_gpu_pkg::*; ();
         logic [UUID_WIDTH-1:0]              uuid;
         logic [ISSUE_WIS_W-1:0]             wis;
         logic [SIMD_IDX_W-1:0]              sid;
+        logic [VL_WIDTH-1:0]                lid;
         logic [`SIMD_WIDTH-1:0]             tmask;
         logic [PC_BITS-1:0]                 PC;
         logic [INST_ALU_BITS-1:0]           op_type;

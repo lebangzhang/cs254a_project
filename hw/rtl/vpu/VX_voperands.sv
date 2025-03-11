@@ -37,34 +37,83 @@ module VX_voperands import VX_gpu_pkg::*; #(
 );
     localparam NUM_OPDS  = NUM_SRC_OPDS + 1;
     localparam SCB_DATAW = UUID_WIDTH + ISSUE_WIS_W + `NUM_THREADS + PC_BITS + EX_BITS + INST_OP_BITS + INST_ARGS_BITS + NUM_OPDS + (REG_IDX_BITS * NUM_OPDS);
-    localparam OPD_DATAW = UUID_WIDTH + ISSUE_WIS_W + SIMD_IDX_W + `SIMD_WIDTH + PC_BITS + EX_BITS + INST_OP_BITS + INST_ARGS_BITS + 1 + NR_BITS + (NUM_SRC_OPDS * `SIMD_WIDTH * `XLEN) + 1 + 1;
+    localparam OPD_DATAW = UUID_WIDTH + ISSUE_WIS_W + SIMD_IDX_W + VL_WIDTH + `SIMD_WIDTH + PC_BITS + EX_BITS + INST_OP_BITS + INST_ARGS_BITS + 1 + NR_BITS + (NUM_SRC_OPDS * `SIMD_WIDTH * `XLEN) + 1 + 1;
 
-    VX_gpr_if per_opc_gpr_if[`NUM_OPCS]();
-    VX_vgpr_if vgpr_if();
     VX_scoreboard_if per_opc_scoreboard_if[`NUM_OPCS]();
     VX_operands_if per_opc_operands_if[`NUM_OPCS]();
+    VX_gpr_if per_opc_gpr_if[`NUM_OPCS]();
+    VX_vgpr_if vgpr_if[1]();
 
-    wire [ISSUE_WIS_W-1:0] per_opc_pending_wis[`NUM_OPCS];
-    wire [NUM_REGS-1:0] per_opc_pending_regs[`NUM_OPCS];
+    wire [OPC_WIDTH-1:0] incoming_opc, outgoing_opc;
 
-    // collector selection
+    wire scoreboard_fire   = scoreboard_if.valid && scoreboard_if.ready;
+    wire operands_fire     = operands_if.valid && operands_if.ready;
+    wire operands_eop_fire = operands_fire && operands_if.data.eop;
 
-    reg [`NUM_OPCS-1:0] select_opcs;
+    wire [NR_BITS-1:0] scb_rd  = to_reg_number(scoreboard_if.data.rd);
+    wire [NR_BITS-1:0] scb_rs1 = to_reg_number(scoreboard_if.data.rs1);
+    wire [NR_BITS-1:0] scb_rs2 = to_reg_number(scoreboard_if.data.rs2);
+    wire [NR_BITS-1:0] scb_rs3 = to_reg_number(scoreboard_if.data.rs3);
+
+    wire [NUM_SRC_OPDS-1:0][NR_BITS-1:0] scb_src_regs = {scb_rs3, scb_rs2, scb_rs1};
+
+    reg [NUM_REGS-1:0] opc_pending_regs;
     always @(*) begin
-        select_opcs = '1;
-        // LSU cannot handle out of order LD/ST instructions: use same collector
-        if (`NUM_OPCS > 1 && scoreboard_if.data.ex_type == EX_LSU) begin
-            // select collector 0
-            for (int i = 0; i < `NUM_OPCS; ++i) begin
-                if (i != 0) select_opcs[i] = 0;
+        opc_pending_regs = '0;
+        for (integer i = 0; i < NUM_SRC_OPDS; ++i) begin
+            if (scoreboard_if.data.used_rs[i]) begin
+                opc_pending_regs[scb_src_regs[i]] = 1;
             end
         end
-        // SFU cannot handle multiple inflight WCTL instructions
-        // CSR access should be ordered as well: use same collector
-        if (`NUM_OPCS > 1 && scoreboard_if.data.ex_type == EX_SFU) begin
-            // select collector 1
-            for (int i = 0; i < `NUM_OPCS; ++i) begin
-                if (i != 1) select_opcs[i] = 0;
+    end
+
+    reg [`NUM_OPCS-1:0] per_opc_busy;
+    reg [`NUM_OPCS-1:0][NUM_REGS-1:0] per_opc_pending_regs;
+    reg [`NUM_OPCS-1:0][ISSUE_WIS_W-1:0] per_opc_pending_wis;
+    reg [`NUM_OPCS-1:0] per_opc_pending_lsu;
+    reg [`NUM_OPCS-1:0] per_opc_pending_wctl;
+    reg [`NUM_OPCS-1:0][`NUM_OPCS-1:0] per_opc_wait_mask;
+
+    // LD/ST memory instrctions should be issued in order
+    // SFU cannot handle consurent WCTL instructions, should be issued in order
+    wire scoreboard_is_lsu  = scoreboard_if.data.ex_type == EX_LSU;
+    wire scoreboard_is_wctl = scoreboard_if.data.ex_type == EX_SFU && inst_sfu_is_wctl(scoreboard_if.data.op_type);
+
+    always @(posedge clk) begin
+        if (reset) begin
+            per_opc_busy         <= '0;
+            per_opc_pending_regs <= '0;
+            per_opc_pending_wis  <= '0;
+            per_opc_pending_lsu  <= '0;
+            per_opc_pending_wctl <= '0;
+            per_opc_wait_mask    <= '0;
+        end else begin
+            if (scoreboard_fire) begin
+                for (int i = 0; i < `NUM_OPCS; ++i) begin
+                    if (((per_opc_pending_regs[i][scb_rd] != 0 && per_opc_pending_wis[i] == scoreboard_if.data.wis)
+                      || (per_opc_pending_lsu[i] && scoreboard_is_lsu)
+                      || (per_opc_pending_wctl[i] && scoreboard_is_wctl))
+                    && ~(operands_eop_fire && outgoing_opc == OPC_WIDTH'(i))) begin
+                        per_opc_wait_mask[incoming_opc][i] <= 1;
+                    end
+                end
+                per_opc_busy[incoming_opc]         <= 1;
+                per_opc_pending_regs[incoming_opc] <= opc_pending_regs;
+                per_opc_pending_wis[incoming_opc]  <= scoreboard_if.data.wis;
+                per_opc_pending_lsu[incoming_opc]  <= scoreboard_is_lsu;
+                per_opc_pending_wctl[incoming_opc] <= scoreboard_is_wctl;
+            end
+            if (operands_eop_fire) begin
+                for (int i = 0; i < `NUM_OPCS; ++i) begin
+                    if (per_opc_wait_mask[i][outgoing_opc]) begin
+                        per_opc_wait_mask[i][outgoing_opc] <= 0;
+                    end
+                end
+                per_opc_busy[outgoing_opc]         <= '0;
+                per_opc_pending_regs[outgoing_opc] <= '0;
+                per_opc_pending_wis[outgoing_opc]  <= '0;
+                per_opc_pending_lsu[outgoing_opc]  <= 0;
+                per_opc_pending_wctl[outgoing_opc] <= 0;
             end
         end
     end
@@ -73,12 +122,19 @@ module VX_voperands import VX_gpu_pkg::*; #(
     `AOS_TO_ITF (per_opc_scoreboard, per_opc_scoreboard_if, `NUM_OPCS, SCB_DATAW)
 `IGNORE_UNOPTFLAT_END
 
+    // collector unit selection
+
+    reg [`NUM_OPCS-1:0] select_opcs;
+    always @(*) begin
+        select_opcs = ~per_opc_busy;
+    end
+
     VX_stream_arb #(
         .NUM_INPUTS  (1),
         .NUM_OUTPUTS (`NUM_OPCS),
         .DATAW       (SCB_DATAW),
         .ARBITER     ("P"),
-        .OUT_BUF     (0) // If set to 3 --> Becomes elastic Buffer
+        .OUT_BUF     (0)
     ) input_arb (
         .clk       (clk),
         .reset     (reset),
@@ -87,21 +143,12 @@ module VX_voperands import VX_gpu_pkg::*; #(
         .ready_in  (scoreboard_if.ready),
         .valid_out (per_opc_scoreboard_valid),
         .data_out  (per_opc_scoreboard_data),
-        .ready_out (per_opc_scoreboard_ready & select_opcs),
-        `UNUSED_PIN(sel_out)
+        .ready_out (select_opcs),
+        .sel_out   (incoming_opc)
     );
-
+    `UNUSED_VAR (per_opc_scoreboard_ready)
 
     for (genvar i = 0; i < `NUM_OPCS; ++i) begin : g_collectors
-        wire [`UP(`NUM_OPCS-1)-1:0][ISSUE_WIS_W-1:0] pending_wis_in;
-        wire [`UP(`NUM_OPCS-1)-1:0][NUM_REGS-1:0] pending_regs_in;
-
-        for (genvar j = 1; j < `NUM_OPCS; ++j) begin : g_pending_wis_in
-            localparam k = (i + j) % `NUM_OPCS;
-            assign pending_wis_in[j-1] = per_opc_pending_wis[k];
-            assign pending_regs_in[j-1] = per_opc_pending_regs[k];
-        end
-
         if (i < (`NUM_OPCS-1)) begin : g_scalar
             VX_opc_unit #(
                 .INSTANCE_ID (`SFORMATF(("%s-collector%0d", INSTANCE_ID, i))),
@@ -109,10 +156,7 @@ module VX_voperands import VX_gpu_pkg::*; #(
             ) opc_unit (
                 .clk          (clk),
                 .reset        (reset),
-                .pending_wis_in(pending_wis_in),
-                .pending_regs_in(pending_regs_in),
-                .pending_wis  (per_opc_pending_wis[i]),
-                .pending_regs (per_opc_pending_regs[i]),
+                .wait_mask    (per_opc_wait_mask[i]),
                 .scoreboard_if(per_opc_scoreboard_if[i]),
                 .gpr_if       (per_opc_gpr_if[i]),
                 .operands_if  (per_opc_operands_if[i])
@@ -124,14 +168,11 @@ module VX_voperands import VX_gpu_pkg::*; #(
             ) vopc_unit (
                 .clk          (clk),
                 .reset        (reset),
-                .pending_wis_in(pending_wis_in),
-                .pending_regs_in(pending_regs_in),
-                .pending_wis  (per_opc_pending_wis[i]),
-                .pending_regs (per_opc_pending_regs[i]),
+                .wait_mask    (per_opc_wait_mask[i]),
                 .scoreboard_if(per_opc_scoreboard_if[i]),
                 .writeback_if (writeback_if),
                 .gpr_if       (per_opc_gpr_if[i]),
-                .vgpr_if      (vgpr_if),
+                .vgpr_if      (vgpr_if[0]),
                 .operands_if  (per_opc_operands_if[i])
             );
         end
@@ -151,17 +192,10 @@ module VX_voperands import VX_gpu_pkg::*; #(
         .gpr_if       (per_opc_gpr_if)
     );
 
-
-
-    // Need Crossbar here
-
-
-
-
     VX_vgpr_unit #(
         .INSTANCE_ID (`SFORMATF(("%s-vgpr", INSTANCE_ID))),
-        .NUM_REQS    (NUM_SRC_OPDS),
-        .NUM_BANKS   (NUM_SRC_OPDS)
+        .NUM_REQS    (1),
+        .NUM_BANKS   (1)
     ) vgpr_unit (
         .clk          (clk),
         .reset        (reset),
@@ -189,7 +223,7 @@ module VX_voperands import VX_gpu_pkg::*; #(
         .valid_out (operands_if.valid),
         .data_out  (operands_if.data),
         .ready_out (operands_if.ready),
-        `UNUSED_PIN(sel_out)
+        .sel_out   (outgoing_opc)
     );
 
 endmodule

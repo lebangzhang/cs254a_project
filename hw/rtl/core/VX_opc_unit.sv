@@ -31,7 +31,7 @@ module VX_opc_unit import VX_gpu_pkg::*; #(
 
     localparam NUM_OPDS  = NUM_SRC_OPDS + 1;
     localparam SCB_DATAW = UUID_WIDTH + ISSUE_WIS_W + `NUM_THREADS + PC_BITS + EX_BITS + INST_OP_BITS + INST_ARGS_BITS + NUM_OPDS + (NUM_OPDS * REG_IDX_BITS);
-    localparam OUT_DATAW = UUID_WIDTH + ISSUE_WIS_W + SIMD_IDX_W + `SIMD_WIDTH + PC_BITS + EX_BITS + INST_OP_BITS + INST_ARGS_BITS + 1 + NR_BITS + (NUM_SRC_OPDS * `SIMD_WIDTH * `XLEN) + 1 + 1;
+    localparam OUT_DATAW = UUID_WIDTH + ISSUE_WIS_W + SIMD_IDX_W + VL_WIDTH + `SIMD_WIDTH + PC_BITS + EX_BITS + INST_OP_BITS + INST_ARGS_BITS + 1 + NR_BITS + (NUM_SRC_OPDS * `SIMD_WIDTH * `XLEN) + 1 + 1;
 
     localparam STATE_IDLE     = 0;
     localparam STATE_FETCH    = 1;
@@ -207,6 +207,7 @@ module VX_opc_unit import VX_gpu_pkg::*; #(
             staging_if.data.uuid,
             staging_if.data.wis,
             simd_pid,
+            VL_WIDTH'(0),
             simd_out,
             staging_if.data.PC,
             staging_if.data.ex_type,

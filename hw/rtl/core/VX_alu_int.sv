@@ -156,14 +156,14 @@ module VX_alu_int import VX_gpu_pkg::*; #(
     end
 
     VX_elastic_buffer #(
-        .DATAW (UUID_WIDTH + NW_WIDTH + NUM_LANES + NR_BITS + 1 + PID_WIDTH + 1 + 1 + (NUM_LANES * `XLEN) + PC_BITS + PC_BITS + 1 + INST_BR_BITS + LANE_WIDTH)
+        .DATAW (UUID_WIDTH + NW_WIDTH + VL_WIDTH + NUM_LANES + NR_BITS + 1 + PID_WIDTH + 1 + 1 + (NUM_LANES * `XLEN) + PC_BITS + PC_BITS + 1 + INST_BR_BITS + LANE_WIDTH)
     ) rsp_buf (
         .clk      (clk),
         .reset    (reset),
         .valid_in (execute_if.valid),
         .ready_in (execute_if.ready),
-        .data_in  ({execute_if.data.uuid, execute_if.data.wid, execute_if.data.tmask, execute_if.data.rd, execute_if.data.wb, execute_if.data.pid, execute_if.data.sop, execute_if.data.eop, alu_result,   execute_if.data.PC, cbr_dest,   is_br_op,   br_op,   last_tid}),
-        .data_out ({result_if.data.uuid,  result_if.data.wid,  result_if.data.tmask,  result_if.data.rd,  result_if.data.wb,  result_if.data.pid,  result_if.data.sop,  result_if.data.eop,  alu_result_r, PC_r,               cbr_dest_r, is_br_op_r, br_op_r, last_tid_r}),
+        .data_in  ({execute_if.data.uuid, execute_if.data.wid, result_if.data.lid, execute_if.data.tmask, execute_if.data.rd, execute_if.data.wb, execute_if.data.pid, execute_if.data.sop, execute_if.data.eop, alu_result,   execute_if.data.PC, cbr_dest,   is_br_op,   br_op,   last_tid}),
+        .data_out ({result_if.data.uuid,  result_if.data.wid,  result_if.data.lid, result_if.data.tmask,  result_if.data.rd,  result_if.data.wb,  result_if.data.pid,  result_if.data.sop,  result_if.data.eop,  alu_result_r, PC_r,               cbr_dest_r, is_br_op_r, br_op_r, last_tid_r}),
         .valid_out (result_if.valid),
         .ready_out (result_if.ready)
     );

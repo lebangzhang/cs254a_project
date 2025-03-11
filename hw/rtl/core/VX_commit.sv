@@ -28,7 +28,7 @@ module VX_commit import VX_gpu_pkg::*; #(
     VX_commit_sched_if.master commit_sched_if
 );
     `UNUSED_SPARAM (INSTANCE_ID)
-    localparam DATAW = UUID_WIDTH + NW_WIDTH + SIMD_IDX_W + `SIMD_WIDTH + PC_BITS + 1 + NR_BITS + `SIMD_WIDTH * `XLEN + 1 + 1;
+    localparam DATAW = UUID_WIDTH + NW_WIDTH + SIMD_IDX_W + VL_WIDTH + `SIMD_WIDTH + PC_BITS + 1 + NR_BITS + `SIMD_WIDTH * `XLEN + 1 + 1;
     localparam COMMIT_SIZEW = `CLOG2(`SIMD_WIDTH + 1);
     localparam COMMIT_ALL_SIZEW = COMMIT_SIZEW + `ISSUE_WIDTH - 1;
 
@@ -165,6 +165,7 @@ module VX_commit import VX_gpu_pkg::*; #(
         assign writeback_if[i].data.uuid = commit_arb_if[i].data.uuid;
         assign writeback_if[i].data.wis  = wid_to_wis(commit_arb_if[i].data.wid);
         assign writeback_if[i].data.sid  = commit_arb_if[i].data.sid;
+        assign writeback_if[i].data.lid  = commit_arb_if[i].data.lid;
         assign writeback_if[i].data.PC   = commit_arb_if[i].data.PC;
         assign writeback_if[i].data.tmask= commit_arb_if[i].data.tmask;
         assign writeback_if[i].data.rd   = commit_arb_if[i].data.rd;
