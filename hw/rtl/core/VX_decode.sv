@@ -94,19 +94,6 @@ module VX_decode import VX_gpu_pkg::*; #(
     wire [12:0] b_imm   = {instr[31], instr[7], instr[30:25], instr[11:8], 1'b0};
     wire [20:0] jal_imm = {instr[31], instr[19:12], instr[20], instr[30:21], 1'b0};
 
-`ifdef EXT_V_ENABLE
-    wire [2:0] nf = instr[31:29];
-    wire mew = instr[28];
-    wire [1:0] mop = instr[27:26];
-    wire vm = instr[25];
-    
-    wire [5:0] func6 = instr[31:26];
-
-    wire [1:0] vset = instr[31:30];
-    wire [9:0] zimm = instr[29:20];
-
-`endif
-
     reg [INST_ALU_BITS-1:0] r_type;
     always @(*) begin
         case (func3)
@@ -163,33 +150,35 @@ module VX_decode import VX_gpu_pkg::*; #(
 `endif
 
 `ifdef EXT_V_ENABLE
+
+    wire [2:0]    nf = instr[31:29];
+    wire         mew = instr[28];
+    wire [1:0]   mop = instr[27:26];
+    wire           m = instr[25];
+    wire [5:0] func6 = instr[31:26];
+    wire [1:0]  vset = instr[31:30];
+    wire [9:0]  zimm = instr[29:20];
+
     reg ['INST_VPU_BITS-1:0] v_type;
     always @(*) begin
-        case (func3)
-            3'd0,
-            3'd3,
-            3'd4: begin
-                case (func6)
-                    6'd0:  v_type = INST_OP_BITS'(INST_VPU_VADD);
-                    6'd2:  v_type = INST_OP_BITS'(INST_VPU_VSUB);
-                    6'd4:  v_type = INST_OP_BITS'(INST_VPU_VMINU);
-                    6'd5:  v_type = INST_OP_BITS'(INST_VPU_VMIN);
-                    6'd6:  v_type = INST_OP_BITS'(INST_VPU_VMAXU);
-                    6'd7:  v_type = INST_OP_BITS'(INST_VPU_VMAX);
-                    6'd9:  v_type = INST_OP_BITS'(INST_ALU_AND);
-                    6'd10: v_type = INST_OP_BITS'(INST_ALU_OR);
-                    6'd11: v_type = INST_OP_BITS'(INST_ALU_XOR);
-                    6'd24: v_type = INST_OP_BITS'(INST_VPU_VMSEQ);
-                    6'd25: v_type = INST_OP_BITS'(INST_VPU_VMSNE);
-                    6'd26: v_type = INST_OP_BITS'(INST_ALU_SLTU);
-                    6'd27: v_type = INST_OP_BITS'(INST_ALU_SLT);
-                    6'd28: v_type = INST_OP_BITS'(INST_VPU_VMSLEU);
-                    6'd29: v_type = INST_OP_BITS'(INST_VPU_VMSLE);
-                    6'd30: v_type = INST_OP_BITS'(INST_VPU_VMSGTU);
-                    6'd31: v_type = INST_OP_BITS'(INST_VPU_VMSGT);
-                    default: v_type = 'x;
-                endcase
-            end
+        case (func6)
+            6'd0:  v_type = INST_OP_BITS'(INST_VPU_VADD);
+            6'd2:  v_type = INST_OP_BITS'(INST_VPU_VSUB);
+            6'd4:  v_type = INST_OP_BITS'(INST_VPU_VMINU);
+            6'd5:  v_type = INST_OP_BITS'(INST_VPU_VMIN);
+            6'd6:  v_type = INST_OP_BITS'(INST_VPU_VMAXU);
+            6'd7:  v_type = INST_OP_BITS'(INST_VPU_VMAX);
+            6'd9:  v_type = INST_OP_BITS'(INST_ALU_AND);
+            6'd10: v_type = INST_OP_BITS'(INST_ALU_OR);
+            6'd11: v_type = INST_OP_BITS'(INST_ALU_XOR);
+            6'd24: v_type = INST_OP_BITS'(INST_VPU_VMSEQ);
+            6'd25: v_type = INST_OP_BITS'(INST_VPU_VMSNE);
+            6'd26: v_type = INST_OP_BITS'(INST_ALU_SLTU);
+            6'd27: v_type = INST_OP_BITS'(INST_ALU_SLT);
+            6'd28: v_type = INST_OP_BITS'(INST_VPU_VMSLEU);
+            6'd29: v_type = INST_OP_BITS'(INST_VPU_VMSLE);
+            6'd30: v_type = INST_OP_BITS'(INST_VPU_VMSGTU);
+            6'd31: v_type = INST_OP_BITS'(INST_VPU_VMSGT);
             default: v_type = 'x;
         endcase
     end
@@ -640,7 +629,7 @@ module VX_decode import VX_gpu_pkg::*; #(
                 ex_type = EX_VPU;
                 op_type = v_type;
                 op_args.vpu.vm = vm;
-                
+
                 case (func3)
                     3'd0,
                     3'd1,

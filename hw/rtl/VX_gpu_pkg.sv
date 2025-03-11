@@ -386,56 +386,56 @@ package VX_gpu_pkg;
 
     ///////////////////////////////////////////////////////////////////////////
 
-    localparam OP_TYPE_VV =     0;
-    localparam OP_TYPE_VI =     1;
-    localparam OP_TYPE_VX =     2;
-    localparam OP_TYPE_VF =     3;
+    localparam OP_TYPE_VV =         0;
+    localparam OP_TYPE_VI =         1;
+    localparam OP_TYPE_VX =         2;
+    localparam OP_TYPE_VF =         3;
 
-    localparam VLMAX_SEW08_LMUL1 = `VLEN/8;
-    localparam VLMAX_SEW16_LMUL1 = `VLEN/16;
-    localparam VLMAX_SEW32_LMUL1 = `VLEN/32;
-    localparam VLMAX_SEW64_LMUL1 = `VLEN/64;
-    localparam VEC_IMM_BITS = 15;
+    localparam VLMAX_SEW08_LMUL1 =  `VLEN / 8;
+    localparam VLMAX_SEW16_LMUL1 =  `VLEN / 16;
+    localparam VLMAX_SEW32_LMUL1 =  `VLEN / 32;
+    localparam VLMAX_SEW64_LMUL1 =  `VLEN / 64;
+    localparam VEC_IMM_BITS      =  15;
 
-    //Vector Configuration Instructions
-    localparam INST_VPU_VSETVL =      5'b10111;
-    localparam INST_VPU_VSETVLI =     5'b10110;
-    localparam INST_VPU_VSETIVLI =    5'b11110;
-    localparam INST_VPU_BITS =        6;
+    // Vector Configuration Instructions
+    localparam INST_VPU_VSETVL =    5'b10111;
+    localparam INST_VPU_VSETVLI =   5'b10110;
+    localparam INST_VPU_VSETIVLI =  5'b11110;
+    localparam INST_VPU_BITS =      6;
 
-    //Vector Arithmetic Instructions
-    localparam INST_VPU_VADD =        6'b100000;
-    localparam INST_VPU_VSUB =        6'b111111;
-    localparam INST_VPU_VMINU =       6'b111110;
-    localparam INST_VPU_VMIN =        6'b100001;
-    localparam INST_VPU_VMAXU =       6'b100010;
-    localparam INST_VPU_VMAX =        6'b100011;
-    localparam INST_VPU_VMSEQ =       6'b100100;
-    localparam INST_VPU_VMSNE =       6'b100101;
-    localparam INST_VPU_VMSLEU =      6'b100110;
-    localparam INST_VPU_VMSLE =       6'b100111;
-    localparam INST_VPU_VMFNE =       6'b101000;
-    localparam INST_VPU_VFMACC =      6'b101001;
-    localparam INST_VPU_VREDSUM =     6'b101010;
-    localparam INST_VPU_VMV_XS =      6'b101011;
-    localparam INST_VPU_VMV_VI =      6'b101100;
-    localparam INST_VPU_VMANDNOT =    6'b101101;
-    localparam INST_VPU_VMORNOT =     6'b101110;
-    localparam INST_VPU_VMNAND =      6'b101111;
-    localparam INST_VPU_VMNOR =       6'b110000;
-    localparam INST_VPU_VMXNOR =      6'b110001;
-    localparam INST_VPU_VMACC =       6'b110010;
-    localparam INST_VPU_ADDI =        6'b110011;
-    localparam INST_VPU_VMV1R =       6'b110100;
-    localparam INST_VPU_VRSUB =       6'b110101;
-    localparam INST_VPU_VFMV =        6'b110110;
-    localparam INST_VPU_VFMERGE =     6'b110111;
-    localparam INST_VPU_VMSGTU =      6'b111000;
-    localparam INST_VPU_VMSGT =       6'b111001;
-    localparam INST_VPU_VFRSUB =      6'b111010;
-    localparam INST_VPU_VSLIDE1UP =   6'b111011;
-    localparam INST_VPU_VSLIDE1DOWN = 6'b111100;
-    localparam INST_VPU_VMV_SX =      6'b111101;
+    // Vector Arithmetic Instructions
+    localparam INST_VPU_VADD =      6'b100000;
+    localparam INST_VPU_VSUB =      6'b111111;
+    localparam INST_VPU_VMINU =     6'b111110;
+    localparam INST_VPU_VMIN =      6'b100001;
+    localparam INST_VPU_VMAXU =     6'b100010;
+    localparam INST_VPU_VMAX =      6'b100011;
+    localparam INST_VPU_VMSEQ =     6'b100100;
+    localparam INST_VPU_VMSNE =     6'b100101;
+    localparam INST_VPU_VMSLEU =    6'b100110;
+    localparam INST_VPU_VMSLE =     6'b100111;
+    localparam INST_VPU_VMFNE =     6'b101000;
+    localparam INST_VPU_VFMACC =    6'b101001;
+    localparam INST_VPU_VREDSUM =   6'b101010;
+    localparam INST_VPU_VMV_XS =    6'b101011;
+    localparam INST_VPU_VMV_VI =    6'b101100;
+    localparam INST_VPU_VMANDNOT =  6'b101101;
+    localparam INST_VPU_VMORNOT =   6'b101110;
+    localparam INST_VPU_VMNAND =    6'b101111;
+    localparam INST_VPU_VMNOR =     6'b110000;
+    localparam INST_VPU_VMXNOR =    6'b110001;
+    localparam INST_VPU_VMACC =     6'b110010;
+    localparam INST_VPU_ADDI =      6'b110011;
+    localparam INST_VPU_VMV1R =     6'b110100;
+    localparam INST_VPU_VRSUB =     6'b110101;
+    localparam INST_VPU_VFMV =      6'b110110;
+    localparam INST_VPU_VFMERGE =   6'b110111;
+    localparam INST_VPU_VMSGTU =    6'b111000;
+    localparam INST_VPU_VMSGT =     6'b111001;
+    localparam INST_VPU_VFRSUB =    6'b111010;
+    localparam INST_VPU_VSLIDE1UP = 6'b111011;
+    localparam INST_VPU_VSLIDE1DOWN=6'b111100;
+    localparam INST_VPU_VMV_SX =    6'b111101;
 
 ///////////////////////////////////////////////////////////////////////////////
 
