@@ -37,7 +37,7 @@ public:
       assert(entry.count);
       --entry.count;
       if (0 == entry.count) {
-          simobject_->Output.push(trace, (vl_ / num_lanes_) * 3);
+          simobject_->Output.push(trace, (vpu_states_.at(0).vl / num_lanes_) * 3);
           pending_reqs_.release(mem_rsp.tag);
       }
       mem_rsp_port.pop();
@@ -83,7 +83,7 @@ public:
               mem_req.tag   = tag;
               mem_req.cid   = trace->cid;
               mem_req.uuid  = trace->uuid;
-              mem_req_port.push(mem_req, (vl_ / num_lanes_));
+              mem_req_port.push(mem_req, (vpu_states_.at(0).vl / num_lanes_));
               DT(3, "VecUnit mem-req: addr=0x" << std::hex << mem_addr.addr << ", tag=" << tag << ", tid=" << t << ", " << trace);
               ++perf_stats_.reads;
           }
