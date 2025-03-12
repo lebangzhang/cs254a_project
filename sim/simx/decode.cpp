@@ -765,19 +765,8 @@ std::shared_ptr<Instr> Emulator::decode(uint32_t code) const {
             }
           }
         } break;
-        default: { // Vector - vector/scalar arithmetic instructions
-          if (funct3 == 1 && funct6 == 16) {
-            instr->setDestReg(rd, RegType::Float);
-          } else if (funct3 == 2 && funct6 == 16) {
-            instr->setDestReg(rd, RegType::Integer);
-          } else {
-            instr->setDestReg(rd, RegType::Vector);
-          }
-          instr->addSrcReg(rs1, RegType::Vector);
-          instr->addSrcReg(rs2, RegType::Vector);
-          instr->setVmask((code >> shift_funct7) & 0x1);
-          instr->setfunct6(funct6);
-        }
+        default:
+          std::abort();
       }
     } break;
     case Opcode::FL:

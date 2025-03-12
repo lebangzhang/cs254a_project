@@ -372,8 +372,8 @@ package VX_gpu_pkg;
     localparam INST_SFU_CSRRC =     4'h8;
     localparam INST_SFU_BITS =      4;
 
-    function automatic logic [3:0] inst_sfu_csr(input logic [2:0] func3);
-        return (4'h6 + 4'(func3[1:0]) - 4'h1);
+    function automatic logic [3:0] inst_sfu_csr(input logic [2:0] funct3);
+        return (4'h6 + 4'(funct3[1:0]) - 4'h1);
     endfunction
 
     function automatic logic inst_sfu_is_wctl(input logic [INST_SFU_BITS-1:0] op);
@@ -386,22 +386,35 @@ package VX_gpu_pkg;
 
     ///////////////////////////////////////////////////////////////////////////
 
-    localparam OP_TYPE_VV =         0;
-    localparam OP_TYPE_VI =         1;
-    localparam OP_TYPE_VX =         2;
-    localparam OP_TYPE_VF =         3;
-
     localparam VLMAX_SEW08_LMUL1 =  `VLEN / 8;
     localparam VLMAX_SEW16_LMUL1 =  `VLEN / 16;
     localparam VLMAX_SEW32_LMUL1 =  `VLEN / 32;
     localparam VLMAX_SEW64_LMUL1 =  `VLEN / 64;
     localparam VEC_IMM_BITS      =  15;
 
-    // Vector Configuration Instructions
-    localparam INST_VPU_VSETVL =    5'b10111;
-    localparam INST_VPU_VSETVLI =   5'b10110;
-    localparam INST_VPU_VSETIVLI =  5'b11110;
-    // Vector Arithmetic Instructions
+    /*
+    localparam INST_VPU_VL =        4'b0000;
+    localparam INST_VPU_VLS =       4'b0001;
+    localparam INST_VPU_VLX =       4'b0010;
+
+    localparam INST_VPU_VS =        4'b0100;
+    localparam INST_VPU_VSS =       4'b0101;
+    localparam INST_VPU_VSX =       4'b0110;
+
+    localparam INST_VPU_OPIVV =     4'b1000;
+    localparam INST_VPU_OPFVV =     4'b1001;
+    localparam INST_VPU_OPMVV =     4'b1010;
+    localparam INST_VPU_OPIVI =     4'b1011;
+    localparam INST_VPU_OPIVX =     4'b1100;
+    localparam INST_VPU_OPFVF =     4'b1101;
+    localparam INST_VPU_OPMVX =     4'b1110;
+
+    localparam INST_VPU_VSETVL =    4'b0011;
+    localparam INST_VPU_VSETVLI =   4'b0111;
+    localparam INST_VPU_VSETIVLI =  4'b1111;
+    */
+
+    /*
     localparam INST_VPU_VADD =      6'b100000;
     localparam INST_VPU_VSUB =      6'b111111;
     localparam INST_VPU_VMINU =     6'b111110;
@@ -434,11 +447,15 @@ package VX_gpu_pkg;
     localparam INST_VPU_VSLIDE1UP = 6'b111011;
     localparam INST_VPU_VSLIDE1DOWN=6'b111100;
     localparam INST_VPU_VMV_SX =    6'b111101;
+    */
 
-    localparam INST_VPU_BITS =      4;
+    localparam INST_VPU_OP_BITS = 4;
 
-    localparam VPU_TYPE_XXX0 =     0;
-    localparam VPU_TYPE_XXX1 =     1;
+    localparam INST_VPU_VLD  =      2'b00;
+    localparam INST_VPU_VST  =      2'b01;
+    localparam INST_VPU_VOP  =      2'b10;
+    localparam INST_VPU_VSET =      2'b11;
+    localparam INST_VPU_BITS =      2;
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -527,20 +544,60 @@ package VX_gpu_pkg;
         logic is_neg;
     } wctl_args_t;
 
+
 `ifdef EXT_V_ENABLE
+
+     typedef struct packed {
+        logic       vma;
+        logic       vta;
+        logic [2:0] vsew;
+        logic [2:0] vlmul;
+     } vpu_zimm_t;
+
     typedef struct packed {
-        logic [($bits(alu_args_t)-1-3-1-5-10-3-1-2-5)-1:0] __padding;
-        logic vm;
-        logic [1:0] operand_type;
-        logic use_imm;
-        logic [4:0] imm;
-        logic [9:0] zimm;
+        logic [($bits(alu_args_t)-3-1-2-1-5-3)-1:0] __padding;
         logic [2:0] nf;
-        logic mew;
+        logic       mew;
         logic [1:0] mop;
+        logic       vm;
+        logic [4:0] lumop;
         logic [2:0] width;
-        logic [5:0] lusumop;
+    } vpu_args_vld_t;
+
+    typedef struct packed {
+        logic [($bits(alu_args_t)-3-1-2-1-5-3)-1:0] __padding;
+        logic [2:0] nf;
+        logic       mew;
+        logic [1:0] mop;
+        logic       vm;
+        logic [4:0] sumop;
+        logic [2:0] width;
+    } vpu_args_vst_t;
+
+    typedef struct packed {
+        logic [($bits(alu_args_t)-4-1-1-5)-1:0] __padding;
+        logic [3:0] op;
+        logic       vm;
+        logic       use_imm;
+        logic [4:0] imm;
+    } vpu_args_vop_t;
+
+    typedef struct packed {
+        logic [($bits(alu_args_t)-1-1-5-2-8)-1:0] __padding;
+        logic        use_imm;
+        logic        use_zimm;
+        logic [4:0]  imm;
+        logic [1:0]  vset;
+        vpu_zimm_t   zimm;
+    } vpu_args_vset_t;
+
+    typedef union packed {
+        vpu_args_vld_t  vld;
+        vpu_args_vst_t  vst;
+        vpu_args_vop_t  vop;
+        vpu_args_vset_t vset;
     } vpu_args_t;
+
 `endif
 
     typedef union packed {

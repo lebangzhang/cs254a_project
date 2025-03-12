@@ -61,10 +61,10 @@ module VX_decode import VX_gpu_pkg::*; #(
 
     wire [31:0] instr = fetch_if.data.instr;
     wire [6:0] opcode = instr[6:0];
-    wire [1:0] func2  = instr[26:25];
-    wire [2:0] func3  = instr[14:12];
-    wire [4:0] func5  = instr[31:27];
-    wire [6:0] func7  = instr[31:25];
+    wire [1:0] funct2 = instr[26:25];
+    wire [2:0] funct3 = instr[14:12];
+    wire [4:0] funct5 = instr[31:27];
+    wire [6:0] funct7 = instr[31:25];
     wire [11:0] u_12  = instr[31:20];
 
     wire [4:0] rd  = instr[11:7];
@@ -72,15 +72,15 @@ module VX_decode import VX_gpu_pkg::*; #(
     wire [4:0] rs2 = instr[24:20];
     wire [4:0] rs3 = instr[31:27];
 
-    `UNUSED_VAR (func2)
-    `UNUSED_VAR (func5)
+    `UNUSED_VAR (funct2)
+    `UNUSED_VAR (funct5)
     `UNUSED_VAR (rs3)
     `UNUSED_VAR (use_rd)
     `UNUSED_VAR (use_rs1)
     `UNUSED_VAR (use_rs2)
     `UNUSED_VAR (use_rs3)
 
-    wire is_itype_sh = func3[0] && ~func3[1];
+    wire is_itype_sh = funct3[0] && ~funct3[1];
     wire is_fpu_csr = (u_12 <= `VX_CSR_FCSR);
 
     wire [19:0] ui_imm  = instr[31:12];
@@ -90,19 +90,19 @@ module VX_decode import VX_gpu_pkg::*; #(
 `else
     wire [11:0] i_imm   = is_itype_sh ? {7'b0, instr[24:20]} : u_12;
 `endif
-    wire [11:0] s_imm   = {func7, rd};
+    wire [11:0] s_imm   = {funct7, rd};
     wire [12:0] b_imm   = {instr[31], instr[7], instr[30:25], instr[11:8], 1'b0};
     wire [20:0] jal_imm = {instr[31], instr[19:12], instr[20], instr[30:21], 1'b0};
 
     reg [INST_ALU_BITS-1:0] r_type;
     always @(*) begin
-        case (func3)
-            3'h0: r_type = (opcode[5] && func7[5]) ? INST_ALU_SUB : INST_ALU_ADD;
+        case (funct3)
+            3'h0: r_type = (opcode[5] && funct7[5]) ? INST_ALU_SUB : INST_ALU_ADD;
             3'h1: r_type = INST_ALU_SLL;
             3'h2: r_type = INST_ALU_SLT;
             3'h3: r_type = INST_ALU_SLTU;
             3'h4: r_type = INST_ALU_XOR;
-            3'h5: r_type = func7[5] ? INST_ALU_SRA : INST_ALU_SRL;
+            3'h5: r_type = funct7[5] ? INST_ALU_SRA : INST_ALU_SRL;
             3'h6: r_type = INST_ALU_OR;
             3'h7: r_type = INST_ALU_AND;
         endcase
@@ -110,7 +110,7 @@ module VX_decode import VX_gpu_pkg::*; #(
 
     reg [INST_BR_BITS-1:0] b_type;
     always @(*) begin
-        case (func3)
+        case (funct3)
             3'h0: b_type = INST_BR_EQ;
             3'h1: b_type = INST_BR_NE;
             3'h4: b_type = INST_BR_LT;
@@ -136,7 +136,7 @@ module VX_decode import VX_gpu_pkg::*; #(
 `ifdef EXT_M_ENABLE
     reg [INST_M_BITS-1:0] m_type;
     always @(*) begin
-        case (func3)
+        case (funct3)
             3'h0: m_type = INST_M_MUL;
             3'h1: m_type = INST_M_MULH;
             3'h2: m_type = INST_M_MULHSU;
@@ -155,33 +155,34 @@ module VX_decode import VX_gpu_pkg::*; #(
     wire         mew = instr[28];
     wire [1:0]   mop = instr[27:26];
     wire          vm = instr[25];
-    wire [5:0] func6 = instr[31:26];
+    wire [5:0] funct6= instr[31:26];
     wire [1:0]  vset = instr[31:30];
-    wire [9:0]  zimm = instr[29:20];
+    wire [7:0]  zimm = instr[27:20];
 
-    reg [INST_VPU_BITS-1:0] v_type;
+    reg [INST_VPU_OP_BITS-1:0] vop_type;
     always @(*) begin
-        case (func6)
-            6'd0:  v_type = INST_OP_BITS'(INST_VPU_VADD);
-            6'd2:  v_type = INST_OP_BITS'(INST_VPU_VSUB);
-            6'd4:  v_type = INST_OP_BITS'(INST_VPU_VMINU);
-            6'd5:  v_type = INST_OP_BITS'(INST_VPU_VMIN);
-            6'd6:  v_type = INST_OP_BITS'(INST_VPU_VMAXU);
-            6'd7:  v_type = INST_OP_BITS'(INST_VPU_VMAX);
-            6'd9:  v_type = INST_OP_BITS'(INST_ALU_AND);
-            6'd10: v_type = INST_OP_BITS'(INST_ALU_OR);
-            6'd11: v_type = INST_OP_BITS'(INST_ALU_XOR);
-            6'd24: v_type = INST_OP_BITS'(INST_VPU_VMSEQ);
-            6'd25: v_type = INST_OP_BITS'(INST_VPU_VMSNE);
-            6'd26: v_type = INST_OP_BITS'(INST_ALU_SLTU);
-            6'd27: v_type = INST_OP_BITS'(INST_ALU_SLT);
-            6'd28: v_type = INST_OP_BITS'(INST_VPU_VMSLEU);
-            6'd29: v_type = INST_OP_BITS'(INST_VPU_VMSLE);
-            6'd30: v_type = INST_OP_BITS'(INST_VPU_VMSGTU);
-            6'd31: v_type = INST_OP_BITS'(INST_VPU_VMSGT);
-            default: v_type = 'x;
+        case (funct6)
+            /*6'd0:  vop_type = INST_OP_BITS'(INST_VPU_VADD);
+            6'd2:  vop_type = INST_OP_BITS'(INST_VPU_VSUB);
+            6'd4:  vop_type = INST_OP_BITS'(INST_VPU_VMINU);
+            6'd5:  vop_type = INST_OP_BITS'(INST_VPU_VMIN);
+            6'd6:  vop_type = INST_OP_BITS'(INST_VPU_VMAXU);
+            6'd7:  vop_type = INST_OP_BITS'(INST_VPU_VMAX);
+            6'd9:  vop_type = INST_OP_BITS'(INST_ALU_AND);
+            6'd10: vop_type = INST_OP_BITS'(INST_ALU_OR);
+            6'd11: vop_type = INST_OP_BITS'(INST_ALU_XOR);
+            6'd24: vop_type = INST_OP_BITS'(INST_VPU_VMSEQ);
+            6'd25: vop_type = INST_OP_BITS'(INST_VPU_VMSNE);
+            6'd26: vop_type = INST_OP_BITS'(INST_ALU_SLTU);
+            6'd27: vop_type = INST_OP_BITS'(INST_ALU_SLT);
+            6'd28: vop_type = INST_OP_BITS'(INST_VPU_VMSLEU);
+            6'd29: vop_type = INST_OP_BITS'(INST_VPU_VMSLE);
+            6'd30: vop_type = INST_OP_BITS'(INST_VPU_VMSGTU);
+            6'd31: vop_type = INST_OP_BITS'(INST_VPU_VMSGT);*/
+            default: vop_type = 'x;
         endcase
     end
+
     `STATIC_ASSERT($bits(vpu_args_t) == $bits(op_args_t), ("vpu_args_t size mismatch: current=%0d, expected=%0d", $bits(vpu_args_t), $bits(op_args_t)));
 `endif
 
@@ -226,7 +227,7 @@ module VX_decode import VX_gpu_pkg::*; #(
                 `USED_IREG (rd);
                 `USED_IREG (rs1);
                 `USED_IREG (rs2);
-                case (func7)
+                case (funct7)
                 `ifdef EXT_M_ENABLE
                     INST_R_F7_MUL: begin
                         // MUL, MULH, MULHSU, MULHU
@@ -237,7 +238,7 @@ module VX_decode import VX_gpu_pkg::*; #(
                 `ifdef EXT_ZICOND_ENABLE
                     INST_R_F7_ZICOND: begin
                         // CZERO-EQZ, CZERO-NEZ
-                        op_type = func3[1] ? INST_OP_BITS'(INST_ALU_CZNE) : INST_OP_BITS'(INST_ALU_CZEQ);
+                        op_type = funct3[1] ? INST_OP_BITS'(INST_ALU_CZNE) : INST_OP_BITS'(INST_ALU_CZEQ);
                         op_args.alu.xtype = ALU_TYPE_ARITH;
                     end
                 `endif
@@ -268,7 +269,7 @@ module VX_decode import VX_gpu_pkg::*; #(
                 `USED_IREG (rd);
                 `USED_IREG (rs1);
                 `USED_IREG (rs2);
-                case (func7)
+                case (funct7)
                 `ifdef EXT_M_ENABLE
                     INST_R_F7_MUL: begin
                         // MULW, DIVW, DIVUW, REMW, REMUW
@@ -347,14 +348,14 @@ module VX_decode import VX_gpu_pkg::*; #(
                 op_args.lsu.offset = 0;
             end
             INST_SYS : begin
-                if (func3[1:0] != 0) begin
+                if (funct3[1:0] != 0) begin
                     ex_type = EX_SFU;
-                    op_type = INST_OP_BITS'(inst_sfu_csr(func3));
+                    op_type = INST_OP_BITS'(inst_sfu_csr(funct3));
                     op_args.csr.addr = u_12;
-                    op_args.csr.use_imm = func3[2];
+                    op_args.csr.use_imm = funct3[2];
                     is_wstall = is_fpu_csr; // only stall for FPU CSRs
                     `USED_IREG (rd);
-                    if (func3[2]) begin
+                    if (funct3[2]) begin
                         op_args.csr.imm = rs1;
                     end else begin
                         `USED_IREG (rs1);
@@ -373,29 +374,26 @@ module VX_decode import VX_gpu_pkg::*; #(
             end
         `ifdef EXT_V_ENABLE
             INST_FL: begin
-                if(func3[2] == 1 || func3 == 0) begin
+                if (funct3[2] == 1 || funct3 == 0) begin
                     ex_type = EX_LSU;
-                    op_type = INST_OP_BITS'({1'b0, func3});
+                    op_type = INST_OP_BITS'({1'b0, funct3});
                     op_args.lsu.is_store = 0;
                     op_args.lsu.is_float = opcode[2];
                     op_args.lsu.offset = u_12;
                     `USED_IREG (rs1);
-                    `USED_IREG (rd);
-                    rd_v.rtype = REG_TYPE_BITS'(opcode[2]);
-                end
-                else begin
+                    `USED_FREG (rd);
+                end else begin
                     ex_type = EX_VPU;
-                    //TODO: op_type = [Figure out instruction numbering for load/store, may depend on mop, in which case, mop field for op_args.vpu can be removed]
-                    op_args.vpu.nf = nf;
-                    op_args.vpu.mop = mop;
-                    op_args.vpu.mew = mew;
-                    op_args.vpu.width = func3;
-
+                    op_type = INST_OP_BITS'(INST_VPU_VLD);
+                    op_args.vpu.vld.nf = nf;
+                    op_args.vpu.vld.mop = mop;
+                    op_args.vpu.vld.mew = mew;
+                    op_args.vpu.vld.width = funct3;
                     `USED_IREG (rs1);
                     `USED_VREG (rd);
                     case (mop)
                         2'b00: begin
-                            op_args.vpu.lusumop = rs2;
+                            op_args.vpu.vld.lumop = rs2;
                         end
                         2'b10: begin
                             `USED_IREG (rs2);
@@ -411,7 +409,7 @@ module VX_decode import VX_gpu_pkg::*; #(
         `endif
             INST_L: begin
                 ex_type = EX_LSU;
-                op_type = INST_OP_BITS'({1'b0, func3});
+                op_type = INST_OP_BITS'({1'b0, funct3});
                 op_args.lsu.is_store = 0;
                 op_args.lsu.is_float = opcode[2];
                 op_args.lsu.offset = u_12;
@@ -423,29 +421,26 @@ module VX_decode import VX_gpu_pkg::*; #(
             end
         `ifdef EXT_V_ENABLE
             INST_FS: begin
-                if(func3[2] == 1 || func3 == 0) begin
+                if (funct3[2] == 1 || funct3 == 0) begin
                     ex_type = EX_LSU;
-                    op_type = INST_OP_BITS'({1'b1, func3});
+                    op_type = INST_OP_BITS'({1'b1, funct3});
                     op_args.lsu.is_store = 1;
                     op_args.lsu.is_float = opcode[2];
                     op_args.lsu.offset = s_imm;
                     `USED_IREG (rs1);
-                    `USED_IREG (rs2);
-                    rs2_v.rtype = REG_TYPE_BITS'(opcode[2]);
-                end
-                else begin
+                    `USED_FREG (rs2);
+                end else begin
                     ex_type = EX_VPU;
-                    //TODO: op_type = [Figure out instruction numbering for load/store, may depend on mop, in which case, mop field for op_args.vpu can be removed]
-                    op_args.vpu.nf = nf;
-                    op_args.vpu.mop = mop;
-                    op_args.vpu.mew = mew;
-                    op_args.vpu.width = func3;
-
+                    op_type = INST_OP_BITS'(INST_VPU_VST);
+                    op_args.vpu.vst.nf = nf;
+                    op_args.vpu.vst.mop = mop;
+                    op_args.vpu.vst.mew = mew;
+                    op_args.vpu.vst.width = funct3;
                     `USED_IREG (rs1);
-                    `USED_VREG (rd);
+                    `USED_VREG (rs3);
                     case (mop)
                         2'b00: begin
-                            op_args.vpu.lusumop = rs2;
+                            op_args.vpu.vst.sumop = rs2;
                         end
                         2'b10: begin
                             `USED_IREG (rs2);
@@ -461,7 +456,7 @@ module VX_decode import VX_gpu_pkg::*; #(
         `endif
             INST_S: begin
                 ex_type = EX_LSU;
-                op_type = INST_OP_BITS'({1'b1, func3});
+                op_type = INST_OP_BITS'({1'b1, funct3});
                 op_args.lsu.is_store = 1;
                 op_args.lsu.is_float = opcode[2];
                 op_args.lsu.offset = s_imm;
@@ -479,8 +474,8 @@ module VX_decode import VX_gpu_pkg::*; #(
             begin
                 ex_type = EX_FPU;
                 op_type = INST_OP_BITS'({2'b00, 1'b1, opcode[3]});
-                op_args.fpu.frm = func3;
-                op_args.fpu.fmt[0] = func2[0]; // float / double
+                op_args.fpu.frm = funct3;
+                op_args.fpu.fmt[0] = funct2[0]; // float / double
                 op_args.fpu.fmt[1] = opcode[3] ^ opcode[2]; // SUB
                 `USED_FREG (rd);
                 `USED_FREG (rs1);
@@ -489,16 +484,16 @@ module VX_decode import VX_gpu_pkg::*; #(
             end
             INST_FCI: begin
                 ex_type = EX_FPU;
-                op_args.fpu.frm = func3;
-                op_args.fpu.fmt[0] = func2[0]; // float / double
+                op_args.fpu.frm = funct3;
+                op_args.fpu.fmt[0] = funct2[0]; // float / double
                 op_args.fpu.fmt[1] = rs2[1];   // int32 / int64
-                case (func5)
+                case (funct5)
                     5'b00000, // FADD
                     5'b00001, // FSUB
                     5'b00010: // FMUL
                     begin
-                        op_type = INST_OP_BITS'({2'b00, 1'b0, func5[1]});
-                        op_args.fpu.fmt[1] = func5[0]; // SUB
+                        op_type = INST_OP_BITS'({2'b00, 1'b0, funct5[1]});
+                        op_args.fpu.fmt[1] = funct5[0]; // SUB
                         `USED_FREG (rd);
                         `USED_FREG (rs1);
                         `USED_FREG (rs2);
@@ -506,7 +501,7 @@ module VX_decode import VX_gpu_pkg::*; #(
                     5'b00100: begin
                         // NCP: FSGNJ=0, FSGNJN=1, FSGNJX=2
                         op_type = INST_OP_BITS'(INST_FPU_MISC);
-                        op_args.fpu.frm = INST_FRM_BITS'(func3[1:0]);
+                        op_args.fpu.frm = INST_FRM_BITS'(funct3[1:0]);
                         `USED_FREG (rd);
                         `USED_FREG (rs1);
                         `USED_FREG (rs2);
@@ -514,7 +509,7 @@ module VX_decode import VX_gpu_pkg::*; #(
                     5'b00101: begin
                         // NCP: FMIN=6, FMAX=7
                         op_type = INST_OP_BITS'(INST_FPU_MISC);
-                        op_args.fpu.frm = INST_FRM_BITS'(func3[0] ? 7 : 6);
+                        op_args.fpu.frm = INST_FRM_BITS'(funct3[0] ? 7 : 6);
                         `USED_FREG (rd);
                         `USED_FREG (rs1);
                         `USED_FREG (rs2);
@@ -560,7 +555,7 @@ module VX_decode import VX_gpu_pkg::*; #(
                         `USED_IREG (rs1);
                     end
                     5'b11100: begin
-                        if (func3[0]) begin
+                        if (funct3[0]) begin
                             // NCP: FCLASS=3
                             op_type = INST_OP_BITS'(INST_FPU_MISC);
                             op_args.fpu.frm = INST_FRM_BITS'(3);
@@ -584,11 +579,11 @@ module VX_decode import VX_gpu_pkg::*; #(
             end
         `endif
             INST_EXT1: begin
-                case (func7)
+                case (funct7)
                     7'h00: begin
                         ex_type = EX_SFU;
                         is_wstall = 1;
-                        case (func3)
+                        case (funct3)
                             3'h0: begin // TMC
                                 op_type = INST_OP_BITS'(INST_SFU_TMC);
                                 `USED_IREG (rs1);
@@ -628,51 +623,61 @@ module VX_decode import VX_gpu_pkg::*; #(
         `ifdef EXT_V_ENABLE
             INST_V: begin
                 ex_type = EX_VPU;
-                op_type = v_type;
-                op_args.vpu.vm = vm;
-
-                case (func3)
-                    3'd0,
-                    3'd1,
-                    3'd2: begin
-                        op_args.vpu.operand_type = OP_TYPE_VV;
+                case (funct3)
+                    3'd0, 3'd1, 3'd2: begin // OPIVV, OPFVV, OPMVV
+                        op_type = INST_OP_BITS'(INST_VPU_VOP);
+                        op_args.vpu.vop.op = vop_type;
+                        op_args.vpu.vop.vm = vm;
+                        op_args.vpu.vop.use_imm = 0;
                         `USED_VREG (rs1);
                         `USED_VREG (rs2);
                         `USED_VREG (rd);
                     end
-                    3'd3: begin
-                        op_args.vpu.operand_type = OP_TYPE_VI;
-                        op_args.vpu.use_imm = 1;
-                        op_args.vpu.imm = rs1;
+                    3'd3: begin // OPIVI
+                         op_type = INST_OP_BITS'(INST_VPU_VOP);
+                        op_args.vpu.vop.op = vop_type;
+                        op_args.vpu.vop.vm = vm;
+                        op_args.vpu.vop.use_imm = 1;
+                        op_args.vpu.vop.imm = rs1;
                         `USED_VREG (rs2);
                         `USED_VREG (rd);
                     end
-                    3'd4,
-                    3'd6: begin
-                        op_args.vpu.operand_type = OP_TYPE_VX;
+                    3'd4, 3'd6: begin // OPIVX, OPIVV
+                        op_type = INST_OP_BITS'(INST_VPU_VOP);
+                        op_args.vpu.vop.op = vop_type;
+                        op_args.vpu.vop.vm = vm;
+                        op_args.vpu.vop.use_imm = 0;
                         `USED_IREG (rs1);
                         `USED_VREG (rs2);
                         `USED_VREG (rd);
                     end
-                    3'd5: begin
-                        op_args.vpu.operand_type = OP_TYPE_VF;
+                    3'd5: begin // OPFVF
+                        op_type = INST_OP_BITS'(INST_VPU_VOP);
+                        op_args.vpu.vop.op = vop_type;
+                        op_args.vpu.vop.vm = vm;
+                        op_args.vpu.vop.use_imm = 0;
                         `USED_FREG (rs1);
                         `USED_VREG (rs2);
                         `USED_VREG (rd);
                     end
-                    3'd7: begin
+                    3'd7: begin // VSETX
+                        op_type = INST_OP_BITS'(INST_VPU_VSET);
+                        op_args.vpu.vset.vset = vset;
+                        op_args.vpu.vset.use_imm = 0;
+                        op_args.vpu.vset.use_zimm = 0;
                         `USED_IREG (rd);
                         if(vset == 2'b10) begin
                             `USED_IREG (rs2);
                             `USED_IREG (rs1);
-                        end
-                        else if(vset[1] == 1'b0) begin
-                            `USED_IREG (rs1);
-                        end
-                        else begin
-                            op_args.vpu.use_imm = 1;
-                            op_args.vpu.zimm = zimm;
-                            op_args.vpu.imm = rs1;
+                        end else begin
+                            op_args.vpu.vset.use_zimm = 1;
+                            op_args.vpu.vset.zimm = zimm;
+                            if (vset[0]) begin
+                                op_args.vpu.vset.use_imm = 1;
+                                op_args.vpu.vset.imm = rs1;
+                            end else begin
+                                `USED_IREG (rs1);
+                            end
                         end
                     end
                 endcase
