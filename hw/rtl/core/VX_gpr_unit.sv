@@ -91,7 +91,11 @@ module VX_gpr_unit import VX_gpu_pkg::*; #(
         end else begin : g_no_simd_wis
             assign gpr_req_data[i] = {gpr_if[i].req_data.opd_id, gpr_if[i].req_data.reg_id[NR_BITS-1:BANKID_REG_BITS]};
         end
-        `CONCAT(gpr_req_bank_idx[i], gpr_if[i].req_data.wis[BANKID_WIS_BITS-1:0], gpr_if[i].req_data.reg_id[BANKID_REG_BITS-1:0], BANKID_WIS_BITS, BANKID_REG_BITS)
+        if (BANK_SEL_BITS != 0) begin : g_gpr_req_bank_idx
+            `CONCAT(gpr_req_bank_idx[i], gpr_if[i].req_data.wis[BANKID_WIS_BITS-1:0], gpr_if[i].req_data.reg_id[BANKID_REG_BITS-1:0], BANKID_WIS_BITS, BANKID_REG_BITS)
+        end else begin : g_gpr_req_bank_idx
+            assign gpr_req_bank_idx[i] = '0;
+        end
         `UNUSED_VAR (gpr_if[i].req_data.sid)
         `UNUSED_VAR (gpr_if[i].req_data.wis)
         assign gpr_if[i].req_ready = gpr_req_ready[i];
@@ -163,6 +167,7 @@ module VX_gpr_unit import VX_gpu_pkg::*; #(
         if (BANK_SEL_BITS != 0) begin : g_bank_wr_enabled_multibanks
             assign bank_wr_enabled = writeback_if.valid && (bank_wr_id == BANK_SEL_BITS'(b));
         end else begin : g_bank_wr_enabled
+            `UNUSED_VAR (bank_wr_id)
             assign bank_wr_enabled = writeback_if.valid;
         end
 

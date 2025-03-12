@@ -705,6 +705,10 @@ package VX_gpu_pkg;
         return NR_BITS'(reg_idx.rtype * RV_REGS) + NR_BITS'(reg_idx.id);
     endfunction
 
+    function logic [RV_REGS-1:0] to_reg_mask(input reg_idx_t reg_idx);
+        return ((1 << (1 << reg_idx.ext))-1) << reg_idx.id;
+    endfunction
+
     ////////////////////////////////// Tracing ////////////////////////////////
 
 `ifdef SIMULATION
