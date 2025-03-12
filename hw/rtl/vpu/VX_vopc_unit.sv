@@ -178,7 +178,7 @@ module VX_vopc_unit import VX_gpu_pkg::*; #(
 
     // Differentiate based on operand type
     for (genvar i = 0; i < NUM_SRC_OPDS; ++i) begin : g_opds_to_fetch
-        /*always@(*) begin
+        always@(*) begin
 
             // TO FIX Vector Type to a param
             if(2'(src_regs[i][NR_BITS-1 : 6]) == 2) begin
@@ -195,7 +195,7 @@ module VX_vopc_unit import VX_gpu_pkg::*; #(
                 v_opds_mask[i] = 0;
                 gp_opds_mask[i] = 1;
             end
-        end*/
+        end
     end
 
     // ** SubModule 8 : FSM for gprf **
