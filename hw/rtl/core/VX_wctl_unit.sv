@@ -79,20 +79,19 @@ module VX_wctl_unit import VX_gpu_pkg::*; #(
     logic [`NUM_THREADS-1:0] else_tmask;
 
     if (PID_BITS != 0) begin : g_pid
-        reg [`NUM_THREADS-1:0] then_tmask_r;
-        reg [`NUM_THREADS-1:0] else_tmask_r;
+        reg [`NUM_WARPS-1:0][2*`NUM_THREADS-1:0] tmask_table;
+
+        wire [2*`NUM_THREADS-1:0] tmask_r = tmask_table[execute_if.data.wid];
 
         always @(*) begin
-            then_tmask = execute_if.data.sop ? '0 : then_tmask_r;
-            else_tmask = execute_if.data.sop ? '0 : else_tmask_r;
+            {else_tmask, then_tmask} = execute_if.data.sop ? '0 : tmask_r;
             then_tmask[execute_if.data.pid * NUM_LANES +: NUM_LANES] = taken & execute_if.data.tmask;
             else_tmask[execute_if.data.pid * NUM_LANES +: NUM_LANES] = ~taken & execute_if.data.tmask;
         end
 
         always @(posedge clk) begin
             if (execute_if.valid) begin
-                then_tmask_r <= then_tmask;
-                else_tmask_r <= else_tmask;
+                tmask_table[execute_if.data.wid] <= {else_tmask, then_tmask};
             end
         end
     end else begin : g_no_pid
@@ -180,7 +179,7 @@ module VX_wctl_unit import VX_gpu_pkg::*; #(
         .reset    (reset),
         .enable   (1'b1),
         .data_in  ({wctl_valid,        execute_if.data.wid, tmc,             wspawn,             split,             sjoin,             barrier}),
-        .data_out ({warp_ctl_if.valid, warp_ctl_if.wid,     warp_ctl_if.tmc, warp_ctl_if.wspawn, warp_ctl_if.split, warp_ctl_if.sjoin, warp_ctl_if.barrier})
+        .data_out ({warp_ctl_if.valid, warp_ctl_if.wid,      warp_ctl_if.tmc, warp_ctl_if.wspawn, warp_ctl_if.split, warp_ctl_if.sjoin, warp_ctl_if.barrier})
     );
 
     for (genvar i = 0; i < NUM_LANES; ++i) begin : g_result_if

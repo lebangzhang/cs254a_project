@@ -137,12 +137,12 @@ module VX_scoreboard import VX_gpu_pkg::*; #(
         wire [NUM_OPDS-1:0] ibf_used_rs = {ibuffer_if[w].data.used_rs, ibuffer_if[w].data.wb};
         wire [NUM_OPDS-1:0] stg_used_rs = {staging_if[w].data.used_rs, staging_if[w].data.wb};
 
-        wire [NUM_OPDS-1:0][REG_TYPES-1:0][31:0] ibf_opd_mask, stg_opd_mask;
+        wire [NUM_OPDS-1:0][REG_TYPES-1:0][RV_REGS-1:0] ibf_opd_mask, stg_opd_mask;
 
         for (genvar i = 0; i < NUM_OPDS; ++i) begin : g_opd_masks
             for (genvar j = 0; j < REG_TYPES; ++j) begin : g_j
-                assign ibf_opd_mask[i][j] = (`REG_EXT_VAL(ibf_opds[i].ext, j) << ibf_opds[i].id) & {32{ibf_used_rs[i] && ibf_opds[i].rtype == j}};
-                assign stg_opd_mask[i][j] = (`REG_EXT_VAL(stg_opds[i].ext, j) << stg_opds[i].id) & {32{stg_used_rs[i] && stg_opds[i].rtype == j}};
+                assign ibf_opd_mask[i][j] = to_reg_mask(ibf_opds[i]) & {RV_REGS{ibf_used_rs[i] && ibf_opds[i].rtype == j}};
+                assign stg_opd_mask[i][j] = to_reg_mask(stg_opds[i]) & {RV_REGS{stg_used_rs[i] && stg_opds[i].rtype == j}};
             end
         end
 
@@ -174,12 +174,12 @@ module VX_scoreboard import VX_gpu_pkg::*; #(
             end
         end
 
-        wire [REG_TYPES-1:0][31:0] in_use_mask;
+        wire [REG_TYPES-1:0][RV_REGS-1:0] in_use_mask;
         for (genvar i = 0; i < REG_TYPES; ++i) begin : g_in_use_mask
-            wire [31:0] ibf_reg_mask = ibf_opd_mask[0][i] | ibf_opd_mask[1][i] | ibf_opd_mask[2][i] | ibf_opd_mask[3][i];
-            wire [31:0] stg_reg_mask = stg_opd_mask[0][i] | stg_opd_mask[1][i] | stg_opd_mask[2][i] | stg_opd_mask[3][i];
-            wire [31:0] regs_mask = ibuffer_fire ? ibf_reg_mask : stg_reg_mask;
-            assign in_use_mask[i] = inuse_regs_n[i * 32 +: 32] & regs_mask;
+            wire [RV_REGS-1:0] ibf_reg_mask = ibf_opd_mask[0][i] | ibf_opd_mask[1][i] | ibf_opd_mask[2][i] | ibf_opd_mask[3][i];
+            wire [RV_REGS-1:0] stg_reg_mask = stg_opd_mask[0][i] | stg_opd_mask[1][i] | stg_opd_mask[2][i] | stg_opd_mask[3][i];
+            wire [RV_REGS-1:0] regs_mask = ibuffer_fire ? ibf_reg_mask : stg_reg_mask;
+            assign in_use_mask[i] = inuse_regs_n[i * RV_REGS +: RV_REGS] & regs_mask;
         end
 
         wire [REG_TYPES-1:0] regs_busy;

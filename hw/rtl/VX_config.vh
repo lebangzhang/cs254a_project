@@ -382,9 +382,7 @@
 `ifndef NUM_SFU_LANES
 `define NUM_SFU_LANES   `SIMD_WIDTH
 `endif
-`ifndef NUM_SFU_BLOCKS
 `define NUM_SFU_BLOCKS  1
-`endif
 
 // Size of Instruction Buffer
 `ifndef IBUF_SIZE
