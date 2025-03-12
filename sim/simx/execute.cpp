@@ -111,9 +111,9 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
   auto next_tmask = warp.tmask;
 
   auto opcode = instr.getOpcode();
-  auto func2  = instr.getFunc2();
-  auto func3  = instr.getFunc3();
-  auto func7  = instr.getFunc7();
+  auto funct2 = instr.getFunct2();
+  auto funct3 = instr.getFunct3();
+  auto funct7 = instr.getFunct7();
   auto rdest  = instr.getRDest();
   auto rsrc0  = instr.getRSrc(0);
   auto rsrc1  = instr.getRSrc(1);
@@ -180,15 +180,15 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
     for (uint32_t t = thread_start; t < num_threads; ++t) {
       if (!warp.tmask.test(t))
         continue;
-      if (func7 == 0x7) {
+      if (funct7 == 0x7) {
         auto value = rs1_data[t].i;
         auto cond = rs2_data[t].i;
-        if (func3 == 0x5) {
+        if (funct3 == 0x5) {
           // CZERO.EQZ
           rd_data[t].i = (cond == 0) ? 0 : value;
           trace->alu_type = AluType::ARITH;
         } else
-        if (func3 == 0x7) {
+        if (funct3 == 0x7) {
           // CZERO.NEZ
           rd_data[t].i = (cond != 0) ? 0 : value;
           trace->alu_type = AluType::ARITH;
@@ -196,8 +196,8 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
           std::abort();
         }
       } else
-      if (func7 & 0x1) {
-        switch (func3) {
+      if (funct7 & 0x1) {
+        switch (funct3) {
         case 0: {
           // RV32M: MUL
           rd_data[t].i = rs1_data[t].i * rs2_data[t].i;
@@ -286,9 +286,9 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
           std::abort();
         }
       } else {
-        switch (func3) {
+        switch (funct3) {
         case 0: {
-          if (func7 & 0x20) {
+          if (funct7 & 0x20) {
             // RV32I: SUB
             rd_data[t].i = rs1_data[t].i - rs2_data[t].i;
           } else {
@@ -322,7 +322,7 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
         case 5: {
           Word shamt_mask = ((Word)1 << log2up(XLEN)) - 1;
           Word shamt = rs2_data[t].i & shamt_mask;
-          if (func7 & 0x20) {
+          if (funct7 & 0x20) {
             // RV32I: SRA
             rd_data[t].i = rs1_data[t].i >> shamt;
           } else {
@@ -356,7 +356,7 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
     for (uint32_t t = thread_start; t < num_threads; ++t) {
       if (!warp.tmask.test(t))
         continue;
-      switch (func3) {
+      switch (funct3) {
       case 0: {
         // RV32I: ADDI
         rd_data[t].i = rs1_data[t].i + immsrc;
@@ -383,7 +383,7 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
         break;
       }
       case 5: {
-        if (func7 & 0x20) {
+        if (funct7 & 0x20) {
           // RV32I: SRAI
           Word result = rs1_data[t].i >> immsrc;
           rd_data[t].i = result;
@@ -417,8 +417,8 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
     for (uint32_t t = thread_start; t < num_threads; ++t) {
       if (!warp.tmask.test(t))
         continue;
-      if (func7 & 0x1) {
-        switch (func3) {
+      if (funct7 & 0x1) {
+        switch (funct3) {
           case 0: {
             // RV64M: MULW
             int32_t product = (int32_t)rs1_data[t].i * (int32_t)rs2_data[t].i;
@@ -492,9 +492,9 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
             std::abort();
         }
       } else {
-        switch (func3) {
+        switch (funct3) {
         case 0: {
-          if (func7 & 0x20){
+          if (funct7 & 0x20){
             // RV64I: SUBW
             uint32_t result = (uint32_t)rs1_data[t].i - (uint32_t)rs2_data[t].i;
             rd_data[t].i = sext((uint64_t)result, 32);
@@ -518,7 +518,7 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
           uint32_t shamt_mask = 0x1F;
           uint32_t shamt = rs2_data[t].i & shamt_mask;
           uint32_t result;
-          if (func7 & 0x20) {
+          if (funct7 & 0x20) {
             // RV64I: SRAW
             result = (int32_t)rs1_data[t].i >> shamt;
           } else {
@@ -543,7 +543,7 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
     for (uint32_t t = thread_start; t < num_threads; ++t) {
       if (!warp.tmask.test(t))
         continue;
-      switch (func3) {
+      switch (funct3) {
         case 0: {
           // RV64I: ADDIW
           uint32_t result = (uint32_t)rs1_data[t].i + (uint32_t)immsrc;
@@ -562,7 +562,7 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
           uint32_t shamt_mask = 0x1F;
           uint32_t shamt = immsrc & shamt_mask;
           uint32_t result;
-          if (func7 & 0x20) {
+          if (funct7 & 0x20) {
             // RV64I: SRAIW
             result = (int32_t)rs1_data[t].i >> shamt;
           } else {
@@ -589,7 +589,7 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
       if (!warp.tmask.test(t))
         continue;
       bool curr_taken = false;
-      switch (func3) {
+      switch (funct3) {
       case 0: {
         // RV32I: BEQ
         if (rs1_data[t].i == rs2_data[t].i) {
@@ -690,9 +690,9 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
     auto trace_data = std::make_shared<LsuTraceData>(num_threads);
     trace->data = trace_data;
     if ((opcode == Opcode::L )
-     || (opcode == Opcode::FL && func3 == 2)
-     || (opcode == Opcode::FL && func3 == 3)) {
-      uint32_t data_bytes = 1 << (func3 & 0x3);
+     || (opcode == Opcode::FL && funct3 == 2)
+     || (opcode == Opcode::FL && funct3 == 3)) {
+      uint32_t data_bytes = 1 << (funct3 & 0x3);
       uint32_t data_width = 8 * data_bytes;
       for (uint32_t t = thread_start; t < num_threads; ++t) {
         if (!warp.tmask.test(t))
@@ -701,7 +701,7 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
         uint64_t read_data = 0;
         this->dcache_read(&read_data, mem_addr, data_bytes);
         trace_data->mem_addrs.at(t) = {mem_addr, data_bytes};
-        switch (func3) {
+        switch (funct3) {
         case 0: // RV32I: LB
         case 1: // RV32I: LH
           rd_data[t].i = sext((Word)read_data, data_width);
@@ -749,16 +749,16 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
     auto trace_data = std::make_shared<LsuTraceData>(num_threads);
     trace->data = trace_data;
     if ((opcode == Opcode::S)
-     || (opcode == Opcode::FS && func3 == 2)
-     || (opcode == Opcode::FS && func3 == 3)) {
-      uint32_t data_bytes = 1 << (func3 & 0x3);
+     || (opcode == Opcode::FS && funct3 == 2)
+     || (opcode == Opcode::FS && funct3 == 3)) {
+      uint32_t data_bytes = 1 << (funct3 & 0x3);
       for (uint32_t t = thread_start; t < num_threads; ++t) {
         if (!warp.tmask.test(t))
           continue;
         uint64_t mem_addr = rs1_data[t].i + immsrc;
         uint64_t write_data = rs2_data[t].u64;
         trace_data->mem_addrs.at(t) = {mem_addr, data_bytes};
-        switch (func3) {
+        switch (funct3) {
         case 0:
         case 1:
         case 2:
@@ -788,8 +788,8 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
     trace->src_regs[1] = {RegType::Integer, rsrc1};
     auto trace_data = std::make_shared<LsuTraceData>(num_threads);
     trace->data = trace_data;
-    auto amo_type = func7 >> 2;
-    uint32_t data_bytes = 1 << (func3 & 0x3);
+    auto amo_type = funct7 >> 2;
+    uint32_t data_bytes = 1 << (funct3 & 0x3);
     uint32_t data_width = 8 * data_bytes;
     for (uint32_t t = thread_start; t < num_threads; ++t) {
       if (!warp.tmask.test(t))
@@ -861,7 +861,7 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
         continue;
       uint32_t csr_addr = immsrc;
       Word csr_value;
-      if (func3 == 0) {
+      if (funct3 == 0) {
         trace->fu_type = FUType::ALU;
         trace->alu_type = AluType::SYSCALL;
         trace->fetch_stall = true;
@@ -884,7 +884,7 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
         // stall the fetch stage for FPU CSRs
         trace->fetch_stall = (csr_addr <= VX_CSR_FCSR);
         csr_value = this->get_csr(csr_addr, t, wid);
-        switch (func3) {
+        switch (funct3) {
         case 1: {
           // RV32I: CSRRW
           rd_data[t].i = csr_value;
@@ -962,9 +962,9 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
     for (uint32_t t = thread_start; t < num_threads; ++t) {
       if (!warp.tmask.test(t))
         continue;
-      uint32_t frm = this->get_fpu_rm(func3, t, wid);
+      uint32_t frm = this->get_fpu_rm(funct3, t, wid);
       uint32_t fflags = 0;
-      switch (func7) {
+      switch (funct7) {
       case 0x00: { // RV32F: FADD.S
         rd_data[t].u64 = nan_box(rv_fadd_s(check_boxing(rs1_data[t].u64), check_boxing(rs2_data[t].u64), frm, &fflags));
         trace->fpu_type = FpuType::FMA;
@@ -1022,7 +1022,7 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
         break;
       }
       case 0x10: {
-        switch (func3) {
+        switch (funct3) {
         case 0: // RV32F: FSGNJ.S
           rd_data[t].u64 = nan_box(rv_fsgnj_s(check_boxing(rs1_data[t].u64), check_boxing(rs2_data[t].u64)));
           break;
@@ -1039,7 +1039,7 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
         break;
       }
       case 0x11: {
-        switch (func3) {
+        switch (funct3) {
         case 0: // RV32D: FSGNJ.D
           rd_data[t].u64 = rv_fsgnj_d(rs1_data[t].u64, rs2_data[t].u64);
           break;
@@ -1056,7 +1056,7 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
         break;
       }
       case 0x14: {
-        if (func3) {
+        if (funct3) {
           // RV32F: FMAX.S
           rd_data[t].u64 = nan_box(rv_fmax_s(check_boxing(rs1_data[t].u64), check_boxing(rs2_data[t].u64), &fflags));
         } else {
@@ -1069,7 +1069,7 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
         break;
       }
       case 0x15: {
-        if (func3) {
+        if (funct3) {
           // RV32D: FMAX.D
           rd_data[t].u64 = rv_fmax_d(rs1_data[t].u64, rs2_data[t].u64, &fflags);
         } else {
@@ -1108,7 +1108,7 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
         break;
       }
       case 0x50: {
-        switch (func3) {
+        switch (funct3) {
         case 0:
           // RV32F: FLE.S
           rd_data[t].i = rv_fle_s(check_boxing(rs1_data[t].u64), check_boxing(rs2_data[t].u64), &fflags);
@@ -1128,7 +1128,7 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
         break;
       }
       case 0x51: {
-        switch (func3) {
+        switch (funct3) {
         case 0:
           // RV32D: FLE.D
           rd_data[t].i = rv_fle_d(rs1_data[t].u64, rs2_data[t].u64, &fflags);
@@ -1240,7 +1240,7 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
         break;
       }
       case 0x70: {
-        if (func3) {
+        if (funct3) {
           // RV32F: FCLASS.S
           rd_data[t].i = rv_fclss_s(check_boxing(rs1_data[t].u64));
         } else {
@@ -1253,7 +1253,7 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
         break;
       }
       case 0x71: {
-        if (func3) {
+        if (funct3) {
           // RV32D: FCLASS.D
           rd_data[t].i = rv_fclss_d(rs1_data[t].u64);
         } else {
@@ -1293,11 +1293,11 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
     for (uint32_t t = thread_start; t < num_threads; ++t) {
       if (!warp.tmask.test(t))
         continue;
-      uint32_t frm = this->get_fpu_rm(func3, t, wid);
+      uint32_t frm = this->get_fpu_rm(funct3, t, wid);
       uint32_t fflags = 0;
       switch (opcode) {
       case Opcode::FMADD:
-        if (func2)
+        if (funct2)
           // RV32D: FMADD.D
           rd_data[t].u64 = rv_fmadd_d(rs1_data[t].u64, rs2_data[t].u64, rs3_data[t].u64, frm, &fflags);
         else
@@ -1305,7 +1305,7 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
           rd_data[t].u64 = nan_box(rv_fmadd_s(check_boxing(rs1_data[t].u64), check_boxing(rs2_data[t].u64), check_boxing(rs3_data[t].u64), frm, &fflags));
         break;
       case Opcode::FMSUB:
-        if (func2)
+        if (funct2)
           // RV32D: FMSUB.D
           rd_data[t].u64 = rv_fmsub_d(rs1_data[t].u64, rs2_data[t].u64, rs3_data[t].u64, frm, &fflags);
         else
@@ -1313,7 +1313,7 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
           rd_data[t].u64 = nan_box(rv_fmsub_s(check_boxing(rs1_data[t].u64), check_boxing(rs2_data[t].u64), check_boxing(rs3_data[t].u64), frm, &fflags));
         break;
       case Opcode::FMNMADD:
-        if (func2)
+        if (funct2)
           // RV32D: FNMADD.D
           rd_data[t].u64 = rv_fnmadd_d(rs1_data[t].u64, rs2_data[t].u64, rs3_data[t].u64, frm, &fflags);
         else
@@ -1321,7 +1321,7 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
           rd_data[t].u64 = nan_box(rv_fnmadd_s(check_boxing(rs1_data[t].u64), check_boxing(rs2_data[t].u64), check_boxing(rs3_data[t].u64), frm, &fflags));
         break;
       case Opcode::FMNMSUB:
-        if (func2)
+        if (funct2)
           // RV32D: FNMSUB.D
           rd_data[t].u64 = rv_fnmsub_d(rs1_data[t].u64, rs2_data[t].u64, rs3_data[t].u64, frm, &fflags);
         else
@@ -1346,9 +1346,9 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
     break;
 #endif
   case Opcode::EXT1: {
-    switch (func7) {
+    switch (funct7) {
     case 0: {
-      switch (func3) {
+      switch (funct3) {
       case 0: {
         // TMC
         trace->fu_type = FUType::SFU;
@@ -1468,7 +1468,7 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
     }
   } break;
   case Opcode::EXT2: {
-    switch(func3) {
+    switch(funct3) {
   #ifdef EXT_TPU_ENABLE
     case 2: {
       trace->fu_type = FUType::SFU;
@@ -1480,7 +1480,7 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
       trace->data = trace_data;
 
       TensorFormat from, to;
-      switch (func2) {
+      switch (funct2) {
       case 0: // INT8
         from = TensorFormat::Int4;
         to = TensorFormat::Int32;

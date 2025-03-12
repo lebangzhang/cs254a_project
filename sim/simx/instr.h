@@ -65,10 +65,10 @@ enum class InstType {
 enum DecodeConstants {
   width_opcode= 7,
   width_reg   = 5,
-  width_func2 = 2,
-  width_func3 = 3,
-  width_func6 = 6,
-  width_func7 = 7,
+  width_funct2= 2,
+  width_funct3= 3,
+  width_funct6= 6,
+  width_funct7= 7,
   width_mop   = 3,
   width_vmask = 1,
   width_i_imm = 12,
@@ -83,26 +83,26 @@ enum DecodeConstants {
 
   shift_opcode= 0,
   shift_rd    = width_opcode,
-  shift_func3 = shift_rd + width_reg,
-  shift_rs1   = shift_func3 + width_func3,
+  shift_funct3= shift_rd + width_reg,
+  shift_rs1   = shift_funct3 + width_funct3,
   shift_rs2   = shift_rs1 + width_reg,
-  shift_func2 = shift_rs2 + width_reg,
-  shift_func7 = shift_rs2 + width_reg,
-  shift_rs3   = shift_func7 + width_func2,
-  shift_vmop  = shift_func7 + width_vmask,
+  shift_funct2= shift_rs2 + width_reg,
+  shift_funct7= shift_rs2 + width_reg,
+  shift_rs3   = shift_funct7 + width_funct2,
+  shift_vmop  = shift_funct7 + width_vmask,
   shift_vnf   = shift_vmop + width_mop,
-  shift_func6 = shift_func7 + width_vmask,
-  shift_vset  = shift_func7 + width_func6,
+  shift_funct6= shift_funct7 + width_vmask,
+  shift_vset  = shift_funct7 + width_funct6,
   shift_v_sew = width_v_lmul,
   shift_v_ta  = shift_v_sew + width_v_sew,
   shift_v_ma  = shift_v_ta + width_v_ta,
 
   mask_opcode = (1 << width_opcode) - 1,
   mask_reg    = (1 << width_reg)   - 1,
-  mask_func2  = (1 << width_func2) - 1,
-  mask_func3  = (1 << width_func3) - 1,
-  mask_func6  = (1 << width_func6) - 1,
-  mask_func7  = (1 << width_func7) - 1,
+  mask_funct2 = (1 << width_funct2) - 1,
+  mask_funct3 = (1 << width_funct3) - 1,
+  mask_funct6 = (1 << width_funct6) - 1,
+  mask_funct7 = (1 << width_funct7) - 1,
   mask_i_imm  = (1 << width_i_imm) - 1,
   mask_j_imm  = (1 << width_j_imm) - 1,
   mask_v_zimm = (1 << width_v_zimm) - 1,
@@ -136,10 +136,10 @@ public:
     , rdest_type_(RegType::None)
     , imm_(0)
     , rdest_(0)
-    , func2_(0)
-    , func3_(0)
-    , func6_(0)
-    , func7_(0)
+    , funct2_(0)
+    , funct3_(0)
+    , funct6_(0)
+    , funct7_(0)
     , vmask_(0)
     , vlsWidth_(0)
     , vmop_(0)
@@ -182,10 +182,10 @@ public:
 
   void setImm(uint32_t imm) { has_imm_ = true; imm_ = imm; }
 
-  void setFunc2(uint32_t func2) { func2_ = func2; }
-  void setFunc3(uint32_t func3) { func3_ = func3; }
-  void setFunc6(uint32_t func6) { func6_ = func6; }
-  void setFunc7(uint32_t func7) { func7_ = func7; }
+  void setfunct2(uint32_t funct2) { funct2_ = funct2; }
+  void setfunct3(uint32_t funct3) { funct3_ = funct3; }
+  void setfunct6(uint32_t funct6) { funct6_ = funct6; }
+  void setfunct7(uint32_t funct7) { funct7_ = funct7; }
 
   // Attributes for Vector instructions
   void setVlsWidth(uint32_t width) { vlsWidth_ = width; vattr_mask_ |= vattr_vlswidth; }
@@ -213,10 +213,10 @@ public:
   bool     hasImm() const { return has_imm_; }
   uint32_t getImm() const { return imm_; }
 
-  uint32_t getFunc2() const { return func2_; }
-  uint32_t getFunc3() const { return func3_; }
-  uint32_t getFunc6() const { return func6_; }
-  uint32_t getFunc7() const { return func7_; }
+  uint32_t getFunct2() const { return funct2_; }
+  uint32_t getFunct3() const { return funct3_; }
+  uint32_t getFunct6() const { return funct6_; }
+  uint32_t getFunct7() const { return funct7_; }
 
   // Vector
   uint32_t getVlsWidth() const { return vlsWidth_; }
@@ -247,10 +247,10 @@ private:
   RegType rsrc_type_[MAX_REG_SOURCES];
   uint32_t rsrc_[MAX_REG_SOURCES];
   uint32_t rdest_;
-  uint32_t func2_;
-  uint32_t func3_;
-  uint32_t func6_;
-  uint32_t func7_;
+  uint32_t funct2_;
+  uint32_t funct3_;
+  uint32_t funct6_;
+  uint32_t funct7_;
 
   // Vector
   uint32_t vmask_;

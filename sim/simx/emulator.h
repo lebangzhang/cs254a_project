@@ -154,7 +154,7 @@ private:
 
   void set_csr(uint32_t addr, Word value, uint32_t tid, uint32_t wid);
 
-  uint32_t get_fpu_rm(uint32_t func3, uint32_t tid, uint32_t wid);
+  uint32_t get_fpu_rm(uint32_t funct3, uint32_t tid, uint32_t wid);
 
   void update_fcrs(uint32_t fflags, uint32_t tid, uint32_t wid);
 

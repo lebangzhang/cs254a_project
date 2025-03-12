@@ -316,8 +316,8 @@ void Emulator::storeVector(const Instr &instr, uint32_t wid, uint32_t tid, const
 
 bool Emulator::executeVector(const Instr &instr, uint32_t wid, uint32_t tid, const std::vector<reg_data_t>& rs1_data, const std::vector<reg_data_t>& rs2_data, std::vector<reg_data_t>& rd_data) {
   auto& warp = warps_.at(wid);
-  auto func3 = instr.getFunc3();
-  auto func6 = instr.getFunc6();
+  auto funct3 = instr.getFunct3();
+  auto funct6 = instr.getFunct6();
 
   auto rdest = instr.getRDest();
   auto rsrc0 = instr.getRSrc(0);
@@ -330,13 +330,13 @@ bool Emulator::executeVector(const Instr &instr, uint32_t wid, uint32_t tid, con
   auto& vcsrs = warp.vcsrs.at(tid);
 
   bool rd_write = false;
-  if ((func3 == 0x7) || (func3 == 0x2 && func6 == 16) || (func3 == 0x1 && func6 == 16)) {
+  if ((funct3 == 0x7) || (funct3 == 0x2 && funct6 == 16) || (funct3 == 0x1 && funct6 == 16)) {
     rd_write = true;
   }
 
-  switch (func3) {
+  switch (funct3) {
   case 0: { // vector - vector
-    switch (func6) {
+    switch (funct6) {
     case 0: { // vadd.vv
       vector_op_vv<Add, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, warp.vtype.vsew, warp.vl, vmask);
     } break;
@@ -470,12 +470,12 @@ bool Emulator::executeVector(const Instr &instr, uint32_t wid, uint32_t tid, con
       vector_op_vv_red_w<Add, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, warp.vtype.vsew, warp.vl, vmask);
     } break;
     default:
-      std::cout << "Unrecognised vector - vector instruction func3: " << func3 << " func6: " << func6 << std::endl;
+      std::cout << "Unrecognised vector - vector instruction funct3: " << funct3 << " funct6: " << funct6 << std::endl;
       std::abort();
     }
   } break;
   case 1: { // float vector - vector
-    switch (func6) {
+    switch (funct6) {
     case 0: { // vfadd.vv
       vector_op_vv<Fadd, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, warp.vtype.vsew, warp.vl, vmask);
     } break;
@@ -608,12 +608,12 @@ bool Emulator::executeVector(const Instr &instr, uint32_t wid, uint32_t tid, con
       vector_op_vv_w<Fnmsac, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, warp.vtype.vsew, warp.vl, vmask);
     } break;
     default:
-      std::cout << "Unrecognised float vector - vector instruction func3: " << func3 << " func6: " << func6 << std::endl;
+      std::cout << "Unrecognised float vector - vector instruction funct3: " << funct3 << " funct6: " << funct6 << std::endl;
       std::abort();
     }
   } break;
   case 2: { // mask vector - vector
-    switch (func6) {
+    switch (funct6) {
     case 0: { // vredsum.vs
       vector_op_vv_red<Add, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, warp.vtype.vsew, warp.vl, vmask);
     } break;
@@ -778,12 +778,12 @@ bool Emulator::executeVector(const Instr &instr, uint32_t wid, uint32_t tid, con
       vector_op_vv_w<Maccsu, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, warp.vtype.vsew, warp.vl, vmask);
     } break;
     default:
-      std::cout << "Unrecognised mask vector - vector instruction func3: " << func3 << " func6: " << func6 << std::endl;
+      std::cout << "Unrecognised mask vector - vector instruction funct3: " << funct3 << " funct6: " << funct6 << std::endl;
       std::abort();
     }
   } break;
   case 3: { // vector - immidiate
-    switch (func6) {
+    switch (funct6) {
     case 0: { // vadd.vi
       vector_op_vix<Add, int8_t, int16_t, int32_t, int64_t>(immsrc, vreg_file, rsrc0, rdest, warp.vtype.vsew, warp.vl, vmask);
     } break;
@@ -895,13 +895,13 @@ bool Emulator::executeVector(const Instr &instr, uint32_t wid, uint32_t tid, con
       vector_op_vix_n<Clip, int8_t, int16_t, int32_t, int64_t>(immsrc, vreg_file, rsrc0, rdest, warp.vtype.vsew, warp.vl, vmask, vcsrs.vxrm, vcsrs.vxsat);
     } break;
     default:
-      std::cout << "Unrecognised vector - immidiate instruction func3: " << func3 << " func6: " << func6 << std::endl;
+      std::cout << "Unrecognised vector - immidiate instruction funct3: " << funct3 << " funct6: " << funct6 << std::endl;
       std::abort();
     }
   } break;
   case 4: {
     auto rs1_value = rs1_data.at(tid).i;
-    switch (func6) {
+    switch (funct6) {
     case 0: { // vadd.vx
       vector_op_vix<Add, int8_t, int16_t, int32_t, int64_t>(rs1_value, vreg_file, rsrc1, rdest, warp.vtype.vsew, warp.vl, vmask);
     } break;
@@ -1035,13 +1035,13 @@ bool Emulator::executeVector(const Instr &instr, uint32_t wid, uint32_t tid, con
       vector_op_vix_n<Clip, int8_t, int16_t, int32_t, int64_t>(rs1_value, vreg_file, rsrc1, rdest, warp.vtype.vsew, warp.vl, vmask, vcsrs.vxrm, vcsrs.vxsat);
     } break;
     default:
-      std::cout << "Unrecognised vector - scalar instruction func3: " << func3 << " func6: " << func6 << std::endl;
+      std::cout << "Unrecognised vector - scalar instruction funct3: " << funct3 << " funct6: " << funct6 << std::endl;
       std::abort();
     }
   } break;
   case 5: { // float vector - scalar
     auto rs1_value = rs1_data.at(tid).i;
-    switch (func6) {
+    switch (funct6) {
     case 0: { // vfadd.vf
       vector_op_vix<Fadd, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, warp.vtype.vsew, warp.vl, vmask);
     } break;
@@ -1171,13 +1171,13 @@ bool Emulator::executeVector(const Instr &instr, uint32_t wid, uint32_t tid, con
       vector_op_vix_w<Fnmsac, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, warp.vtype.vsew, warp.vl, vmask);
     } break;
     default:
-      std::cout << "Unrecognised float vector - scalar instruction func3: " << func3 << " func6: " << func6 << std::endl;
+      std::cout << "Unrecognised float vector - scalar instruction funct3: " << funct3 << " funct6: " << funct6 << std::endl;
       std::abort();
     }
   } break;
   case 6: {
     auto rs1_value = rs1_data.at(tid).i;
-    switch (func6) {
+    switch (funct6) {
     case 8: { // vaaddu.vx
       uint32_t vxsat = 0; // saturation is not relevant for this operation
       vector_op_vix_sat<Aadd, uint8_t, uint16_t, uint32_t, uint64_t, __uint128_t>(rs1_value, vreg_file, rsrc1, rdest, warp.vtype.vsew, warp.vl, vmask, vcsrs.vxrm, vxsat);
@@ -1291,7 +1291,7 @@ bool Emulator::executeVector(const Instr &instr, uint32_t wid, uint32_t tid, con
       vector_op_vix_w<Maccsu, int8_t, int16_t, int32_t, int64_t>(rs1_value, vreg_file, rsrc1, rdest, warp.vtype.vsew, warp.vl, vmask);
     } break;
     default:
-      std::cout << "Unrecognised vector - scalar instruction func3: " << func3 << " func6: " << func6 << std::endl;
+      std::cout << "Unrecognised vector - scalar instruction funct3: " << funct3 << " funct6: " << funct6 << std::endl;
       std::abort();
     }
   } break;
@@ -1355,7 +1355,7 @@ bool Emulator::executeVector(const Instr &instr, uint32_t wid, uint32_t tid, con
     this->set_csr(VX_CSR_VSTART, 0, 0, wid);
   } break;
   default:
-    std::cout << "Unrecognised vector instruction func3: " << func3 << " func6: " << func6 << std::endl;
+    std::cout << "Unrecognised vector instruction funct3: " << funct3 << " funct6: " << funct6 << std::endl;
     std::abort();
   }
 
