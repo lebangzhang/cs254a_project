@@ -45,7 +45,7 @@ module VX_gather_unit import VX_gpu_pkg::*; #(
 
     for (genvar i = 0; i < BLOCK_SIZE; ++i) begin : g_commit_in
         assign result_in_valid[i] = result_if[i].valid;
-        assign result_in_data[i] = result_if[i].data;
+        assign result_in_data[i]  = result_if[i].data;
         assign result_if[i].ready = result_in_ready[i];
         if (BLOCK_SIZE != `ISSUE_WIDTH) begin : g_result_in_isw_partial
             if (BLOCK_SIZE != 1) begin : g_block
@@ -118,9 +118,9 @@ module VX_gather_unit import VX_gpu_pkg::*; #(
                 end
             end
         end else begin : g_no_lpid
-            assign commit_sid_w = result_tmp_if.data.pid;
+            assign commit_sid_w   = result_tmp_if.data.pid;
             assign commit_tmask_w = result_tmp_if.data.tmask;
-            assign commit_data_w = result_tmp_if.data.data;
+            assign commit_data_w  = result_tmp_if.data.data;
         end
 
         assign commit_if[i].valid = result_tmp_if.valid;
