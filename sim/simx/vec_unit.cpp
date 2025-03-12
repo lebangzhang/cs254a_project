@@ -29,11 +29,11 @@ public:
       auto& mem_rsp_port = simobject_->MemRsps.at(t);
       if (mem_rsp_port.empty())
           continue;
-      
+
       auto& mem_rsp = mem_rsp_port.front();
       auto& entry = pending_reqs_.at(mem_rsp.tag);
       auto trace = entry.trace;
-      
+
       assert(entry.count);
       --entry.count;
       if (0 == entry.count) {
@@ -42,17 +42,17 @@ public:
       }
       mem_rsp_port.pop();
   }
-  
+
   for (int i = 0, n = pending_reqs_.size(); i < n; ++i) {
       if (pending_reqs_.contains(i))
           perf_stats_.latency += pending_reqs_.at(i).count;
   }
-  
+
   if (simobject_->Input.empty())
       return;
-  
+
   auto trace = simobject_->Input.front();
-  
+
   if (pending_reqs_.full()) {
       if (!trace->log_once(true)) {
           DT(3, "*** VecUnit queue stall: " << *trace);
@@ -62,19 +62,19 @@ public:
   } else {
       trace->log_once(false);
   }
-  
+
   auto trace_data = std::dynamic_pointer_cast<TraceData>(trace->data);
   uint32_t addr_count = 0;
   for (auto& mem_addr : trace_data->mem_addrs) {
       addr_count += mem_addr.size();
   }
-  
+
   if (addr_count != 0) {
       auto tag = pending_reqs_.allocate({trace, addr_count});
       for (uint32_t t = 0; t < num_lanes_; ++t) {
           if (!trace->tmask.test(t))
               continue;
-          
+
           auto& mem_req_port = simobject_->MemReqs.at(t);
           for (auto& mem_addr : trace_data->mem_addrs.at(t)) {
               MemReq mem_req;
@@ -91,7 +91,7 @@ public:
   } else {
       simobject_->Output.push(trace, 1);
   }
-  
+
   simobject_->Input.pop();
   }
 
@@ -147,7 +147,8 @@ public:
           std::abort();
         }
 
-        uint32_t stride = 1 << instr.getVsew();
+        uint32_t eew = instr.getVlsWidth() & 0x3;
+        uint32_t stride = 1 << eew;
         uint32_t vl = nreg * (VLENB / vsewb);
 
         for (uint32_t i = 0; i < vl; i++) {
@@ -229,7 +230,7 @@ public:
                 // vloxseg8e8.v, vloxseg8e16.v, vloxseg8e32.v, vloxseg8e64.v
       uint32_t vs2 = instr.getRSrc(1);
       uint32_t nfields = instr.getVnf() + 1;
-      uint32_t vsew_bits = 1 << (3 + instr.getVsew());
+      uint32_t eew = instr.getVlsWidth() & 0x3;
 
       uint32_t emul = states.vtype.vlmul >> 2 ? 1 : 1 << (states.vtype.vlmul & 0b11);
       assert(nfields * emul <= 8);
@@ -238,7 +239,7 @@ public:
         if (isMasked(vreg_file, 0, i, vmask))
           continue;
         for (uint32_t f = 0; f < nfields; f++) {
-          uint64_t offset = getVregData(vsew_bits, vreg_file, vs2, i);
+          uint64_t offset = getVregData(eew, vreg_file, vs2, i);
           uint64_t mem_addr = base_addr + offset + f * vsewb;
           uint64_t mem_data = 0;
           core_->dcache_read(&mem_data, mem_addr, vsewb);
@@ -372,7 +373,7 @@ public:
       uint32_t vs2 = instr.getRSrc(1);
       uint32_t vs3 = instr.getRSrc(2);
       uint32_t nfields = instr.getVnf() + 1;
-      uint32_t vsew_bits = 1 << (3 + instr.getVsew());
+      uint32_t eew = instr.getVlsWidth() & 0x3;
 
       uint32_t emul = states.vtype.vlmul >> 2 ? 1 : 1 << (states.vtype.vlmul & 0b11);
       assert(nfields * emul <= 8);
@@ -381,7 +382,7 @@ public:
         if (isMasked(vreg_file, 0, i, vmask))
           continue;
         for (uint32_t f = 0; f < nfields; f++) {
-          uint64_t offset = getVregData(vsew_bits, vreg_file, vs2, i);
+          uint64_t offset = getVregData(eew, vreg_file, vs2, i);
           uint64_t mem_addr = base_addr + offset + f * vsewb;
           uint64_t value = getVregData(states.vtype.vsew, vreg_file, vs3 + f * emul, i);
           core_->dcache_write(&value, mem_addr, vsewb);
@@ -397,8 +398,8 @@ public:
 
   bool execute(const Instr &instr, uint32_t wid, uint32_t tid, const std::vector<reg_data_t>& rs1_data, const std::vector<reg_data_t>& rs2_data, std::vector<reg_data_t>& rd_data) {
     auto& states = vpu_states_.at(wid);
-    auto func3 = instr.getFunc3();
-    auto func6 = instr.getFunc6();
+    auto funct3 = instr.getFunct3();
+    auto funct6 = instr.getFunct6();
 
     auto rdest = instr.getRDest();
     auto rsrc0 = instr.getRSrc(0);
@@ -410,13 +411,13 @@ public:
     auto& vreg_file = states.vreg_file.at(tid);
 
     bool rd_write = false;
-    if ((func3 == 0x7) || (func3 == 0x2 && func6 == 16) || (func3 == 0x1 && func6 == 16)) {
+    if ((funct3 == 0x7) || (funct3 == 0x2 && funct6 == 16) || (funct3 == 0x1 && funct6 == 16)) {
       rd_write = true;
     }
 
-    switch (func3) {
+    switch (funct3) {
     case 0: { // vector - vector
-      switch (func6) {
+      switch (funct6) {
       case 0: { // vadd.vv
         vector_op_vv<Add, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
       } break;
@@ -550,12 +551,12 @@ public:
         vector_op_vv_red_w<Add, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
       } break;
       default:
-        std::cout << "Unrecognised vector - vector instruction func3: " << func3 << " func6: " << func6 << std::endl;
+        std::cout << "Unrecognised vector - vector instruction funct3: " << funct3 << " funct6: " << funct6 << std::endl;
         std::abort();
       }
     } break;
     case 1: { // float vector - vector
-      switch (func6) {
+      switch (funct6) {
       case 0: { // vfadd.vv
         vector_op_vv<Fadd, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
       } break;
@@ -688,12 +689,12 @@ public:
         vector_op_vv_w<Fnmsac, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
       } break;
       default:
-        std::cout << "Unrecognised float vector - vector instruction func3: " << func3 << " func6: " << func6 << std::endl;
+        std::cout << "Unrecognised float vector - vector instruction funct3: " << funct3 << " funct6: " << funct6 << std::endl;
         std::abort();
       }
     } break;
     case 2: { // mask vector - vector
-      switch (func6) {
+      switch (funct6) {
       case 0: { // vredsum.vs
         vector_op_vv_red<Add, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
       } break;
@@ -858,12 +859,12 @@ public:
         vector_op_vv_w<Maccsu, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
       } break;
       default:
-        std::cout << "Unrecognised mask vector - vector instruction func3: " << func3 << " func6: " << func6 << std::endl;
+        std::cout << "Unrecognised mask vector - vector instruction funct3: " << funct3 << " funct6: " << funct6 << std::endl;
         std::abort();
       }
     } break;
     case 3: { // vector - immidiate
-      switch (func6) {
+      switch (funct6) {
       case 0: { // vadd.vi
         vector_op_vix<Add, int8_t, int16_t, int32_t, int64_t>(immsrc, vreg_file, rsrc0, rdest, states.vtype.vsew, states.vl, vmask);
       } break;
@@ -975,13 +976,13 @@ public:
         vector_op_vix_n<Clip, int8_t, int16_t, int32_t, int64_t>(immsrc, vreg_file, rsrc0, rdest, states.vtype.vsew, states.vl, vmask, states.vxrm, states.vxsat);
       } break;
       default:
-        std::cout << "Unrecognised vector - immidiate instruction func3: " << func3 << " func6: " << func6 << std::endl;
+        std::cout << "Unrecognised vector - immidiate instruction funct3: " << funct3 << " funct6: " << funct6 << std::endl;
         std::abort();
       }
     } break;
     case 4: {
       auto rs1_value = rs1_data.at(tid).i;
-      switch (func6) {
+      switch (funct6) {
       case 0: { // vadd.vx
         vector_op_vix<Add, int8_t, int16_t, int32_t, int64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
       } break;
@@ -1115,13 +1116,13 @@ public:
         vector_op_vix_n<Clip, int8_t, int16_t, int32_t, int64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask, states.vxrm, states.vxsat);
       } break;
       default:
-        std::cout << "Unrecognised vector - scalar instruction func3: " << func3 << " func6: " << func6 << std::endl;
+        std::cout << "Unrecognised vector - scalar instruction funct3: " << funct3 << " funct6: " << funct6 << std::endl;
         std::abort();
       }
     } break;
     case 5: { // float vector - scalar
       auto rs1_value = rs1_data.at(tid).i;
-      switch (func6) {
+      switch (funct6) {
       case 0: { // vfadd.vf
         vector_op_vix<Fadd, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
       } break;
@@ -1251,13 +1252,13 @@ public:
         vector_op_vix_w<Fnmsac, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
       } break;
       default:
-        std::cout << "Unrecognised float vector - scalar instruction func3: " << func3 << " func6: " << func6 << std::endl;
+        std::cout << "Unrecognised float vector - scalar instruction funct3: " << funct3 << " funct6: " << funct6 << std::endl;
         std::abort();
       }
     } break;
     case 6: {
       auto rs1_value = rs1_data.at(tid).i;
-      switch (func6) {
+      switch (funct6) {
       case 8: { // vaaddu.vx
         uint32_t vxsat = 0; // saturation is not relevant for this operation
         vector_op_vix_sat<Aadd, uint8_t, uint16_t, uint32_t, uint64_t, __uint128_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask, states.vxrm, vxsat);
@@ -1371,25 +1372,22 @@ public:
         vector_op_vix_w<Maccsu, int8_t, int16_t, int32_t, int64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
       } break;
       default:
-        std::cout << "Unrecognised vector - scalar instruction func3: " << func3 << " func6: " << func6 << std::endl;
+        std::cout << "Unrecognised vector - scalar instruction funct3: " << funct3 << " funct6: " << funct6 << std::endl;
         std::abort();
       }
     } break;
     case 7: {
-      uint32_t vma, vta, vsew, vlmul;
-      if (instr.hasZimm()) {
-        vma = instr.getVma();
-        vta = instr.getVta();
-        vsew = instr.getVsew();
-        vlmul = instr.getVlmul();
+      uint32_t zimm;
+      if (instr.hasVattrMask(vattr_zimm)) {
+        zimm = instr.getZimm();
       } else {
-        // vsetvl
-        uint32_t zimm = rs2_data.at(tid).i;
-        vlmul = zimm & mask_v_lmul;
-        vsew = (zimm >> shift_v_sew) & mask_v_sew;
-        vta = (zimm >> shift_v_ta) & mask_v_ta;
-        vma = (zimm >> shift_v_ma) & mask_v_ma;
+        zimm = rs2_data.at(tid).i;
       }
+
+      uint32_t vlmul = zimm & mask_v_lmul;
+      uint32_t vsew  = (zimm >> shift_v_sew) & mask_v_sew;
+      uint32_t vta   = (zimm >> shift_v_ta) & mask_v_ta;
+      uint32_t vma   = (zimm >> shift_v_ma) & mask_v_ma;
 
       bool negativeLmul = vlmul >> 2;
       uint32_t vlenDividedByLmul = VLEN >> (0x8 - vlmul);
@@ -1425,7 +1423,7 @@ public:
       };
     } break;
     default:
-      std::cout << "Unrecognised vector instruction func3: " << func3 << " func6: " << func6 << std::endl;
+      std::cout << "Unrecognised vector instruction funct3: " << funct3 << " funct6: " << funct6 << std::endl;
       std::abort();
     }
 

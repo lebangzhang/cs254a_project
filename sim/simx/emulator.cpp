@@ -613,8 +613,8 @@ void Emulator::set_csr(uint32_t addr, Word value, uint32_t wid, uint32_t tid) {
   }
 }
 
-uint32_t Emulator::get_fpu_rm(uint32_t func3, uint32_t wid, uint32_t tid) {
-  return (func3 == 0x7) ? this->get_csr(VX_CSR_FRM, wid, tid) : func3;
+uint32_t Emulator::get_fpu_rm(uint32_t funct3, uint32_t wid, uint32_t tid) {
+  return (funct3 == 0x7) ? this->get_csr(VX_CSR_FRM, wid, tid) : funct3;
 }
 
 void Emulator::update_fcrs(uint32_t fflags, uint32_t wid, uint32_t tid) {
