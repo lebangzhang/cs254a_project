@@ -11,7 +11,7 @@ VECTOR_TESTS_BASE_NAME=vector-tests.tar.bz2
 
 download_tests()
 {
-    parts=$(eval echo {a..z})
+    parts=$(eval echo {a..k})
     for x in $parts
     do
         wget $VECTOR_TESTS_REPOSITORY/$VECTOR_TESTS_BASE_NAME.parta$x
@@ -93,8 +93,7 @@ for testcase in ${testcases[@]}; do
     "$RISCV_TOOLCHAIN_PATH/bin/riscv$XLEN-unknown-elf-objcopy" -O binary "$f" "$f.bin"
     echo "running $SCRIPT_DIR/../../../sim/simx/simx -v $f.bin"
     "$SCRIPT_DIR/../../../sim/simx/simx" -v "$f.bin" > "$f.log"
-    # An exitcode of 1 for vector tests = PASS, 0 = FAIL
-    if [ $? -eq 1 ]; then
+    if [ $? -eq 0 ]; then
       echo "$f PASSED"
       ((passed++))
     else
@@ -119,5 +118,4 @@ else
   echo "$failed out of $total vector tests failed."
 fi
 
-#exit $failed
-exit 0 # Currently vector tests are broken on this branch
+exit $failed
