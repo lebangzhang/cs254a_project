@@ -108,15 +108,7 @@ public:
     case 0b00: { // unit-stride
       auto lumop = instr.getVumop();
       switch (lumop) {
-      case 0b10000:  // vle8ff.v, vle16ff.v, vle32ff.v, vle64ff.v - we do not support exceptions -> treat like regular unit stride
-                    // vlseg2e8ff.v, vlseg2e16ff.v, vlseg2e32ff.v, vlseg2e64ff.v
-                    // vlseg3e8ff.v, vlseg3e16ff.v, vlseg3e32ff.v, vlseg3e64ff.v
-                    // vlseg4e8ff.v, vlseg4e16ff.v, vlseg4e32ff.v, vlseg4e64ff.v
-                    // vlseg5e8ff.v, vlseg5e16ff.v, vlseg5e32ff.v, vlseg5e64ff.v
-                    // vlseg6e8ff.v, vlseg6e16ff.v, vlseg6e32ff.v, vlseg6e64ff.v
-                    // vlseg7e8ff.v, vlseg7e16ff.v, vlseg7e32ff.v, vlseg7e64ff.v
-                    // vlseg8e8ff.v, vlseg8e16ff.v, vlseg8e32ff.v, vlseg8e64ff.v
-      case 0b0000: { // vle8.v, vle16.v, vle32.v, vle64.v
+      case 0b00000:  // vle8.v, vle16.v, vle32.v, vle64.v
                     // vlseg2e8.v, vlseg2e16.v, vlseg2e32.v, vlseg2e64.v
                     // vlseg3e8.v, vlseg3e16.v, vlseg3e32.v, vlseg3e64.v
                     // vlseg4e8.v, vlseg4e16.v, vlseg4e32.v, vlseg4e64.v
@@ -124,6 +116,14 @@ public:
                     // vlseg6e8.v, vlseg6e16.v, vlseg6e32.v, vlseg6e64.v
                     // vlseg7e8.v, vlseg7e16.v, vlseg7e32.v, vlseg7e64.v
                     // vlseg8e8.v, vlseg8e16.v, vlseg8e32.v, vlseg8e64.v
+      case 0b10000:{// vle8ff.v, vle16ff.v, vle32ff.v, vle64ff.v - we do not support exceptions -> treat like regular unit stride
+                    // vlseg2e8ff.v, vlseg2e16ff.v, vlseg2e32ff.v, vlseg2e64ff.v
+                    // vlseg3e8ff.v, vlseg3e16ff.v, vlseg3e32ff.v, vlseg3e64ff.v
+                    // vlseg4e8ff.v, vlseg4e16ff.v, vlseg4e32ff.v, vlseg4e64ff.v
+                    // vlseg5e8ff.v, vlseg5e16ff.v, vlseg5e32ff.v, vlseg5e64ff.v
+                    // vlseg6e8ff.v, vlseg6e16ff.v, vlseg6e32ff.v, vlseg6e64ff.v
+                    // vlseg7e8ff.v, vlseg7e16ff.v, vlseg7e32ff.v, vlseg7e64ff.v
+                    // vlseg8e8ff.v, vlseg8e16ff.v, vlseg8e32ff.v, vlseg8e64ff.v
         uint32_t nfields = instr.getVnf() + 1;
         uint32_t emul = (states.vtype.vlmul >> 2) ? 1 : (1 << (states.vtype.vlmul & 0b11));
         assert(nfields * emul <= 8);
@@ -140,7 +140,7 @@ public:
         }
         break;
       }
-      case 0b1000: { // vl1r.v, vl2r.v, vl4r.v, vl8r.v
+      case 0b01000: { // vl1r.v, vl2r.v, vl4r.v, vl8r.v
         uint32_t nreg = instr.getVnf() + 1;
         if (nreg != 1 && nreg != 2 && nreg != 4 && nreg != 8) {
           std::cout << "Whole vector register load - reserved value for nreg: " << nreg << std::endl;
@@ -161,7 +161,7 @@ public:
         }
         break;
       }
-      case 0b1011: { // vlm.v
+      case 0b01011: { // vlm.v
         if (states.vtype.vsew != 0) {
           std::cout << "vlm.v only supports SEW=8, but SEW was: " << states.vtype.vsew << std::endl;
           std::abort();
@@ -212,7 +212,7 @@ public:
       }
       break;
     }
-    case 0b01:   // indexed - unordered, vluxei8.v, vluxei16.v, vluxei32.v, vluxei64.v
+    case 0b01:  // indexed - unordered, vluxei8.v, vluxei16.v, vluxei32.v, vluxei64.v
                 // vluxseg2e8.v, vluxseg2e16.v, vluxseg2e32.v, vluxseg2e64.v
                 // vluxseg3e8.v, vluxseg3e16.v, vluxseg3e32.v, vluxseg3e64.v
                 // vluxseg4e8.v, vluxseg4e16.v, vluxseg4e32.v, vluxseg4e64.v
@@ -266,7 +266,7 @@ public:
     case 0b00: { // unit-stride
       uint32_t sumop = instr.getVumop();
       switch (sumop) {
-      case 0b0000: { // vse8.v, vse16.v, vse32.v, vse64.v
+      case 0b00000: { // vse8.v, vse16.v, vse32.v, vse64.v
         uint32_t vs3 = instr.getRSrc(1);
         uint32_t nfields = instr.getVnf() + 1;
         uint32_t emul = states.vtype.vlmul >> 2 ? 1 : 1 << (states.vtype.vlmul & 0b11);
@@ -283,7 +283,7 @@ public:
         }
         break;
       }
-      case 0b1000: { // vs1r.v, vs2r.v, vs4r.v, vs8r.v
+      case 0b01000: { // vs1r.v, vs2r.v, vs4r.v, vs8r.v
         uint32_t nreg = instr.getVnf() + 1;
         if (nreg != 1 && nreg != 2 && nreg != 4 && nreg != 8) {
           std::cout << "Whole vector register store - reserved value for nreg: " << nreg << std::endl;
@@ -303,7 +303,7 @@ public:
         }
         break;
       }
-      case 0b1011: { // vsm.v
+      case 0b01011: { // vsm.v
         if (states.vtype.vsew != 0) {
           std::cout << "vsm.v only supports EEW=8, but EEW was: " << states.vtype.vsew << std::endl;
           std::abort();
@@ -945,7 +945,8 @@ public:
           std::cout << "Reserved value for nreg: " << nreg << std::endl;
           std::abort();
         }
-        vector_op_vv<Mv, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, nreg * VLEN / states.vtype.vsew, vmask);
+        uint32_t vl = (nreg * VLENB) >> states.vtype.vsew;
+        vector_op_vv<Mv, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, vl, vmask);
       } break;
       case 40: { // vsrl.vi
         vector_op_vix<SrlSra, uint8_t, uint16_t, uint32_t, uint64_t>(immsrc, vreg_file, rsrc0, rdest, states.vtype.vsew, states.vl, vmask);
@@ -1340,14 +1341,16 @@ public:
         vector_op_vix_wx<Add, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
       } break;
       case 53: { // vwadd.wx
-        Word src1_ext = sext(rs1_value, states.vtype.vsew);
+        uint32_t vsew_bits = 1 << (3 + states.vtype.vsew);
+        Word src1_ext = sext(rs1_value, vsew_bits);
         vector_op_vix_wx<Add, int8_t, int16_t, int32_t, int64_t>(src1_ext, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
       } break;
       case 54: { // vwsubu.wx
         vector_op_vix_wx<Sub, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
       } break;
       case 55: { // vwsub.wx
-        Word src1_ext = sext(rs1_value, states.vtype.vsew);
+        uint32_t vsew_bits = 1 << (3 + states.vtype.vsew);
+        Word src1_ext = sext(rs1_value, vsew_bits);
         vector_op_vix_wx<Sub, int8_t, int16_t, int32_t, int64_t>(src1_ext, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
       } break;
       case 56: { // vwmulu.vx
@@ -1389,38 +1392,44 @@ public:
       uint32_t vta   = (zimm >> shift_v_ta) & mask_v_ta;
       uint32_t vma   = (zimm >> shift_v_ma) & mask_v_ma;
 
-      bool negativeLmul = vlmul >> 2;
+      bool negativeLmul = (vlmul >> 2);
       uint32_t vlenDividedByLmul = VLEN >> (0x8 - vlmul);
       uint32_t vlenMultipliedByLmul = VLEN << vlmul;
       uint32_t vlenTimesLmul = negativeLmul ? vlenDividedByLmul : vlenMultipliedByLmul;
       uint32_t vsew_bits = 1 << (3 + vsew);
-      states.vlmax = vlenTimesLmul / vsew_bits;
-      states.vtype.vill = (vsew_bits > XLEN) || (states.vlmax < (VLEN / XLEN));
 
-      uint32_t s0;
+      uint32_t vlmax = vlenTimesLmul / vsew_bits;
+      uint32_t vill = (vsew_bits > XLEN) || (vlmax < (VLEN / XLEN));
+
+      uint32_t vl;
       if (instr.hasImm()) {
         // vsetivli
-        s0 = instr.getImm();
+        vl = instr.getImm();
       } else {
         // vsetvli/vsetvl
-        s0 = rs1_data.at(tid).i;
+        vl = (rsrc0 != 0) ? rs1_data.at(tid).i : ((rdest != 0) ? vlmax : states.vl);
       }
 
-      DP(4, "Vset(i)vl(i) - vill: " << +states.vtype.vill << " vma: " << vma << " vta: " << vta << " lmul: " << vlmul << " sew: " << vsew << " s0: " << s0 << " vlmax: " << states.vlmax);
+      vl = std::min(vl, vlmax);
 
+      if (vill) {
+        vl = 0;
+      }
+
+      DP(4, "Vset(i)vl(i) - vill: " << vill << " vma: " << vma << " vta: " << vta << " lmul: " << vlmul << " sew: " << vsew << " vl: " << vl << " vlmax: " << vlmax);
+
+      // update the vector unit state
       states.vstart = 0;
-      if (states.vtype.vill) {
-        states.vtype.value = 0;
-        states.vl = 0;
-        rd_data.at(tid).i = 0;
-      } else {
-        states.vtype.vma = vma;
-        states.vtype.vta = vta;
-        states.vtype.vsew = vsew_bits;
-        states.vtype.vlmul = vlmul;
-        states.vl = std::min(s0, states.vlmax);
-        rd_data.at(tid).i = states.vl;
-      };
+      states.vlmax = vlmax;
+      states.vtype.vill = vill;
+      states.vtype.vma = vma;
+      states.vtype.vta = vta;
+      states.vtype.vsew = vsew;
+      states.vtype.vlmul = vlmul;
+      states.vl = vl;
+
+      // return value is the new vl
+      rd_data.at(tid).i = vl;
     } break;
     default:
       std::cout << "Unrecognised vector instruction funct3: " << funct3 << " funct6: " << funct6 << std::endl;

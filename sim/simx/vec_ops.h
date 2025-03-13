@@ -1514,7 +1514,7 @@ void vector_op_vix_scale(Word src1, VRF_t& vreg_file, uint32_t rsrc0, uint32_t r
 
 template <template <typename DT1, typename DT2> class OP>
 void vector_op_vix_ext(Word src1, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vsew, uint32_t vl, uint32_t vmask) {
-  if (vsew == 16) {
+  if (vsew == 1) {
     switch (src1) {
     case 0b00110: // vzext.vf2
       vector_op_vix_w<OP, uint8_t, uint16_t>(src1, vreg_file, rsrc0, rdest, vl, vmask);
@@ -1526,7 +1526,7 @@ void vector_op_vix_ext(Word src1, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rde
       std::cout << "Xunary0 has unsupported value for vf: " << src1 << std::endl;
       std::abort();
     }
-  } else if (vsew == 32) {
+  } else if (vsew == 2) {
     switch (src1) {
     case 0b00100: // vzext.vf4
       vector_op_vix_w<OP, uint8_t, uint32_t>(src1, vreg_file, rsrc0, rdest, vl, vmask);
@@ -1544,7 +1544,7 @@ void vector_op_vix_ext(Word src1, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rde
       std::cout << "Xunary0 has unsupported value for vf: " << src1 << std::endl;
       std::abort();
     }
-  } else if (vsew == 64) {
+  } else if (vsew == 3) {
     switch (src1) {
     case 0b00010: // vzext.vf8
       vector_op_vix_w<OP, uint8_t, uint64_t>(src1, vreg_file, rsrc0, rdest, vl, vmask);

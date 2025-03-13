@@ -1,6 +1,6 @@
 #!/bin/bash
 
-XLEN=${XLEN:-"@XLEN@"}
+XLEN=${XLEN:-@XLEN@}
 TOOLDIR=${TOOLDIR:-"@TOOLDIR@"}
 RISCV_TOOLCHAIN_PATH=${RISCV_TOOLCHAIN_PATH:-"$TOOLDIR/riscv$XLEN-gnu-toolchain"}
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
@@ -51,65 +51,57 @@ if [ "$#" -eq 0 ]; then
              vadc vmadc vsbc vmsbc \
              vsext vzext \
              vid)
-  if [ "$XLEN" -eq 32 ]; then
+  if [ $XLEN -eq 32 ]; then
     testcases+=()
-  elif [ "$XLEN" -eq 64 ]; then
+  elif [ $XLEN -eq 64 ]; then
     testcases+=(vle64 vse64 vlse64 vsse64 vfwcvt vfncvt \
                 vfwadd vfwsub \
                 vfwmul vfwred vfwmacc vfwnmacc vfwmsac vfwnmsac )
   fi
 else
-  testcases="${@}"
+  testcases=("$@")
 fi
 
 # Fallback #1: If testcases directory exists, use the existing testcases
 if [ ! -d "$TEST_DIR" ]; then
   mkdir $TEST_DIR
   pushd $TEST_DIR
-  # Fallback #2: Generate testcases
   if [ "$GEN_TESTS" -eq "1" ]; then
+    # Fallback #2: Generate testcases
     /bin/bash ../gen-test.sh
-  # Fallback #3: Download testcases
   else
+    # Fallback #3: Download testcases
     download_tests
   fi
   popd
 fi
 
-pushd "$TEST_DIR/v${VLEN}x$XLEN"
-
-rm -f "*.ddr4.log" > /dev/null 2>&1
-for testcase in ${testcases[@]}; do
-  rm -f "$testcase*.bin" "$testcase*.dump" "$testcase*.log" > /dev/null 2>&1
-done
-
 passed=0
 failed=0
 
-for testcase in ${testcases[@]}; do
+for testcase in "${testcases[@]}"; do
   echo "Testcase: $testcase"
-  while read -r f; do
-    "$RISCV_TOOLCHAIN_PATH/bin/riscv$XLEN-unknown-elf-objdump" -D "$f" > "$f.dump"
-    "$RISCV_TOOLCHAIN_PATH/bin/riscv$XLEN-unknown-elf-objcopy" -O binary "$f" "$f.bin"
-    echo "running $SCRIPT_DIR/../../../sim/simx/simx -v $f.bin"
-    "$SCRIPT_DIR/../../../sim/simx/simx" -v "$f.bin" > "$f.log"
+  for f in $(find "$TEST_DIR/v${VLEN}x$XLEN" -type f -name "${testcase}*"); do
+    filename=$(basename "$f")
+    "$RISCV_TOOLCHAIN_PATH/bin/riscv$XLEN-unknown-elf-objdump" -D "$f" > "$filename.dump"
+    "$RISCV_TOOLCHAIN_PATH/bin/riscv$XLEN-unknown-elf-objcopy" -O binary "$f" "$filename.bin"
+    echo "running $SCRIPT_DIR/../../../sim/simx/simx -v $filename.bin"
+    "$SCRIPT_DIR/../../../sim/simx/simx" -v "$filename.bin" > "$filename.log"
     if [ $? -eq 0 ]; then
-      echo "$f PASSED"
-      ((passed++))
+      echo "$filename PASSED"
+      let "passed+=1"
     else
-      echo "$f FAILED"
-      ((failed++))
+      echo "$filename FAILED"
+      let "failed+=1"
     fi
     # REG_TESTS=1 informs the script to delete the previous binary after each vector test to save disk space
     # Otherwise, the vector regression tests would run out of disk space eventually
     if [ "$REG_TESTS" -eq "1" ]; then
-      cat "$f.log"
-      rm -f "$f..bin" "$f.dump" "$f.log" > /dev/null 2>&1
+      cat "$filename.log"
+      rm "$filename.bin" "$filename.dump" "$filename.log" > /dev/null 2>&1
     fi
-  done <<< $(find . -type f -name "${testcase}*" 2>/dev/null)
+  done
 done
-
-popd
 
 if [ "$failed" -eq "0" ]; then
   echo "All $passed vector tests passed."
