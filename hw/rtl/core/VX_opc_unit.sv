@@ -36,12 +36,13 @@ module VX_opc_unit import VX_gpu_pkg::*; #(
     localparam STATE_IDLE     = 0;
     localparam STATE_FETCH    = 1;
     localparam STATE_DISPATCH = 2;
+    localparam STATE_WIDTH    = 2;
 
     VX_scoreboard_if staging_if();
 
     reg [NUM_SRC_OPDS-1:0] opds_needed, opds_needed_n;
     reg [NUM_SRC_OPDS-1:0] opds_busy, opds_busy_n;
-    reg [2:0] state, state_n;
+    reg [STATE_WIDTH-1:0] state, state_n;
     wire output_ready;
 
     wire [`SIMD_WIDTH-1:0] simd_out;
@@ -69,12 +70,11 @@ module VX_opc_unit import VX_gpu_pkg::*; #(
     wire gpr_req_fire = gpr_if.req_valid && gpr_if.req_ready;
     wire gpr_rsp_fire = gpr_if.rsp_valid;
 
-    wire [NR_BITS-1:0] stg_rd  = to_sreg_number(staging_if.data.rd);
-    wire [NR_BITS-1:0] stg_rs1 = to_sreg_number(staging_if.data.rs1);
-    wire [NR_BITS-1:0] stg_rs2 = to_sreg_number(staging_if.data.rs2);
-    wire [NR_BITS-1:0] stg_rs3 = to_sreg_number(staging_if.data.rs3);
-
-    wire [NUM_SRC_OPDS-1:0][NR_BITS-1:0] stg_src_regs = {stg_rs3, stg_rs2, stg_rs1};
+    wire [NR_S_BITS-1:0] stg_rd  = to_sreg_number(staging_if.data.rd);
+    wire [NR_S_BITS-1:0] stg_rs1 = to_sreg_number(staging_if.data.rs1);
+    wire [NR_S_BITS-1:0] stg_rs2 = to_sreg_number(staging_if.data.rs2);
+    wire [NR_S_BITS-1:0] stg_rs3 = to_sreg_number(staging_if.data.rs3);
+    wire [NUM_SRC_OPDS-1:0][NR_S_BITS-1:0] stg_src_regs = {stg_rs3, stg_rs2, stg_rs1};
 
     wire [NUM_SRC_OPDS-1:0] opds_to_fetch;
     for (genvar i = 0; i < NUM_SRC_OPDS; ++i) begin : g_opds_to_fetch
@@ -214,7 +214,7 @@ module VX_opc_unit import VX_gpu_pkg::*; #(
             staging_if.data.op_type,
             staging_if.data.op_args,
             staging_if.data.wb,
-            stg_rd,
+            NR_BITS'(stg_rd),
             opd_values[0],
             opd_values[1],
             opd_values[2],

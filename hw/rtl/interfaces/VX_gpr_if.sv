@@ -16,14 +16,14 @@
 interface VX_gpr_if import VX_gpu_pkg::*; ();
 
     typedef struct packed {
-        logic [SRC_OPD_WIDTH-1:0]   opd_id;
-        logic [ISSUE_WIS_W-1:0]     wis;
-        logic [SIMD_IDX_W-1:0]      sid;
-        logic [NR_BITS-1:0]         reg_id; // Note: will be fixed in the future
+        logic [SRC_OPD_WIDTH-1:0] opd_id;
+        logic [ISSUE_WIS_W-1:0]   wis;
+        logic [SIMD_IDX_W-1:0]    sid;
+        logic [NR_S_BITS-1:0]     reg_id;
     } req_data_t;
 
     typedef struct packed {
-        logic [1:0] opd_id;
+        logic [SRC_OPD_WIDTH-1:0] opd_id;
         logic [`SIMD_WIDTH-1:0][`XLEN-1:0] data;
     } rsp_data_t;
 
