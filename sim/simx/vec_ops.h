@@ -1939,7 +1939,7 @@ void vector_op_vv_wfv(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t
 
 template <template <typename DT1, typename DT2> class OP, typename DT8, typename DT16, typename DT32, typename DT64>
 void vector_op_vv_wfv(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vsew, uint32_t vl, uint32_t vmask) {
-  if (vsew == 32) {
+  if (vsew == 2) {
     vector_op_vv_wfv<OP, DT32, DT64>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask);
   } else {
     std::cout << "Failed to execute VV widening wfv for vsew: " << vsew << std::endl;
@@ -2127,7 +2127,7 @@ void vector_op_vv_red_wf(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint3
 
 template <template <typename DT1, typename DT2> class OP, typename DT8, typename DT16, typename DT32, typename DT64>
 void vector_op_vv_red_wf(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vsew, uint32_t vl, uint32_t vmask) {
-  if (vsew == 32) {
+  if (vsew == 2) {
     vector_op_vv_red_wf<OP, DT32, DT64>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask);
   } else {
     std::cout << "Failed to execute VV float widening reduction for vsew: " << vsew << std::endl;

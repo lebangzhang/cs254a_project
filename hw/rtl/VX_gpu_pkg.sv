@@ -607,7 +607,7 @@ package VX_gpu_pkg;
         csr_args_t  csr;
         wctl_args_t wctl;
     `ifdef EXT_V_ENABLE
-        vpu_args_t vpu;
+        vpu_args_t  vpu;
     `endif
     } op_args_t;
 
@@ -856,8 +856,19 @@ package VX_gpu_pkg;
     endfunction
 
     function logic [NR_BITS-1:0] to_reg_number(input reg_idx_t reg_idx);
-        // To change "+" to or
-        return NR_BITS'(reg_idx.rtype * RV_REGS) + NR_BITS'(reg_idx.id);
+        return {reg_idx.rtype, reg_idx.id};
+    endfunction
+
+    function logic [NR_S_BITS-1:0] to_sreg_number(input reg_idx_t reg_idx);
+    `ifdef EXT_F_ENABLE
+        return {reg_idx.rtype[0], reg_idx.id};
+    `else
+        return reg_idx.id;
+    `endif
+    endfunction
+
+    function logic [NR_V_BITS-1:0] to_vreg_number(input reg_idx_t reg_idx);
+        return reg_idx.id;
     endfunction
 
     function logic [RV_REGS-1:0] to_reg_mask(input reg_idx_t reg_idx);

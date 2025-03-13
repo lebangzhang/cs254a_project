@@ -13,13 +13,6 @@
 
 `include "VX_define.vh"
 
-// reset all GPRs in debug mode
-`ifdef SIMULATION
-`ifndef NDEBUG
-`define GPR_RESET
-`endif
-`endif
-
 module VX_voperands import VX_gpu_pkg::*; #(
     parameter `STRING INSTANCE_ID = "",
     parameter ISSUE_ID = 0
@@ -71,13 +64,10 @@ module VX_voperands import VX_gpu_pkg::*; #(
     reg [`NUM_OPCS-1:0][NUM_REGS-1:0] per_opc_pending_regs;
     reg [`NUM_OPCS-1:0][ISSUE_WIS_W-1:0] per_opc_pending_wis;
     reg [`NUM_OPCS-1:0] per_opc_pending_lsu;
-    reg [`NUM_OPCS-1:0] per_opc_pending_wctl;
     reg [`NUM_OPCS-1:0][`NUM_OPCS-1:0] per_opc_wait_mask;
 
     // LD/ST memory instrctions should be issued in order
-    // SFU cannot handle consurent WCTL instructions, should be issued in order
-    wire scoreboard_is_lsu  = scoreboard_if.data.ex_type == EX_LSU;
-    wire scoreboard_is_wctl = scoreboard_if.data.ex_type == EX_SFU && inst_sfu_is_wctl(scoreboard_if.data.op_type);
+    wire scoreboard_is_lsu = scoreboard_if.data.ex_type == EX_LSU;
 
     always @(posedge clk) begin
         if (reset) begin
@@ -85,14 +75,12 @@ module VX_voperands import VX_gpu_pkg::*; #(
             per_opc_pending_regs <= '0;
             per_opc_pending_wis  <= '0;
             per_opc_pending_lsu  <= '0;
-            per_opc_pending_wctl <= '0;
             per_opc_wait_mask    <= '0;
         end else begin
             if (scoreboard_fire) begin
                 for (int i = 0; i < `NUM_OPCS; ++i) begin
                     if (((per_opc_pending_regs[i][scb_rd] != 0 && per_opc_pending_wis[i] == scoreboard_if.data.wis)
-                      || (per_opc_pending_lsu[i] && scoreboard_is_lsu)
-                      || (per_opc_pending_wctl[i] && scoreboard_is_wctl))
+                      || (per_opc_pending_lsu[i] && scoreboard_is_lsu))
                     && ~(operands_eop_fire && outgoing_opc == OPC_WIDTH'(i))) begin
                         per_opc_wait_mask[incoming_opc][i] <= 1;
                     end
@@ -101,7 +89,6 @@ module VX_voperands import VX_gpu_pkg::*; #(
                 per_opc_pending_regs[incoming_opc] <= opc_pending_regs;
                 per_opc_pending_wis[incoming_opc]  <= scoreboard_if.data.wis;
                 per_opc_pending_lsu[incoming_opc]  <= scoreboard_is_lsu;
-                per_opc_pending_wctl[incoming_opc] <= scoreboard_is_wctl;
             end
             if (operands_eop_fire) begin
                 for (int i = 0; i < `NUM_OPCS; ++i) begin
@@ -113,7 +100,6 @@ module VX_voperands import VX_gpu_pkg::*; #(
                 per_opc_pending_regs[outgoing_opc] <= '0;
                 per_opc_pending_wis[outgoing_opc]  <= '0;
                 per_opc_pending_lsu[outgoing_opc]  <= 0;
-                per_opc_pending_wctl[outgoing_opc] <= 0;
             end
         end
     end

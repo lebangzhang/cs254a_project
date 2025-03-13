@@ -341,7 +341,7 @@
 
 // Issue width
 `ifndef ISSUE_WIDTH
-`define ISSUE_WIDTH     `UP(`NUM_WARPS / 8)
+`define ISSUE_WIDTH     `UP(`NUM_WARPS / 16)
 `endif
 
 // Operand collectors
@@ -519,6 +519,12 @@
 // FNCP Bandwidth ratio
 `ifndef FNCP_PE_RATIO
 `define FNCP_PE_RATIO 2
+`endif
+
+// Tensore Units //////////////////////////////////////////////////////////////
+
+`ifndef NUM_TENSOR_CORES
+`define NUM_TENSOR_CORES `ISSUE_WIDTH
 `endif
 
 // Icache Configurable Knobs //////////////////////////////////////////////////
@@ -867,6 +873,12 @@
     `define EXT_ZICOND_ENABLED 1
 `else
     `define EXT_ZICOND_ENABLED 0
+`endif
+
+`ifdef EXT_TPU_ENABLE
+    `define EXT_TPU_ENABLED 1
+`else
+    `define EXT_TPU_ENABLED 0
 `endif
 
 `define ISA_STD_A           0

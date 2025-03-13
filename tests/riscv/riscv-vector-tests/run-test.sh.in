@@ -9,6 +9,8 @@ TEST_DIR=${TEST_DIR:-"$SCRIPT_DIR/testcases"}
 VECTOR_TESTS_REPOSITORY=https://github.com/MichaelJSr/testcases/raw/updated
 VECTOR_TESTS_BASE_NAME=vector-tests.tar.bz2
 
+set -e
+
 download_tests()
 {
     parts=$(eval echo {a..k})
@@ -85,7 +87,6 @@ for testcase in "${testcases[@]}"; do
     filename=$(basename "$f")
     "$RISCV_TOOLCHAIN_PATH/bin/riscv$XLEN-unknown-elf-objdump" -D "$f" > "$filename.dump"
     "$RISCV_TOOLCHAIN_PATH/bin/riscv$XLEN-unknown-elf-objcopy" -O binary "$f" "$filename.bin"
-    echo "running $SCRIPT_DIR/../../../sim/simx/simx -v $filename.bin"
     "$SCRIPT_DIR/../../../sim/simx/simx" -v "$filename.bin" > "$filename.log"
     if [ $? -eq 0 ]; then
       echo "$filename PASSED"
@@ -98,7 +99,7 @@ for testcase in "${testcases[@]}"; do
     # Otherwise, the vector regression tests would run out of disk space eventually
     if [ "$REG_TESTS" -eq "1" ]; then
       cat "$filename.log"
-      rm "$filename.bin" "$filename.dump" "$filename.log" > /dev/null 2>&1
+      rm -f "$filename.bin" "$filename.dump" "$filename.log" > /dev/null 2>&1
     fi
   done
 done

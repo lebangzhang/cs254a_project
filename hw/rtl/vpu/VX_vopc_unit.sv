@@ -80,14 +80,14 @@ module VX_vopc_unit import VX_gpu_pkg::*; #(
 
 
     // Dest Register Number
-    wire [NR_BITS-1:0] rd = to_reg_number(staging_if.data.rd);
+    wire [NR_BITS-1:0] rd = to_sreg_number(staging_if.data.rd);
 
     // Assume: Only Vector Inputs
     // --> Assume: Collector Selection by voperands
     // --> Assume: No Permutation Insn
-    wire [NR_BITS-1:0] rs1 = to_reg_number(staging_if.data.rd);
-    wire [NR_BITS-1:0] rs2 = to_reg_number(staging_if.data.rd);
-    wire [NR_BITS-1:0] rs3 = to_reg_number(staging_if.data.rd);
+    wire [NR_BITS-1:0] rs1 = to_sreg_number(staging_if.data.rd);
+    wire [NR_BITS-1:0] rs2 = to_sreg_number(staging_if.data.rd);
+    wire [NR_BITS-1:0] rs3 = to_sreg_number(staging_if.data.rd);
 
     /*
     wire is_reduction_instruction = staging_if.data.op_arg.vpu.is_reduction;
@@ -488,7 +488,7 @@ module VX_vopc_unit import VX_gpu_pkg::*; #(
     ) simd_iter (
         .clk     (clk),
         .reset   (reset),
-        .valid_in(staging_if.valid), 
+        .valid_in(staging_if.valid),
         .data_in (staging_if.data.tmask),
         .next    (next_simd),
         `UNUSED_PIN (valid_out),

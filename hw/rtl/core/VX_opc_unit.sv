@@ -69,10 +69,10 @@ module VX_opc_unit import VX_gpu_pkg::*; #(
     wire gpr_req_fire = gpr_if.req_valid && gpr_if.req_ready;
     wire gpr_rsp_fire = gpr_if.rsp_valid;
 
-    wire [NR_BITS-1:0] stg_rd  = to_reg_number(staging_if.data.rd);
-    wire [NR_BITS-1:0] stg_rs1 = to_reg_number(staging_if.data.rs1);
-    wire [NR_BITS-1:0] stg_rs2 = to_reg_number(staging_if.data.rs2);
-    wire [NR_BITS-1:0] stg_rs3 = to_reg_number(staging_if.data.rs3);
+    wire [NR_BITS-1:0] stg_rd  = to_sreg_number(staging_if.data.rd);
+    wire [NR_BITS-1:0] stg_rs1 = to_sreg_number(staging_if.data.rs1);
+    wire [NR_BITS-1:0] stg_rs2 = to_sreg_number(staging_if.data.rs2);
+    wire [NR_BITS-1:0] stg_rs3 = to_sreg_number(staging_if.data.rs3);
 
     wire [NUM_SRC_OPDS-1:0][NR_BITS-1:0] stg_src_regs = {stg_rs3, stg_rs2, stg_rs1};
 
