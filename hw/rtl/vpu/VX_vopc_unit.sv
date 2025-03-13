@@ -46,7 +46,6 @@ module VX_vopc_unit import VX_gpu_pkg::*; #(
     `UNUSED_SPARAM (INSTANCE_ID)
     `UNUSED_PARAM (ISSUE_ID)
 
-`IGNORE_WARNINGS_BEGIN
 
     localparam NUM_OPDS = NUM_SRC_OPDS + 1;
     localparam SCB_DATAW = UUID_WIDTH + ISSUE_WIS_W + `NUM_THREADS + PC_BITS + EX_BITS + INST_OP_BITS + INST_ARGS_BITS + NUM_OPDS + (NUM_OPDS * REG_IDX_BITS);
@@ -58,8 +57,6 @@ module VX_vopc_unit import VX_gpu_pkg::*; #(
 
     VX_scoreboard_if staging_if();
 
-    reg [NUM_SRC_OPDS-1:0] opds_busy, opds_busy_n;
-    reg [2:0] state, state_n;
     wire output_ready;
 
     wire [`SIMD_WIDTH-1:0] simd_out;
@@ -178,7 +175,7 @@ module VX_vopc_unit import VX_gpu_pkg::*; #(
 
     // Differentiate based on operand type
     for (genvar i = 0; i < NUM_SRC_OPDS; ++i) begin : g_opds_to_fetch
-        /*always@(*) begin
+        always@(*) begin
 
             // TO FIX Vector Type to a param
             if(2'(src_regs[i][NR_BITS-1 : 6]) == 2) begin
@@ -195,7 +192,7 @@ module VX_vopc_unit import VX_gpu_pkg::*; #(
                 v_opds_mask[i] = 0;
                 gp_opds_mask[i] = 1;
             end
-        end*/
+        end
     end
 
     // ** SubModule 8 : FSM for gprf **
@@ -207,7 +204,7 @@ module VX_vopc_unit import VX_gpu_pkg::*; #(
     always @(*) begin
         gp_state_n = gp_state;
         gp_opds_needed_n = gp_opds_needed;
-        gp_opds_busy_n = gp_opds_needed;
+        gp_opds_busy_n = gp_opds_busy;
 
         case (gp_state)
 
@@ -261,13 +258,13 @@ module VX_vopc_unit import VX_gpu_pkg::*; #(
     reg [NUM_SRC_OPDS-1:0] v_opds_busy, v_opds_busy_n;
 
     // TO FIX: NEED TO KNOW ACTUAL SIZE
-    reg ext_counter, ext_counter_n;
+    // reg ext_counter, ext_counter_n;
     reg [VL_WIDTH-1:0] lane_counter, lane_counter_n;
 
     always @(*) begin
         v_state_n = v_state;
         v_opds_needed_n = v_opds_needed;
-        v_opds_busy_n = v_opds_needed;
+        v_opds_busy_n = v_opds_busy;
 
         case (v_state)
         STATE_IDLE: begin
@@ -276,7 +273,7 @@ module VX_vopc_unit import VX_gpu_pkg::*; #(
                 v_opds_needed_n = v_opds_to_fetch;
                 v_opds_busy_n = v_opds_to_fetch;
 
-                lane_counter = 0;
+                lane_counter_n = 0;
 
                 if (v_opds_to_fetch == 0) begin
                     v_state_n = STATE_DISPATCH;
@@ -451,6 +448,8 @@ module VX_vopc_unit import VX_gpu_pkg::*; #(
             v_opds_needed <= '0;
             v_opds_busy <= '0;
 
+            lane_counter <= '0;
+
         end else begin
 
             gp_state <= gp_state_n;
@@ -462,6 +461,8 @@ module VX_vopc_unit import VX_gpu_pkg::*; #(
 
             v_opds_needed <= v_opds_needed_n;
             v_opds_busy <= v_opds_busy_n;
+
+            lane_counter <= lane_counter_n;
 
         end
     end
@@ -476,7 +477,6 @@ module VX_vopc_unit import VX_gpu_pkg::*; #(
     wire output_valid = (gp_state == STATE_DISPATCH) && (v_state == STATE_DISPATCH) && ~dep_check_ready;
 
 
-    wire finished_collection;
 
     // ** SubModule : NonZero Iterator (skip threads) **
     // simd iterator
@@ -535,7 +535,6 @@ module VX_vopc_unit import VX_gpu_pkg::*; #(
         .ready_out(operands_if.ready)
     );
 
-`IGNORE_WARNINGS_END
 
     // NOT YET FIX *******************
     `ifdef DBG_TRACE_PIPELINE
