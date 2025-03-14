@@ -231,6 +231,21 @@ module VX_vopc_unit import VX_gpu_pkg::*; #(
                     // Get Next Lane
                     if (lane_counter == VL_BITS'(VL_COUNT)) begin
                         lane_counter_n = '0;
+
+
+                        // POSSIBLE BUG ? : Need to update the gp_operands for each simd/thread ?
+                        // Possible Fix (here since next_simd is true here)
+                        /*
+                        if(gp_opds_to_fetch != 0) begin 
+                            gp_opds_needed_n = opds_to_fetch & ~stg_rs_is_vec;
+                            gp_opds_busy_n = opds_to_fetch & ~stg_rs_is_vec;
+                            state_n = STATE_FETCH;
+                        end 
+                        */
+
+
+
+
                     end else begin
                         lane_counter_n = lane_counter + 1;
                     end
@@ -300,6 +315,26 @@ module VX_vopc_unit import VX_gpu_pkg::*; #(
 
     // operands fetch response
     always @(posedge clk) begin
+
+
+        // POSSIBLE BUG ? : Only reset gp_operand for next simd/thread instead of every dequeue (Possible Fix below) 
+        /*
+        if (reset || dequeue) begin 
+            for(integer i = 0; i < NUM_SRC_OPDS; ++i) begin 
+                if( (stg_rs_is_vec[i] == 1) || 
+                    ((stg_rs_is_vec[i] == 0) && next_simd) ) begin 
+                        opd_values[i] <= '0;
+                end 
+                else begin 
+                    opd_values[i] <= '0;
+                end 
+            end 
+        end 
+        */
+
+
+
+
         if (reset || dequeue) begin
             for (integer i = 0; i < NUM_SRC_OPDS; ++i) begin
                 opd_values[i] <= '0;
