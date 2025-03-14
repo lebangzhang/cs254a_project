@@ -702,7 +702,11 @@ package VX_gpu_pkg;
     endfunction
 
     function logic [NR_BITS-1:0] to_reg_number(input reg_idx_t reg_idx);
-        return NR_BITS'(reg_idx.rtype * RV_REGS) + NR_BITS'(reg_idx.id);
+    `ifdef EXT_F_ENABLE
+        return {reg_idx.rtype, reg_idx.id};
+    `else
+        return reg_idx.id;
+    `endif
     endfunction
 
     function logic [RV_REGS-1:0] to_reg_mask(input reg_idx_t reg_idx);

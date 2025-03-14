@@ -88,8 +88,12 @@
 `endif
 `endif
 
+`ifdef EXT_V_ENABLE
 `ifndef VLEN
-`define VLEN 256
+`define VLEN (4 * `XLEN)
+`endif
+`else
+`define VLEN `XLEN
 `endif
 
 `ifndef NUM_CLUSTERS
@@ -337,7 +341,7 @@
 
 // Issue width
 `ifndef ISSUE_WIDTH
-`define ISSUE_WIDTH     `UP(`NUM_WARPS / 8)
+`define ISSUE_WIDTH     `UP(`NUM_WARPS / 16)
 `endif
 
 // Operand collectors
