@@ -367,8 +367,6 @@ module VX_vopc_unit import VX_gpu_pkg::*; #(
     assign output_ready = output_ready_w && ~dep_check_ready;
     wire output_valid = (state == STATE_DISPATCH) && ~dep_check_ready;
 
-
-
     // ** SubModule : NonZero Iterator (skip threads) **
     // simd iterator
     // NOT SURE ABOUT THIS *****************
@@ -400,9 +398,9 @@ module VX_vopc_unit import VX_gpu_pkg::*; #(
         .valid_in (output_valid),
         .data_in  ({
             staging_if.data.uuid,
+            lane_counter,
             staging_if.data.wis,
             simd_pid,
-            lane_counter,
             simd_out,
             staging_if.data.PC,
             staging_if.data.ex_type,

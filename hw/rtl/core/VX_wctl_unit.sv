@@ -32,7 +32,7 @@ module VX_wctl_unit import VX_gpu_pkg::*; #(
     localparam PID_BITS   = `CLOG2(`NUM_THREADS / NUM_LANES);
     localparam PID_WIDTH  = `UP(PID_BITS);
     localparam WCTL_WIDTH = $bits(tmc_t) + $bits(wspawn_t) + $bits(split_t) + $bits(join_t) + $bits(barrier_t);
-    localparam DATAW = UUID_WIDTH + NW_WIDTH + VL_WIDTH + NUM_LANES + PC_BITS + NR_BITS + 1 + PID_WIDTH + 1 + 1 + DV_STACK_SIZEW;
+    localparam DATAW = UUID_WIDTH + VL_WIDTH  + NW_WIDTH+ NUM_LANES + PC_BITS + NR_BITS + 1 + PID_WIDTH + 1 + 1 + DV_STACK_SIZEW;
 
     `UNUSED_VAR (execute_if.data.rs3_data)
 
@@ -163,8 +163,8 @@ module VX_wctl_unit import VX_gpu_pkg::*; #(
         .reset     (reset),
         .valid_in  (execute_if.valid),
         .ready_in  (execute_if.ready),
-        .data_in   ({execute_if.data.uuid, execute_if.data.wid, execute_if.data.lid, execute_if.data.tmask, execute_if.data.PC, execute_if.data.rd, execute_if.data.wb, execute_if.data.pid, execute_if.data.sop, execute_if.data.eop, warp_ctl_if.dvstack_ptr}),
-        .data_out  ({result_if.data.uuid,  result_if.data.wid,  result_if.data.lid,  result_if.data.tmask,  result_if.data.PC,  result_if.data.rd,  result_if.data.wb,  result_if.data.pid,  result_if.data.sop,  result_if.data.eop,  dvstack_ptr}),
+        .data_in   ({execute_if.data.uuid, execute_if.data.lid, execute_if.data.wid, execute_if.data.tmask, execute_if.data.PC, execute_if.data.rd, execute_if.data.wb, execute_if.data.pid, execute_if.data.sop, execute_if.data.eop, warp_ctl_if.dvstack_ptr}),
+        .data_out  ({result_if.data.uuid,  result_if.data.lid,  result_if.data.wid,  result_if.data.tmask,  result_if.data.PC,  result_if.data.rd,  result_if.data.wb,  result_if.data.pid,  result_if.data.sop,  result_if.data.eop,  dvstack_ptr}),
         .valid_out (result_if.valid),
         .ready_out (result_if.ready)
     );

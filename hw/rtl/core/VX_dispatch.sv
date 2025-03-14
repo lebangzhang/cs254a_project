@@ -32,7 +32,7 @@ module VX_dispatch import VX_gpu_pkg::*; #(
     `UNUSED_SPARAM (INSTANCE_ID)
     `UNUSED_PARAM (ISSUE_ID)
 
-    localparam DATAW = UUID_WIDTH + ISSUE_WIS_W + SIMD_IDX_W + VL_WIDTH + `SIMD_WIDTH + PC_BITS + INST_OP_BITS + INST_ARGS_BITS + 1 + NR_BITS + (NUM_SRC_OPDS * `SIMD_WIDTH * `XLEN) + 1 + 1;
+    localparam DATAW = UUID_WIDTH + VL_WIDTH + ISSUE_WIS_W + SIMD_IDX_W + `SIMD_WIDTH + PC_BITS + INST_OP_BITS + INST_ARGS_BITS + 1 + NR_BITS + (NUM_SRC_OPDS * `SIMD_WIDTH * `XLEN) + 1 + 1;
 
     wire [NUM_EX_UNITS-1:0] operands_ready_in;
     assign operands_if.ready = operands_ready_in[operands_if.data.ex_type];
@@ -49,9 +49,9 @@ module VX_dispatch import VX_gpu_pkg::*; #(
             .ready_in   (operands_ready_in[i]),
             .data_in    ({
                 operands_if.data.uuid,
+                operands_if.data.lid,
                 operands_if.data.wis,
                 operands_if.data.sid,
-                operands_if.data.lid,
                 operands_if.data.tmask,
                 operands_if.data.PC,
                 operands_if.data.op_type,

@@ -205,9 +205,9 @@ module VX_opc_unit import VX_gpu_pkg::*; #(
         .valid_in (output_valid),
         .data_in  ({
             staging_if.data.uuid,
+            VL_WIDTH'(0),
             staging_if.data.wis,
             simd_pid,
-            VL_WIDTH'(0),
             simd_out,
             staging_if.data.PC,
             staging_if.data.ex_type,

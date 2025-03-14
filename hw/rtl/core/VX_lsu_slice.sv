@@ -31,14 +31,14 @@ module VX_lsu_slice import VX_gpu_pkg::*; #(
     localparam NUM_LANES    = `NUM_LSU_LANES;
     localparam PID_BITS     = `CLOG2(`NUM_THREADS / NUM_LANES);
     localparam PID_WIDTH    = `UP(PID_BITS);
-    localparam RSP_ARB_DATAW= UUID_WIDTH + NW_WIDTH + VL_WIDTH + NUM_LANES + PC_BITS + 1 + NR_BITS + NUM_LANES * `XLEN + PID_WIDTH +  1 + 1;
+    localparam RSP_ARB_DATAW= UUID_WIDTH + VL_WIDTH + NW_WIDTH + NUM_LANES + PC_BITS + 1 + NR_BITS + NUM_LANES * `XLEN + PID_WIDTH +  1 + 1;
     localparam LSUQ_SIZEW   = `LOG2UP(`LSUQ_IN_SIZE);
     localparam REQ_ASHIFT   = `CLOG2(LSU_WORD_SIZE);
     localparam MEM_ASHIFT   = `CLOG2(`MEM_BLOCK_SIZE);
     localparam MEM_ADDRW    = `MEM_ADDR_WIDTH - MEM_ASHIFT;
 
-    // tag_id = wid + lid + PC + wb + rd + op_type + align + pid + pkt_addr + fence
-    localparam TAG_ID_WIDTH = NW_WIDTH + VL_WIDTH + PC_BITS + 1 + NR_BITS + INST_LSU_BITS + (NUM_LANES * REQ_ASHIFT) + PID_WIDTH + LSUQ_SIZEW + 1;
+    // tag_id = lid + wid + PC + wb + rd + op_type + align + pid + pkt_addr + fence
+    localparam TAG_ID_WIDTH = VL_WIDTH + NW_WIDTH + PC_BITS + 1 + NR_BITS + INST_LSU_BITS + (NUM_LANES * REQ_ASHIFT) + PID_WIDTH + LSUQ_SIZEW + 1;
 
     // tag = uuid + tag_id
     localparam TAG_WIDTH = UUID_WIDTH + TAG_ID_WIDTH;
@@ -283,8 +283,8 @@ module VX_lsu_slice import VX_gpu_pkg::*; #(
     // pack memory request tag
     assign mem_req_tag = {
         execute_if.data.uuid,
-        execute_if.data.wid,
         execute_if.data.lid,
+        execute_if.data.wid,
         execute_if.data.PC,
         execute_if.data.wb,
         execute_if.data.rd,
@@ -390,8 +390,8 @@ module VX_lsu_slice import VX_gpu_pkg::*; #(
     assign lsu_mem_if.rsp_ready = lsu_mem_rsp_ready;
 
     wire [UUID_WIDTH-1:0] rsp_uuid;
-    wire [NW_WIDTH-1:0] rsp_wid;
     wire [VL_WIDTH-1:0] rsp_lid;
+    wire [NW_WIDTH-1:0] rsp_wid;
     wire [PC_BITS-1:0] rsp_pc;
     wire rsp_wb;
     wire [NR_BITS-1:0] rsp_rd;
@@ -403,8 +403,8 @@ module VX_lsu_slice import VX_gpu_pkg::*; #(
     // unpack memory response tag
     assign {
         rsp_uuid,
-        rsp_wid,
         rsp_lid,
+        rsp_wid,
         rsp_pc,
         rsp_wb,
         rsp_rd,
@@ -459,29 +459,29 @@ module VX_lsu_slice import VX_gpu_pkg::*; #(
     // result
 
     VX_elastic_buffer #(
-        .DATAW (UUID_WIDTH + NW_WIDTH + VL_WIDTH + NUM_LANES + PC_BITS + 1 + NR_BITS + (NUM_LANES * `XLEN) + PID_WIDTH + 1 + 1),
+        .DATAW (UUID_WIDTH + VL_WIDTH + NW_WIDTH + NUM_LANES + PC_BITS + 1 + NR_BITS + (NUM_LANES * `XLEN) + PID_WIDTH + 1 + 1),
         .SIZE  (2)
     ) rsp_buf (
         .clk       (clk),
         .reset     (reset),
         .valid_in  (mem_rsp_valid),
         .ready_in  (mem_rsp_ready),
-        .data_in   ({rsp_uuid,                rsp_wid,                rsp_lid,                mem_rsp_mask,             rsp_pc,                rsp_wb,                rsp_rd,                rsp_data,                rsp_pid,                mem_rsp_sop_pkt,        mem_rsp_eop_pkt}),
-        .data_out  ({result_rsp_if.data.uuid, result_rsp_if.data.wid, result_rsp_if.data.lid, result_rsp_if.data.tmask, result_rsp_if.data.PC, result_rsp_if.data.wb, result_rsp_if.data.rd, result_rsp_if.data.data, result_rsp_if.data.pid, result_rsp_if.data.sop, result_rsp_if.data.eop}),
+        .data_in   ({rsp_uuid,                rsp_lid,                rsp_wid,                mem_rsp_mask,             rsp_pc,                rsp_wb,                rsp_rd,                rsp_data,                rsp_pid,                mem_rsp_sop_pkt,        mem_rsp_eop_pkt}),
+        .data_out  ({result_rsp_if.data.uuid, result_rsp_if.data.lid, result_rsp_if.data.wid, result_rsp_if.data.tmask, result_rsp_if.data.PC, result_rsp_if.data.wb, result_rsp_if.data.rd, result_rsp_if.data.data, result_rsp_if.data.pid, result_rsp_if.data.sop, result_rsp_if.data.eop}),
         .valid_out (result_rsp_if.valid),
         .ready_out (result_rsp_if.ready)
     );
 
     VX_elastic_buffer #(
-        .DATAW (UUID_WIDTH + NW_WIDTH + VL_WIDTH + NUM_LANES + PC_BITS + PID_WIDTH + 1 + 1),
+        .DATAW (UUID_WIDTH + VL_WIDTH + NW_WIDTH + NUM_LANES + PC_BITS + PID_WIDTH + 1 + 1),
         .SIZE  (2)
     ) no_rsp_buf (
         .clk       (clk),
         .reset     (reset),
         .valid_in  (no_rsp_buf_valid),
         .ready_in  (no_rsp_buf_ready),
-        .data_in   ({execute_if.data.uuid,       execute_if.data.wid,       execute_if.data.lid,       execute_if.data.tmask,       execute_if.data.PC,       execute_if.data.pid,       execute_if.data.sop,       execute_if.data.eop}),
-        .data_out  ({result_no_rsp_if.data.uuid, result_no_rsp_if.data.wid, result_no_rsp_if.data.lid, result_no_rsp_if.data.tmask, result_no_rsp_if.data.PC, result_no_rsp_if.data.pid, result_no_rsp_if.data.sop, result_no_rsp_if.data.eop}),
+        .data_in   ({execute_if.data.uuid,       execute_if.data.lid,       execute_if.data.wid,       execute_if.data.tmask,       execute_if.data.PC,       execute_if.data.pid,       execute_if.data.sop,       execute_if.data.eop}),
+        .data_out  ({result_no_rsp_if.data.uuid, result_no_rsp_if.data.lid, result_no_rsp_if.data.wid, result_no_rsp_if.data.tmask, result_no_rsp_if.data.PC, result_no_rsp_if.data.pid, result_no_rsp_if.data.sop, result_no_rsp_if.data.eop}),
         .valid_out (result_no_rsp_if.valid),
         .ready_out (result_no_rsp_if.ready)
     );
