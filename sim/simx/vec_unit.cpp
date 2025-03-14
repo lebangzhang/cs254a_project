@@ -10,8 +10,8 @@ public:
       : simobject_(simobject)
       , core_(core)
       , vpu_states_(arch.num_warps(), arch.num_threads())
-      , num_lanes_(1) // Should the vec_unit have more than 1 lane?
-      , pending_reqs_(1)
+      , num_lanes_(arch.num_warps())
+      , pending_reqs_(arch.num_warps())
   {
     this->clear();
   }
@@ -25,8 +25,8 @@ public:
 
   void tick() {
     // Handle memory response
-    for (uint32_t t = 0; t < num_lanes_; ++t) {
-      auto& mem_rsp_port = simobject_->MemRsps.at(t);
+    for (uint32_t wid = 0; wid < num_lanes_; ++wid) {
+      auto& mem_rsp_port = simobject_->MemRsps.at(wid);
       if (mem_rsp_port.empty())
           continue;
 
@@ -37,7 +37,7 @@ public:
       assert(entry.count);
       --entry.count;
       if (0 == entry.count) {
-          simobject_->Output.push(trace, (vpu_states_.at(0).vl / num_lanes_) * 3);
+          simobject_->Output.push(trace, ((vpu_states_.at(wid).vl * (1 << vpu_states_.at(wid).vtype.vsew)) / num_lanes_) * 3);
           pending_reqs_.release(mem_rsp.tag);
       }
       mem_rsp_port.pop();
@@ -71,20 +71,20 @@ public:
 
   if (addr_count != 0) {
       auto tag = pending_reqs_.allocate({trace, addr_count});
-      for (uint32_t t = 0; t < num_lanes_; ++t) {
-          if (!trace->tmask.test(t))
+      for (uint32_t wid = 0; wid < num_lanes_; ++wid) {
+          if (!trace->tmask.test(wid))
               continue;
 
-          auto& mem_req_port = simobject_->MemReqs.at(t);
-          for (auto& mem_addr : trace_data->mem_addrs.at(t)) {
+          auto& mem_req_port = simobject_->MemReqs.at(wid);
+          for (auto& mem_addr : trace_data->mem_addrs.at(wid)) {
               MemReq mem_req;
               mem_req.addr  = mem_addr.addr;
               mem_req.write = (trace->lsu_type == LsuType::STORE);
               mem_req.tag   = tag;
               mem_req.cid   = trace->cid;
               mem_req.uuid  = trace->uuid;
-              mem_req_port.push(mem_req, (vpu_states_.at(0).vl / num_lanes_));
-              DT(3, "VecUnit mem-req: addr=0x" << std::hex << mem_addr.addr << ", tag=" << tag << ", tid=" << t << ", " << trace);
+              mem_req_port.push(mem_req, ((vpu_states_.at(wid).vl * (1 << vpu_states_.at(wid).vtype.vsew)) / num_lanes_));
+              DT(3, "VecUnit mem-req: addr=0x" << std::hex << mem_addr.addr << ", tag=" << tag << ", tid=" << wid << ", " << trace);
               ++perf_stats_.reads;
           }
       }
@@ -1572,8 +1572,8 @@ VecUnit::VecUnit(const SimContext& ctx,
                  const Arch& arch,
                  Core* core)
   : SimObject<VecUnit>(ctx, name)
-  , MemReqs(1, this)
-  , MemRsps(1, this)
+  , MemReqs(arch.num_warps(), this)
+  , MemRsps(arch.num_warps(), this)
   , Input(this)
   , Output(this)
   , impl_(new Impl(this, arch, core))
