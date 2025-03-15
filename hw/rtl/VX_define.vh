@@ -36,7 +36,7 @@
 
 ///////////////////////////////////////////////////////////////////////////////
 
-`define ITF_TO_AOS(itf, prefix, count, dataw) \
+`define ITF_TO_AOS(prefix, itf, count, dataw) \
     wire [(count)-1:0] prefix``_valid; \
     wire [(count)-1:0][(dataw)-1:0] prefix``_data; \
     wire [(count)-1:0] prefix``_ready; \
@@ -60,7 +60,7 @@
     end \
     /* verilator lint_on GENUNNAMED */
 
-`define ITF_TO_AOS_V(itf, prefix, count, dataw) \
+`define ITF_TO_AOS_V(prefix, itf, count, dataw) \
     wire [(count)-1:0] prefix``_valid; \
     wire [(count)-1:0][(dataw)-1:0] prefix``_data; \
     /* verilator lint_off GENUNNAMED */ \
@@ -80,91 +80,91 @@
     end \
     /* verilator lint_on GENUNNAMED */
 
-`define ITF_TO_AOS_REQ(itf, prefix, count, dataw) \
-    wire [(count)-1:0] prefix``_req_valid; \
-    wire [(count)-1:0][(dataw)-1:0] prefix``_req_data; \
-    wire [(count)-1:0] prefix``_req_ready; \
+`define ITF_TO_AOS_REQ(prefix, itf, count, dataw) \
+    wire [(count)-1:0] prefix``_valid; \
+    wire [(count)-1:0][(dataw)-1:0] prefix``_data; \
+    wire [(count)-1:0] prefix``_ready; \
     /* verilator lint_off GENUNNAMED */ \
     for (genvar i = 0; i < (count); ++i) begin \
-        assign prefix``_req_valid[i] = itf[i].req_valid; \
-        assign prefix``_req_data[i]  = itf[i].req_data; \
-        assign itf[i].req_ready = prefix``_req_ready[i]; \
+        assign prefix``_valid[i] = itf[i].req_valid; \
+        assign prefix``_data[i]  = itf[i].req_data; \
+        assign itf[i].req_ready = prefix``_ready[i]; \
     end \
     /* verilator lint_on GENUNNAMED */
 
 `define AOS_TO_ITF_REQ(prefix, itf, count, dataw) \
-    wire [(count)-1:0] prefix``_req_valid; \
-    wire [(count)-1:0][(dataw)-1:0] prefix``_req_data; \
-    wire [(count)-1:0] prefix``_req_ready; \
+    wire [(count)-1:0] prefix``_valid; \
+    wire [(count)-1:0][(dataw)-1:0] prefix``_data; \
+    wire [(count)-1:0] prefix``_ready; \
     /* verilator lint_off GENUNNAMED */ \
     for (genvar i = 0; i < (count); ++i) begin \
-        assign itf[i].req_valid = prefix``_req_valid[i]; \
-        assign itf[i].req_data  = prefix``_req_data[i]; \
-        assign prefix``_req_ready[i] = itf[i].req_ready; \
+        assign itf[i].req_valid = prefix``_valid[i]; \
+        assign itf[i].req_data  = prefix``_data[i]; \
+        assign prefix``_ready[i] = itf[i].req_ready; \
     end \
     /* verilator lint_on GENUNNAMED */
 
-`define ITF_TO_AOS_REQ_V(itf, prefix, count, dataw) \
-    wire [(count)-1:0] prefix``_req_valid; \
-    wire [(count)-1:0][(dataw)-1:0] prefix``_req_data; \
+`define ITF_TO_AOS_REQ_V(prefix, itf, count, dataw) \
+    wire [(count)-1:0] prefix``_valid; \
+    wire [(count)-1:0][(dataw)-1:0] prefix``_data; \
     /* verilator lint_off GENUNNAMED */ \
     for (genvar i = 0; i < (count); ++i) begin \
-        assign prefix``_req_valid[i] = itf[i].req_valid; \
-        assign prefix``_req_data[i] = itf[i].req_data; \
+        assign prefix``_valid[i] = itf[i].req_valid; \
+        assign prefix``_data[i] = itf[i].req_data; \
     end \
     /* verilator lint_on GENUNNAMED */
 
 `define AOS_TO_ITF_REQ_V(prefix, itf, count, dataw) \
-    wire [(count)-1:0] prefix``_req_valid; \
-    wire [(count)-1:0][(dataw)-1:0] prefix``_req_data; \
+    wire [(count)-1:0] prefix``_valid; \
+    wire [(count)-1:0][(dataw)-1:0] prefix``_data; \
     /* verilator lint_off GENUNNAMED */ \
     for (genvar i = 0; i < (count); ++i) begin \
-        assign itf[i].req_valid = prefix``_req_valid[i]; \
-        assign itf[i].req_data = prefix``_req_data[i]; \
+        assign itf[i].req_valid = prefix``_valid[i]; \
+        assign itf[i].req_data = prefix``_data[i]; \
     end \
     /* verilator lint_on GENUNNAMED */
 
-`define ITF_TO_AOS_RSP(itf, prefix, count, dataw) \
-    wire [(count)-1:0] prefix``_rsp_valid; \
-    wire [(count)-1:0][(dataw)-1:0] prefix``_rsp_data; \
-    wire [(count)-1:0] prefix``_rsp_ready; \
+`define ITF_TO_AOS_RSP(prefix, itf, count, dataw) \
+    wire [(count)-1:0] prefix``_valid; \
+    wire [(count)-1:0][(dataw)-1:0] prefix``_data; \
+    wire [(count)-1:0] prefix``_ready; \
     /* verilator lint_off GENUNNAMED */ \
     for (genvar i = 0; i < (count); ++i) begin \
-        assign prefix``_rsp_valid[i] = itf[i].rsp_valid; \
-        assign prefix``_rsp_data[i] = itf[i].rsp_data; \
-        assign itf[i].rsp_ready = prefix``_rsp_ready[i]; \
+        assign prefix``_valid[i] = itf[i].rsp_valid; \
+        assign prefix``_data[i] = itf[i].rsp_data; \
+        assign itf[i].rsp_ready = prefix``_ready[i]; \
     end \
     /* verilator lint_on GENUNNAMED */
 
 `define AOS_TO_ITF_RSP(prefix, itf, count, dataw) \
-    wire [(count)-1:0] prefix``_rsp_valid; \
-    wire [(count)-1:0][(dataw)-1:0] prefix``_rsp_data; \
+    wire [(count)-1:0] prefix``_valid; \
+    wire [(count)-1:0][(dataw)-1:0] prefix``_data; \
     wire [(count)-1:0] prefix``_vready; \
     /* verilator lint_off GENUNNAMED */ \
     for (genvar i = 0; i < (count); ++i) begin \
-        assign itf[i].rsp_valid = prefix``_rsp_valid[i]; \
-        assign itf[i].rsp_data = prefix``_rsp_data[i]; \
-        assign prefix``_rsp_ready[i] = itf[i].rsp_ready; \
+        assign itf[i].rsp_valid = prefix``_valid[i]; \
+        assign itf[i].rsp_data = prefix``_data[i]; \
+        assign prefix``_ready[i] = itf[i].rsp_ready; \
     end \
     /* verilator lint_off GENUNNAMED */
 
-`define ITF_TO_AOS_RSP_V(itf, prefix, count, dataw) \
-    wire [(count)-1:0] prefix``_rsp_valid; \
-    wire [(count)-1:0][(dataw)-1:0] prefix``_rsp_data; \
+`define ITF_TO_AOS_RSP_V(prefix, itf, count, dataw) \
+    wire [(count)-1:0] prefix``_valid; \
+    wire [(count)-1:0][(dataw)-1:0] prefix``_data; \
     /* verilator lint_off GENUNNAMED */ \
     for (genvar i = 0; i < (count); ++i) begin \
-        assign prefix``_rsp_valid[i] = itf[i].rsp_valid; \
-        assign prefix``_rsp_data[i] = itf[i].rsp_data; \
+        assign prefix``_valid[i] = itf[i].rsp_valid; \
+        assign prefix``_data[i] = itf[i].rsp_data; \
     end \
     /* verilator lint_off GENUNNAMED */
 
 `define AOS_TO_ITF_RSP_V(prefix, itf, count, dataw) \
-    wire [(count)-1:0] prefix``_rsp_valid; \
-    wire [(count)-1:0][(dataw)-1:0] prefix``_rsp_data; \
+    wire [(count)-1:0] prefix``_valid; \
+    wire [(count)-1:0][(dataw)-1:0] prefix``_data; \
     /* verilator lint_off GENUNNAMED */ \
     for (genvar i = 0; i < (count); ++i) begin \
-        assign itf[i].rsp_valid = prefix``_rsp_valid[i]; \
-        assign itf[i].rsp_data = prefix``_rsp_data[i]; \
+        assign itf[i].rsp_valid = prefix``_valid[i]; \
+        assign itf[i].rsp_data = prefix``_data[i]; \
     end \
     /* verilator lint_off GENUNNAMED */
 
