@@ -115,7 +115,7 @@ module VX_operands import VX_gpu_pkg::*; #(
         .gpr_if       (per_opc_gpr_if)
     );
 
-    `ITF_TO_AOS (per_opc_operands_if, per_opc_operands, `NUM_OPCS, OPD_DATAW)
+    `ITF_TO_AOS (per_opc_operands, per_opc_operands_if, `NUM_OPCS, OPD_DATAW)
 
     VX_stream_arb #(
         .NUM_INPUTS  (`NUM_OPCS),
