@@ -59,7 +59,6 @@ module VX_gpr_unit import VX_gpu_pkg::*; #(
 
     wire [NUM_BANKS-1:0] bank_rsp_valid;
     wire [NUM_BANKS-1:0][REQ_SEL_WIDTH-1:0] bank_rsp_idx;
-    wire [NUM_BANKS-1:0][SRC_OPD_WIDTH-1:0] bank_rsp_opd_id;
     wire [NUM_BANKS-1:0][GPR_RSP_DATAW-1:0] bank_rsp_data;
 
 `ifdef PERF_ENABLE
@@ -69,10 +68,10 @@ module VX_gpr_unit import VX_gpu_pkg::*; #(
     `UNUSED_VAR (writeback_if.data.sid)
     `UNUSED_VAR (writeback_if.data.wis)
 
-    `ITF_TO_AOS_REQ (gpr_req, gpr_if, `NUM_OPCS, GPR_REQ_DATAW)
+    `ITF_TO_AOS_REQ (gpr_req, gpr_if, NUM_REQS, GPR_REQ_DATAW)
 
-    wire [`NUM_OPCS-1:0][BANK_SEL_WIDTH-1:0] gpr_req_bank_idx;
-    for (genvar i = 0; i < `NUM_OPCS; ++i) begin : g_req_bank_idx
+    wire [NUM_REQS-1:0][BANK_SEL_WIDTH-1:0] gpr_req_bank_idx;
+    for (genvar i = 0; i < NUM_REQS; ++i) begin : g_req_bank_idx
         if (NUM_BANKS != 1) begin : g_multibanks
             `CONCAT(gpr_req_bank_idx[i], gpr_if[i].req_data.wis[BANKID_WIS_BITS-1:0], gpr_if[i].req_data.reg_id[BANKID_REG_BITS-1:0], BANKID_WIS_BITS, BANKID_REG_BITS)
         end else begin : g_singlebank
@@ -104,8 +103,6 @@ module VX_gpr_unit import VX_gpu_pkg::*; #(
         .sel_out   (bank_req_idx),
         .ready_out ('1)
     );
-
-    wire [NUM_BANKS-1:0][`SIMD_WIDTH-1:0][`XLEN-1:0] bank_rd_data;
 
     wire [BANK_ADDR_WIDTH-1:0] bank_wr_addr;
     if (PER_BANK_WIS_BITS != 0 || SIMD_IDX_BITS != 0) begin : g_bank_wr_addr
@@ -160,6 +157,9 @@ module VX_gpr_unit import VX_gpu_pkg::*; #(
         `UNUSED_VAR (bank_req_sid)
         `UNUSED_VAR (bank_reg_id)
 
+        wire [`SIMD_WIDTH-1:0][`XLEN-1:0] bank_rd_data;
+        wire [SRC_OPD_WIDTH-1:0] bank_rsp_opd_id;
+
         VX_dp_ram #(
             .DATAW (BANK_DATA_WIDTH),
             .SIZE  (BANK_SIZE),
@@ -178,7 +178,7 @@ module VX_gpr_unit import VX_gpu_pkg::*; #(
             .waddr (bank_wr_addr),
             .wdata (writeback_if.data.data),
             .raddr (bank_rd_addr),
-            .rdata (bank_rd_data[b])
+            .rdata (bank_rd_data)
         );
 
         VX_pipe_buffer #(
@@ -190,11 +190,11 @@ module VX_gpr_unit import VX_gpu_pkg::*; #(
             .data_in  ({bank_req_idx[b], bank_req_opd_id}),
             `UNUSED_PIN (ready_in),
             .valid_out(bank_rsp_valid[b]),
-            .data_out ({bank_rsp_idx[b], bank_rsp_opd_id[b]}),
+            .data_out ({bank_rsp_idx[b], bank_rsp_opd_id}),
             .ready_out('1)
         );
 
-        assign bank_rsp_data[b] = {bank_rsp_opd_id[b], bank_rd_data[b]};
+        assign bank_rsp_data[b] = {bank_rsp_opd_id, bank_rd_data};
     end
 
     `AOS_TO_ITF_RSP_V (gpr_rsp, gpr_if, NUM_REQS, GPR_RSP_DATAW)
