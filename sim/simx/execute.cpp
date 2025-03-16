@@ -727,10 +727,14 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
     }
   #ifdef EXT_V_ENABLE
     else {
+      Word vl = 0;
+      vec_unit_->get_csr(VX_CSR_VL, wid, 0, &vl);
+      auto trace_data = std::make_shared<LsuTraceData>(vl);
+      trace->data = trace_data;
       for (uint32_t t = thread_start; t < num_threads; ++t) {
         if (!warp.tmask.test(t))
           continue;
-        vec_unit_->load(instr, wid, t, rs1_data, rs2_data);
+        vec_unit_->load(instr, wid, t, rs1_data, rs2_data, trace_data);
       }
     }
   #endif
@@ -769,10 +773,14 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
     }
   #ifdef EXT_V_ENABLE
     else {
+      Word vl = 0;
+      vec_unit_->get_csr(VX_CSR_VL, wid, 0, &vl);
+      auto trace_data = std::make_shared<LsuTraceData>(vl);
+      trace->data = trace_data;
       for (uint32_t t = thread_start; t < num_threads; ++t) {
         if (!warp.tmask.test(t))
           continue;
-        vec_unit_->store(instr, wid, t, rs1_data, rs2_data);
+        vec_unit_->store(instr, wid, t, rs1_data, rs2_data, trace_data);
       }
     }
   #endif
@@ -1334,13 +1342,18 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
     break;
   }
 #ifdef EXT_V_ENABLE
-  case Opcode::VSET:
+  case Opcode::VSET: {
+    Word vl = 0;
+    vec_unit_->get_csr(VX_CSR_VL, wid, 0, &vl);
+    auto trace_data = std::make_shared<VecTraceData>(vl);
+    trace->data = trace_data;
     for (uint32_t t = thread_start; t < num_threads; ++t) {
       if (!warp.tmask.test(t))
         continue;
-      rd_write |= vec_unit_->execute(instr, wid, t, rs1_data, rs2_data, rd_data);
+      rd_write |= vec_unit_->execute(instr, wid, t, rs1_data, rs2_data, rd_data, trace_data);
     }
     break;
+  }
 #endif
   case Opcode::EXT1: {
     switch (funct7) {
