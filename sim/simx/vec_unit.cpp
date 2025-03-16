@@ -407,6 +407,7 @@ public:
   }
 
   bool execute(const Instr &instr, uint32_t wid, uint32_t tid, const std::vector<reg_data_t>& rs1_data, const std::vector<reg_data_t>& rs2_data, std::vector<reg_data_t>& rd_data, std::shared_ptr<VecTraceData> trace_data) {
+    __unused (trace_data);
     auto& states = vpu_states_.at(wid);
     auto funct3 = instr.getFunct3();
     auto funct6 = instr.getFunct6();
