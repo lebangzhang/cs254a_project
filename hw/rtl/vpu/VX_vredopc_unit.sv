@@ -73,8 +73,8 @@ module VX_vredopc_unit import VX_gpu_pkg::*; #(
 
     // Calculate Register Numbers
     wire [NR_BITS-1:0] stg_rd  = to_reg_number(staging_if.data.rd);
-    wire [NR_BITS-1:0] stg_rs1 = to_reg_number(staging_if.data.rd);
-    wire [NR_BITS-1:0] stg_rs2 = to_reg_number(staging_if.data.rd);
+    wire [NR_BITS-1:0] stg_rs1 = to_reg_number(staging_if.data.rs1);
+    wire [NR_BITS-1:0] stg_rs2 = to_reg_number(staging_if.data.rs2);
 
     // Determine source operands to fetch
     wire opds_to_fetch_rs1 = staging_if.data.used_rs[0] && (stg_rs1 != 0) ;

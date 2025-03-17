@@ -80,9 +80,9 @@ module VX_vopc_unit import VX_gpu_pkg::*; #(
 
     // Calculate Register Numbers
     wire [NR_BITS-1:0] stg_rd  = to_reg_number(staging_if.data.rd);
-    wire [NR_BITS-1:0] stg_rs1 = to_reg_number(staging_if.data.rd);
-    wire [NR_BITS-1:0] stg_rs2 = to_reg_number(staging_if.data.rd);
-    wire [NR_BITS-1:0] stg_rs3 = to_reg_number(staging_if.data.rd);
+    wire [NR_BITS-1:0] stg_rs1 = to_reg_number(staging_if.data.rs1);
+    wire [NR_BITS-1:0] stg_rs2 = to_reg_number(staging_if.data.rs2);
+    wire [NR_BITS-1:0] stg_rs3 = to_reg_number(staging_if.data.rs3);
     wire [NUM_SRC_OPDS-1:0][NR_BITS-1:0] stg_src_regs = {stg_rs3, stg_rs2, stg_rs1};
     wire [NUM_SRC_OPDS-1:0] stg_rs_is_vec = {staging_if.data.rs3.rtype == 2, staging_if.data.rs2.rtype == 2, staging_if.data.rs1.rtype == 2};
     //wire                    stg_rd_is_vec = {staging_if.data.rd.rtype == 2};
