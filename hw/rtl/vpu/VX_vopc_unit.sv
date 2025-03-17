@@ -181,6 +181,8 @@ module VX_vopc_unit import VX_gpu_pkg::*; #(
         v_opds_needed_n = v_opds_needed;
         v_opds_busy_n = v_opds_busy;
 
+        lane_counter_n = lane_counter; // Possible Bug 
+
         case (state)
 
         STATE_IDLE: begin
@@ -190,7 +192,7 @@ module VX_vopc_unit import VX_gpu_pkg::*; #(
                 v_opds_needed_n = opds_to_fetch & stg_rs_is_vec;
                 v_opds_busy_n = opds_to_fetch & stg_rs_is_vec;
 
-                lane_counter_n = 0;
+                lane_counter_n = '0;
 
                 if (opds_to_fetch == 0) begin
                     state_n = STATE_DISPATCH;
