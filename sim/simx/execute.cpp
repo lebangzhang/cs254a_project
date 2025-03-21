@@ -729,7 +729,7 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
     else {
       Word vl = 0;
       vec_unit_->get_csr(VX_CSR_VL, wid, 0, &vl);
-      auto trace_data = std::make_shared<LsuTraceData>(vl);
+      auto trace_data = std::make_shared<LsuTraceData>(vl * instr.getVlsWidth());
       trace->data = trace_data;
       for (uint32_t t = thread_start; t < num_threads; ++t) {
         if (!warp.tmask.test(t))
@@ -775,7 +775,7 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
     else {
       Word vl = 0;
       vec_unit_->get_csr(VX_CSR_VL, wid, 0, &vl);
-      auto trace_data = std::make_shared<LsuTraceData>(vl);
+      auto trace_data = std::make_shared<LsuTraceData>(vl * instr.getVlsWidth());
       trace->data = trace_data;
       for (uint32_t t = thread_start; t < num_threads; ++t) {
         if (!warp.tmask.test(t))
@@ -1345,7 +1345,7 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
   case Opcode::VSET: {
     Word vl = 0;
     vec_unit_->get_csr(VX_CSR_VL, wid, 0, &vl);
-    auto trace_data = std::make_shared<VecTraceData>(vl);
+    auto trace_data = std::make_shared<VecTraceData>(vl * instr.getVlsWidth());
     trace->data = trace_data;
     for (uint32_t t = thread_start; t < num_threads; ++t) {
       if (!warp.tmask.test(t))
