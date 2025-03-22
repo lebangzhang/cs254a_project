@@ -120,6 +120,12 @@ import VX_fpu_pkg::*;
     end
 `endif
 
+`ifdef EXT_V_ENABLE
+
+    vpu_states_t [`NUM_WARPS-1:0] vpu_states;
+
+`endif
+
     always @(posedge clk) begin
         if (reset) begin
             mscratch <= base_dcrs.startup_arg;
@@ -146,6 +152,24 @@ import VX_fpu_pkg::*;
                 `VX_CSR_MSCRATCH: begin
                     mscratch <= write_data;
                 end
+            `ifdef EXT_V_ENABLE
+                `VX_CSR_VXSAT: begin
+                    vpu_states[write_wid].vxsat = write_data[0];
+                end
+                `VX_CSR_VXRM: begin
+                    vpu_states[write_wid].vxrm = write_data[1:0];
+                end
+                `VX_CSR_VCSR: begin
+                    vpu_states[write_wid].vxsat = write_data[0];
+                    vpu_states[write_wid].vxrm = write_data[2:1];
+                end
+                `VX_CSR_VL: begin
+                    vpu_states[write_wid].vl = write_data[VL_BITS-1:0];
+                end
+                `VX_CSR_VTYPE: begin
+                    vpu_states[write_wid].vtype = 32'(write_data);
+                end
+            `endif
                 default: begin
                     `ASSERT(0, ("%t: *** %s invalid CSR write address: %0h (#%0d)", $time, INSTANCE_ID, write_addr, write_uuid));
                 end
@@ -201,6 +225,14 @@ import VX_fpu_pkg::*;
             `VX_CSR_MEPC,
             `VX_CSR_PMPCFG0,
             `VX_CSR_PMPADDR0 : read_data_ro_w = `XLEN'(0);
+
+        `ifdef EXT_V_ENABLE
+            `VX_CSR_VXSAT: read_data_rw_w = `XLEN'(vpu_states[read_wid].vxsat);
+            `VX_CSR_VXRM:  read_data_rw_w = `XLEN'(vpu_states[read_wid].vxrm);
+            `VX_CSR_VCSR:  read_data_rw_w = `XLEN'({vpu_states[read_wid].vxrm, 1'b0} | 3'(vpu_states[read_wid].vxsat));
+            `VX_CSR_VL:    read_data_rw_w = `XLEN'(vpu_states[read_wid].vl);
+            `VX_CSR_VTYPE: read_data_rw_w = `XLEN'(vpu_states[read_wid].vtype);
+        `endif
 
             default: begin
                 read_addr_valid_w = 0;

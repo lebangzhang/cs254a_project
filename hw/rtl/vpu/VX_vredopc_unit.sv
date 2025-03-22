@@ -25,7 +25,7 @@ module VX_vredopc_unit import VX_gpu_pkg::*; #(
     // Scoreboard Interface
     VX_scoreboard_if.slave  scoreboard_if,
 
-    // Writeback interface 
+    // Writeback interface
     VX_writeback_if.slave   writeback_in_if,
 
     VX_writeback_if.master   writeback_out_if, // -> To vgpr writeback interface
@@ -80,7 +80,7 @@ module VX_vredopc_unit import VX_gpu_pkg::*; #(
     wire opds_to_fetch_rs1 = staging_if.data.used_rs[0] && (stg_rs1 != 0) ;
     wire opds_to_fetch_rs2 = staging_if.data.used_rs[1] && (stg_rs2 != 0) ;
 
-    // First opd to fetch  
+    // First opd to fetch
     wire [NUM_SRC_OPDS-1:0] opds_to_fetch_first  = {0, opds_to_fetch_rs2, opds_to_fetch_rs1};
     wire [NUM_SRC_OPDS-1:0] opds_to_fetch_second = {0, opds_to_fetch_rs2, 0};
 
@@ -99,7 +99,7 @@ module VX_vredopc_unit import VX_gpu_pkg::*; #(
 
     // ** SubModule 4 : Dequeue Signals **
 
-    // dequeue         : True if a request is sent out to dispatch 
+    // dequeue         : True if a request is sent out to dispatch
     // next_simd       : For reduction unit, next_simd condition is same as dequeue/any dispatch
     // simd_last_packet: Reset once all simd has been fired, then switch to next lane
     // last_dispatch   : Special case of next_simd when eop
@@ -112,97 +112,116 @@ module VX_vredopc_unit import VX_gpu_pkg::*; #(
     // Pop from staging buff
     assign staging_if.ready = last_dispatch;
 
-    // ** SubModule 5 : Writeback to register file ** 
-    
-    // TO FIX : Not sure if this works 
+    // ** SubModule 5 : Writeback to register file **
+
+    // TO FIX : Not sure if this works
     assign writeback_out_if.data = writeback_in_if.data;
 
 
     // ** SubModule 6 : Handle Writeback Interface **
-    // TO FIX: Not sure if I'm correct for this logic 
+    // TO FIX: Not sure if I'm correct for this logic
 
-    reg [`SIMD_WIDTH-1:0][`XLEN-1:0] temp_data;
-    reg [`SIMD_WIDTH-1:0] temp_simd;
+    reg [SIMD_COUNT-1:0][`SIMD_WIDTH-1:0][`XLEN-1:0] temp_data;
+    //reg [`SIMD_WIDTH-1:0] temp_simd;
+    reg [SIMD_IDX_W] simd_rsp_ctr;
+
+    always @(posedge clk) begin
+        if (reset) begin
+            simd_rsp_ctr <= 0;
+        end else begin
+            if (writeback_in_if.valid && writeback_in_if.data.PC == staging_if.data.PC) begin
+                simd_rsp_ctr <= simd_rsp_ctr + 1;
+            end
+        end
+
+        if(writeback_in_if.valid && writeback_in_if.data.PC == staging_if.data.PC) begin
+            for (integer i = 0; i < `SIMD_WIDTH; ++i) begin
+                if (writeback_in_if.data.tmask[i]) begin
+                    temp_data[writeback_in_if.data.sid][i] <= writeback_in_if.data.data[i];
+                end
+            end
+        end
+    end
 
     // Accumulates Partial Writes from WB interface (for reduction)
-    // Check if is reduction --> Using PC value to check 
+    // Check if is reduction --> Using PC value to check
     // NOTE: Need a better way of determining is_reduction_signal
     for (genvar i = 0; i < SIMD_WIDTH; i++) begin
-        
-        if (wb_state == STATE_COLLECTION) begin 
+
+        if (wb_state == STATE_COLLECTION) begin
 
             // Writeback to register file
             if (writeback_in_if.data.eop == 1) begin
-                
-                // TO FIX : Not sure if this works 
-                writeback_out_if.valid = 1;        
 
-            end else if (writeback_in_if.data.PC == staging_if.data.PC)  
+                // TO FIX : Not sure if this works
+                writeback_out_if.valid = 1;
+
+            end else if (writeback_in_if.data.PC == staging_if.data.PC)
                 && (writeback_in_if.data.tmask[writeback_in_if.data.sid * SIMD_WIDTH + i] == 1)) begin
-                
-                temp_data[i] = writeback_in_if.data.data[simd_id * SIMD_WIDTH + i];
-                temp_simd[i] = 1;
+
+                //temp_data[i] = writeback_in_if.data.data[simd_id * SIMD_WIDTH + i];
+               // temp_simd[i] = 1;
 
                 writeback_out_if.valid = 0;
 
-            end 
+            end
 
-        end else if (wb_state == STATE_DISPATCH_READY) begin 
-            temp_simd[i] = '0;
-            temp_data[i] = '0;
+        end else if (wb_state == STATE_DISPATCH_READY) begin
+            //temp_simd[i] = '0;
+            //temp_data[i] = '0;
             writeback_out_if.valid = 0;
-        end 
+        end
     end
 
     // TO FIX : Need to find a way to know if all simd collected
     // Check if all writeback dispatches have been received
-    wire all_simd_collected; 
-    
+    wire all_simd_collected;
+
     // Basic State Machine to control partial write states
     localparam STATE_COLLECTION     = 0;
     localparam STATE_DISPATCH_READY = 1;
-    reg wb_state, wb_state_n; 
+    reg wb_state, wb_state_n;
     reg [`SIMD_WIDTH-1:0] process_simd;
     reg [`SIMD_WIDTH-1:0][`XLEN-1:0] process_data;
     reg wb_collection_ready;
 
-    always@(*) begin 
-        wb_state_n = wb_state; 
-        
-        case (wb_state) 
-        STATE_COLLECTION: begin 
+    always@(*) begin
+        wb_state_n = wb_state;
 
-            // Checks when the last packet is sent 
+        case (wb_state)
+        STATE_COLLECTION: begin
+
+            // Checks when the last packet is sent
             // Statement is guranteed to occur before the "all_simd_collected"
-            if(simd_last_packet) begin 
+            if(simd_last_packet) begin
                 wb_collection_ready = 0;
-            end 
-            
+            end
+
             // Checks when the last packet is received
-            if(all_simd_collected) begin 
+            if(all_simd_collected) begin
                 wb_state_n = STATE_DISPATCH_READY;
-            end 
+            end
 
-        end 
+        end
 
-        STATE_DISPATCH_READY: begin 
+        STATE_DISPATCH_READY: begin
             wb_state_n = STATE_COLLECTION;
 
             process_simd = temp_simd;
             process_data = temp_data;
             wb_collection_ready = 1;
-        end 
+        end
         endcase
 
-    end 
+    end
 
-    always@(posedge clk) begin 
-        if(reset) begin 
+    always@(posedge clk) begin
+        if(reset) begin
             wb_state <= 1;
-        end else begin 
+        end else begin
             wb_state <= wb_state_n;
-        end 
-    end 
+        end
+    end
 
 
 
@@ -231,7 +250,7 @@ module VX_vredopc_unit import VX_gpu_pkg::*; #(
 
         STATE_IDLE: begin
             if (staging_if.valid) begin
-                v_opds_needed_n = opds_to_fetch_first; 
+                v_opds_needed_n = opds_to_fetch_first;
                 v_opds_busy_n = opds_to_fetch_first;
 
                 lane_counter_n = '0;
@@ -259,19 +278,19 @@ module VX_vredopc_unit import VX_gpu_pkg::*; #(
             end
         end
 
-        STATE_DISPATCH: begin 
+        STATE_DISPATCH: begin
 
            // if (output_ready) begin <-- Don't need this since following conditions require output_ready
 
-               // Different scheduling algo than vopc: 
+               // Different scheduling algo than vopc:
                // In vopc: Finish lane -> Then next simd
                // Here   : Finish simd (eop) -> Then increment lane counter
-               if(simd_last_packet) begin 
-                    
+               if(simd_last_packet) begin
+
                     // Update Signal for Fetch to know
                     in_first_dispatch = 0;
 
-                    // Next lane 
+                    // Next lane
                     if (lane_counter == VL_BITS'(VL_COUNT)) begin
 
                         // Ending Condition
@@ -283,37 +302,37 @@ module VX_vredopc_unit import VX_gpu_pkg::*; #(
                     end
 
 
-                    // Here means to start the "next round/lane" 
+                    // Here means to start the "next round/lane"
                     // Don't start until all simd have been collected
                     // Probably "clearer" to have more states to clarify
-                    if ( (opds_to_fetch_second != 0) && (wb_collection_ready) ) begin 
+                    if ( (opds_to_fetch_second != 0) && (wb_collection_ready) ) begin
                         v_opds_needed_n = opds_to_fetch_second;
                         v_opds_busy_n = opds_to_fetch_second;
                         state_n = STATE_FETCH;
-                    end 
+                    end
 
                 // Continue Dispatch but next SIMD
-               end else if (dequeue) begin 
+               end else if (dequeue) begin
 
-                    // Second mask fetch 
-                    if (opds_to_fetch_first != 0) begin 
+                    // Second mask fetch
+                    if (opds_to_fetch_first != 0) begin
 
-                        if(in_first_dispatch) begin 
+                        if(in_first_dispatch) begin
                             v_opds_needed_n = opds_to_fetch_first;
                             v_opds_busy_n = opds_to_fetch_first;
-                        end else begin 
+                        end else begin
                             v_opds_needed_n = opds_to_fetch_second;
                             v_opds_busy_n = opds_to_fetch_second;
-                        end 
+                        end
 
                         state_n = STATE_FETCH;
-                    end 
+                    end
 
-               end 
+               end
 
-           //end 
+           //end
 
-        end 
+        end
         endcase
     end
 
@@ -409,10 +428,10 @@ module VX_vredopc_unit import VX_gpu_pkg::*; #(
         .eop     (simd_eop_first)
     );
 
-    
+
     // TO FIX : Not sure if this is correct
-    // NOTE : Likely can somehow merge both nz iterators 
-    // ** SubModule : NonZero Iterator after first dispatches ** 
+    // NOTE : Likely can somehow merge both nz iterators
+    // ** SubModule : NonZero Iterator after first dispatches **
     VX_nz_iterator #(
         .DATAW   (`SIMD_WIDTH),
         .N       (1),
@@ -436,19 +455,19 @@ module VX_vredopc_unit import VX_gpu_pkg::*; #(
     wire simd_sop_first, simd_eop_first;
     wire simd_sop_second, simd_eop_second;
 
-    always @(*) begin 
-        if(in_first_dispatch) begin 
+    always @(*) begin
+        if(in_first_dispatch) begin
             simd_out = simd_out_first;
             simd_pid = simd_pid_first;
             simd_sop = simd_sop_first;
-            simd_eop = simd_eop_first; 
-        end else begin 
+            simd_eop = simd_eop_first;
+        end else begin
             simd_out = simd_out_second;
             simd_pid = simd_pid_second;
             simd_sop = simd_sop_second;
-            simd_eop = simd_eop_second; 
-        end 
-    end 
+            simd_eop = simd_eop_second;
+        end
+    end
 
 
     // ** SubModule : Send to Dispatch **
@@ -457,16 +476,16 @@ module VX_vredopc_unit import VX_gpu_pkg::*; #(
     // Control Output, whether its first or intermediate
     wire [NUM_SRC_OPDS-1:0][`SIMD_WIDTH-1:0][`XLEN-1:0] opd_values_to_dispatch;
 
-    always @(*) begin 
-        if(in_first_dispatch) begin 
+    always @(*) begin
+        if(in_first_dispatch) begin
             opd_values_to_dispatch = opd_values;
-        end else begin 
-            
+        end else begin
+
             // TO FIX : Not sure if I need to mask
             opd_values_to_dispatch = {0, opd_values[1], process_data}
 
-        end 
-    end 
+        end
+    end
 
     VX_elastic_buffer #(
         .DATAW   (OUT_DATAW),

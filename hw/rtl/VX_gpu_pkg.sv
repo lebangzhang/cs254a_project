@@ -457,6 +457,24 @@ package VX_gpu_pkg;
     localparam INST_VPU_VSET =      2'b11;
     localparam INST_VPU_BITS =      2;
 
+    typedef struct packed {
+        logic [2:0] vlmul;      // vector register group multiplier
+        logic [2:0] vsew;       // vector element width
+        logic [0:0] vta;        // vector tail agnostic
+        logic [0:0] vma;        // vector mask agnostic
+        logic [22:0] reserved;
+        logic [0:0] vill;       // illegal vtype
+    } vpu_type_t;
+
+    typedef struct packed {
+        logic [VL_BITS-1:0] vstart;
+        logic [0:0] vxsat;
+        logic [1:0] vxrm;
+        logic [VL_BITS-1:0] vl;
+        vpu_type_t vtype;
+        logic [VL_BITS-1:0] vlmax;
+    } vpu_states_t;
+
 ///////////////////////////////////////////////////////////////////////////////
 
     typedef struct packed {
