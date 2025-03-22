@@ -134,7 +134,7 @@ module VX_vredopc_unit import VX_gpu_pkg::*; #(
             end
         end
 
-        if(writeback_in_if.valid && writeback_in_if.data.PC == staging_if.data.PC) begin
+        if (writeback_in_if.valid && writeback_in_if.data.PC == staging_if.data.PC) begin
             for (integer i = 0; i < `SIMD_WIDTH; ++i) begin
                 if (writeback_in_if.data.tmask[i]) begin
                     temp_data[writeback_in_if.data.sid][i] <= writeback_in_if.data.data[i];

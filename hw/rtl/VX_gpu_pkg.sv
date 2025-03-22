@@ -458,12 +458,12 @@ package VX_gpu_pkg;
     localparam INST_VPU_BITS =      2;
 
     typedef struct packed {
-        logic [2:0] vlmul;      // vector register group multiplier
-        logic [2:0] vsew;       // vector element width
-        logic [0:0] vta;        // vector tail agnostic
-        logic [0:0] vma;        // vector mask agnostic
-        logic [22:0] reserved;
         logic [0:0] vill;       // illegal vtype
+        logic [22:0] reserved;
+        logic [0:0] vma;        // vector mask agnostic
+        logic [0:0] vta;        // vector tail agnostic
+        logic [2:0] vsew;       // vector element width
+        logic [2:0] vlmul;      // vector register group multiplier
     } vpu_type_t;
 
     typedef struct packed {

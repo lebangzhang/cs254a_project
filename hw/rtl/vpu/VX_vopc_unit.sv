@@ -181,7 +181,7 @@ module VX_vopc_unit import VX_gpu_pkg::*; #(
         v_opds_needed_n = v_opds_needed;
         v_opds_busy_n = v_opds_busy;
 
-        lane_counter_n = lane_counter; // Possible Bug 
+        lane_counter_n = lane_counter; // Possible Bug
 
         case (state)
 
@@ -235,11 +235,11 @@ module VX_vopc_unit import VX_gpu_pkg::*; #(
                         lane_counter_n = '0;
 
                         // Reset general purpose regs
-                        if(gp_opds_to_fetch != 0) begin 
+                        if (opds_to_fetch != 0) begin
                             gp_opds_needed_n = opds_to_fetch & ~stg_rs_is_vec;
                             gp_opds_busy_n = opds_to_fetch & ~stg_rs_is_vec;
                             state_n = STATE_FETCH;
-                        end 
+                        end
 
 
                     end else begin
