@@ -75,7 +75,8 @@ private:
 
  	struct pending_req_t {
 		instr_trace_t* trace;
-		BitVector<> mask;
+		uint32_t count;
+		bool eop;
 	};
 
 	struct lsu_state_t {
@@ -94,6 +95,7 @@ private:
 
 	std::array<lsu_state_t, NUM_LSU_BLOCKS> states_;
 	uint64_t pending_loads_;
+	uint32_t remain_addrs_;
 };
 
 ///////////////////////////////////////////////////////////////////////////////

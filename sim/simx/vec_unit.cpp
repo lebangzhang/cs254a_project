@@ -24,78 +24,18 @@ public:
   }
 
   void tick() {
-    // Handle memory response
-    for (uint32_t wid = 0; wid < num_lanes_; ++wid) {
-      auto& mem_rsp_port = simobject_->MemRsps.at(wid);
-      if (mem_rsp_port.empty())
-          continue;
+    if (simobject_->Input.empty())
+        return;
 
-      auto& mem_rsp = mem_rsp_port.front();
-      auto& entry = pending_reqs_.at(mem_rsp.tag);
-      auto trace = entry.trace;
+    auto trace = simobject_->Input.front();
 
-      assert(entry.count);
-      --entry.count;
-      if (0 == entry.count) {
-          simobject_->Output.push(trace, ((vpu_states_.at(wid).vl * (1 << vpu_states_.at(wid).vtype.vsew)) / num_lanes_) * 3); // Unsure about latency factor "* 3"
-          pending_reqs_.release(mem_rsp.tag);
-      }
-      mem_rsp_port.pop();
+    // TODO:
+    __unused (trace);
+
+    simobject_->Input.pop();
   }
 
-  for (int i = 0, n = pending_reqs_.size(); i < n; ++i) {
-      if (pending_reqs_.contains(i))
-          perf_stats_.latency += pending_reqs_.at(i).count;
-  }
-
-  if (simobject_->Input.empty())
-      return;
-
-  auto trace = simobject_->Input.front();
-
-  if (pending_reqs_.full()) {
-      if (!trace->log_once(true)) {
-          DT(3, "*** VecUnit queue stall: " << *trace);
-      }
-      ++perf_stats_.stalls;
-      return;
-  } else {
-      trace->log_once(false);
-  }
-
-  auto trace_data = std::dynamic_pointer_cast<TraceData>(trace->data);
-  uint32_t addr_count = 0;
-  for (auto& mem_addr : trace_data->mem_addrs) {
-      addr_count += mem_addr.size();
-  }
-
-  if (addr_count != 0) {
-      auto tag = pending_reqs_.allocate({trace, addr_count});
-      for (uint32_t wid = 0; wid < num_lanes_; ++wid) {
-          if (!trace->tmask.test(wid))
-              continue;
-
-          auto& mem_req_port = simobject_->MemReqs.at(wid);
-          for (auto& mem_addr : trace_data->mem_addrs.at(wid)) {
-              MemReq mem_req;
-              mem_req.addr  = mem_addr.addr;
-              mem_req.write = (trace->lsu_type == LsuType::STORE);
-              mem_req.tag   = tag;
-              mem_req.cid   = trace->cid;
-              mem_req.uuid  = trace->uuid;
-              mem_req_port.push(mem_req, ((vpu_states_.at(wid).vl * (1 << vpu_states_.at(wid).vtype.vsew)) / num_lanes_));
-              DT(3, "VecUnit mem-req: addr=0x" << std::hex << mem_addr.addr << ", tag=" << tag << ", wid=" << wid << ", " << trace);
-              ++perf_stats_.reads;
-          }
-      }
-  } else {
-      simobject_->Output.push(trace, 1);
-  }
-
-  simobject_->Input.pop();
-  }
-
-  void load(const Instr &instr, uint32_t wid, uint32_t tid, const std::vector<reg_data_t>& rs1_data, const std::vector<reg_data_t>& rs2_data, std::shared_ptr<LsuTraceData> trace_data) {
+  void load(const Instr &instr, uint32_t wid, uint32_t tid, const std::vector<reg_data_t>& rs1_data, const std::vector<reg_data_t>& rs2_data, std::vector<mem_addr_size_t>& mem_addrs) {
     auto& states = vpu_states_.at(wid);
     auto vmask = instr.getVmask();
     auto vd = instr.getRDest();
@@ -128,6 +68,7 @@ public:
         uint32_t emul = (states.vtype.vlmul >> 2) ? 1 : (1 << (states.vtype.vlmul & 0b11));
         assert(nfields * emul <= 8);
 
+
         for (uint32_t i = 0; i < states.vl; i++) {
           if (isMasked(vreg_file, 0, i, vmask))
             continue;
@@ -135,7 +76,7 @@ public:
             uint64_t mem_addr = base_addr + (i * nfields + f) * vsewb;
             uint64_t mem_data = 0;
             core_->dcache_read(&mem_data, mem_addr, vsewb);
-            trace_data->mem_addrs.at(i) = {mem_addr, vsewb};
+            mem_addrs.push_back({mem_addr, vsewb});
             setVregData(states.vtype.vsew, vreg_file, vd + f * emul, i, mem_data);
           }
         }
@@ -158,7 +99,7 @@ public:
           uint64_t mem_addr = base_addr + i * stride;
           uint64_t mem_data = 0;
           core_->dcache_read(&mem_data, mem_addr, vsewb);
-          trace_data->mem_addrs.at(i) = {mem_addr, vsewb};
+          mem_addrs.push_back({mem_addr, vsewb});
           setVregData(states.vtype.vsew, vreg_file, vd, i, mem_data);
         }
         break;
@@ -178,7 +119,7 @@ public:
           uint64_t mem_addr = base_addr + i * stride;
           uint64_t mem_data = 0;
           core_->dcache_read(&mem_data, mem_addr, vsewb);
-          trace_data->mem_addrs.at(i) = {mem_addr, vsewb};
+          mem_addrs.push_back({mem_addr, vsewb});
           setVregData(states.vtype.vsew, vreg_file, vd, i, mem_data);
         }
         break;
@@ -210,7 +151,7 @@ public:
           uint64_t mem_addr = base_addr + i * stride + f * vsewb;
           uint64_t mem_data = 0;
           core_->dcache_read(&mem_data, mem_addr, vsewb);
-          trace_data->mem_addrs.at(i) = {mem_addr, vsewb};
+          mem_addrs.push_back({mem_addr, vsewb});
           setVregData(states.vtype.vsew, vreg_file, vd + f * emul, i, mem_data);
         }
       }
@@ -247,7 +188,7 @@ public:
           uint64_t mem_addr = base_addr + offset + f * vsewb;
           uint64_t mem_data = 0;
           core_->dcache_read(&mem_data, mem_addr, vsewb);
-          trace_data->mem_addrs.at(i) = {mem_addr, vsewb};
+          mem_addrs.push_back({mem_addr, vsewb});
           setVregData(states.vtype.vsew, vreg_file, vd + f * emul, i, mem_data);
         }
       }
@@ -259,7 +200,7 @@ public:
     }
   }
 
-  void store(const Instr &instr, uint32_t wid, uint32_t tid, const std::vector<reg_data_t>& rs1_data, const std::vector<reg_data_t>& rs2_data, std::shared_ptr<LsuTraceData> trace_data) {
+  void store(const Instr &instr, uint32_t wid, uint32_t tid, const std::vector<reg_data_t>& rs1_data, const std::vector<reg_data_t>& rs2_data, std::vector<mem_addr_size_t>& mem_addrs) {
     auto& states = vpu_states_.at(wid);
     auto vmask = instr.getVmask();
     auto mop = instr.getVmop();
@@ -284,7 +225,7 @@ public:
             uint64_t mem_addr = base_addr + (i * nfields + f) * vsewb;
             uint64_t value = getVregData(states.vtype.vsew, vreg_file, vs3 + f * emul, i);
             core_->dcache_write(&value, mem_addr, vsewb);
-            trace_data->mem_addrs.at(i) = {mem_addr, vsewb};
+            mem_addrs.push_back({mem_addr, vsewb});
           }
         }
         break;
@@ -305,7 +246,7 @@ public:
             uint64_t mem_addr = base_addr + i * stride;
             uint64_t value = getVregData(states.vtype.vsew, vreg_file, vs3, i);
             core_->dcache_write(&value, mem_addr, vsewb);
-            trace_data->mem_addrs.at(i) = {mem_addr, vsewb};
+            mem_addrs.push_back({mem_addr, vsewb});
           }
         }
         break;
@@ -326,7 +267,7 @@ public:
           uint64_t mem_addr = base_addr + i * stride;
           uint64_t value = getVregData(states.vtype.vsew, vreg_file, vs3, i);
           core_->dcache_write(&value, mem_addr, vsewb);
-          trace_data->mem_addrs.at(i) = {mem_addr, vsewb};
+          mem_addrs.push_back({mem_addr, vsewb});
         }
         break;
       }
@@ -358,7 +299,7 @@ public:
           uint64_t mem_addr = base_addr + i * stride + f * vsewb;
           uint64_t value = getVregData(states.vtype.vsew, vreg_file, vs3 + f * emul, i);
           core_->dcache_write(&value, mem_addr, vsewb);
-          trace_data->mem_addrs.at(i) = {mem_addr, vsewb};
+          mem_addrs.push_back({mem_addr, vsewb});
         }
       }
       break;
@@ -395,7 +336,7 @@ public:
           uint64_t mem_addr = base_addr + offset + f * vsewb;
           uint64_t value = getVregData(states.vtype.vsew, vreg_file, vs3 + f * emul, i);
           core_->dcache_write(&value, mem_addr, vsewb);
-          trace_data->mem_addrs.at(i) = {mem_addr, vsewb};
+          mem_addrs.push_back({mem_addr, vsewb});
         }
       }
       break;
@@ -1405,8 +1346,8 @@ public:
 
       uint32_t vlmul_neg  = (vlmul >> 2);
       uint32_t vlmul_shft = vlmul & 0b11;
-      uint32_t vlmax = (vlmul_neg ? (VLENB >> vlmul_shft) : (VLENB << vlmul_shft)) / vsew;
-      uint32_t vill = (vsew > XLENB) || (vlmax > VLEN);
+      uint32_t vlmax = (vlmul_neg ? (VLENB >> vlmul_shft) : (VLENB << vlmul_shft)) >> vsew;
+      uint32_t vill = ((1 << vsew) > XLENB) || (vlmax > VLEN);
 
       uint32_t vl;
       if (instr.hasImm()) {
@@ -1579,8 +1520,6 @@ VecUnit::VecUnit(const SimContext& ctx,
                  const Arch& arch,
                  Core* core)
   : SimObject<VecUnit>(ctx, name)
-  , MemReqs(arch.num_warps(), this)
-  , MemRsps(arch.num_warps(), this)
   , Input(this)
   , Output(this)
   , impl_(new Impl(this, arch, core))
@@ -1606,12 +1545,12 @@ bool VecUnit::set_csr(uint32_t addr, uint32_t wid, uint32_t tid, Word value) {
   return impl_->set_csr(addr, wid, tid, value);
 }
 
-void VecUnit::load(const Instr &instr, uint32_t wid, uint32_t tid, const std::vector<reg_data_t>& rs1_data, const std::vector<reg_data_t>& rs2_data, std::shared_ptr<LsuTraceData> trace_data) {
-  return impl_->load(instr, wid, tid, rs1_data, rs2_data, trace_data);
+void VecUnit::load(const Instr &instr, uint32_t wid, uint32_t tid, const std::vector<reg_data_t>& rs1_data, const std::vector<reg_data_t>& rs2_data, std::vector<mem_addr_size_t>& mem_addrs) {
+  return impl_->load(instr, wid, tid, rs1_data, rs2_data, mem_addrs);
 }
 
-void VecUnit::store(const Instr &instr, uint32_t wid, uint32_t tid, const std::vector<reg_data_t>& rs1_data, const std::vector<reg_data_t>& rs2_data, std::shared_ptr<LsuTraceData> trace_data) {
-  return impl_->store(instr, wid, tid, rs1_data, rs2_data, trace_data);
+void VecUnit::store(const Instr &instr, uint32_t wid, uint32_t tid, const std::vector<reg_data_t>& rs1_data, const std::vector<reg_data_t>& rs2_data, std::vector<mem_addr_size_t>& mem_addrs) {
+  return impl_->store(instr, wid, tid, rs1_data, rs2_data, mem_addrs);
 }
 
 bool VecUnit::execute(const Instr &instr, uint32_t wid, uint32_t tid, const std::vector<reg_data_t>& rs1_data, const std::vector<reg_data_t>& rs2_data, std::vector<reg_data_t>& rd_data, std::shared_ptr<VecTraceData> trace_data) {

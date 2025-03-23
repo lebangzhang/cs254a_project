@@ -33,8 +33,10 @@ public:
 struct LsuTraceData : public ITraceData {
   using Ptr = std::shared_ptr<LsuTraceData>;
   std::vector<mem_addr_size_t> mem_addrs;
-  LsuTraceData(uint32_t num_threads) : mem_addrs(num_threads) {}
+  LsuTraceData(uint32_t num_threads = 0) : mem_addrs(num_threads) {}
+  LsuTraceData(const std::vector<mem_addr_size_t>& mem_addrs) : mem_addrs(mem_addrs) {}
 };
+
 
 struct SFUTraceData : public ITraceData {
   using Ptr = std::shared_ptr<SFUTraceData>;
@@ -45,8 +47,7 @@ struct SFUTraceData : public ITraceData {
 
 struct VecTraceData : public ITraceData {
   using Ptr = std::shared_ptr<VecTraceData>;
-  std::vector<mem_addr_size_t> mem_addrs;
-  VecTraceData(uint32_t vl) : mem_addrs(vl) {}
+  VecTraceData(uint32_t /*num_thraeds*/) {}
 };
 
 struct instr_trace_t {

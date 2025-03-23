@@ -109,6 +109,7 @@ void LsuUnit::reset() {
 		state.clear();
 	}
 	pending_loads_ = 0;
+	remain_addrs_ = 0;
 }
 
 void LsuUnit::tick() {
@@ -124,13 +125,16 @@ void LsuUnit::tick() {
 		DT(3, this->name() << "-mem-rsp: " << lsu_rsp);
 		auto& entry = state.pending_rd_reqs.at(lsu_rsp.tag);
 		auto trace = entry.trace;
-		assert(!entry.mask.none());
-		entry.mask &= ~lsu_rsp.mask; // track remaining
-		if (entry.mask.none()) {
-			// whole response received, release trace
-			int iw = trace->wid % ISSUE_WIDTH;
-			Outputs.at(iw).push(trace, 1);
+		assert(entry.count != 0);
+		entry.count -= lsu_rsp.mask.count(); // track remaining
+		if (entry.count == 0) {
+			// full response bach received
 			state.pending_rd_reqs.release(lsu_rsp.tag);
+			// is last batch?
+			if (entry.eop) {
+				int iw = trace->wid % ISSUE_WIDTH;
+				Outputs.at(iw).push(trace, 1);
+			}
 		}
 		pending_loads_ -= lsu_rsp.mask.count();
 		lsu_rsp_port.pop();
@@ -178,48 +182,55 @@ void LsuUnit::tick() {
 			trace->log_once(false);
 		}
 
-		// build memory request
-		LsuReq lsu_req(NUM_LSU_LANES);
-		lsu_req.write = is_write;
-		{
-			auto trace_data = std::dynamic_pointer_cast<LsuTraceData>(trace->data);
-			auto t0 = trace->pid * NUM_LSU_LANES;
+		auto trace_data = std::dynamic_pointer_cast<LsuTraceData>(trace->data);
+		if (remain_addrs_ == 0) {
+			remain_addrs_ = trace_data->mem_addrs.size();
+		}
+
+		if (remain_addrs_ != 0) {
+			// build memory request
+			LsuReq lsu_req(NUM_LSU_LANES);
+			lsu_req.write = is_write;
+			uint32_t t0 = trace_data->mem_addrs.size() - remain_addrs_;
 			for (uint32_t i = 0; i < NUM_LSU_LANES; ++i) {
-				if (trace->tmask.test(t0 + i)) {
-					lsu_req.mask.set(i);
-					lsu_req.addrs.at(i) = trace_data->mem_addrs.at(t0 + i).addr;
-				}
+				lsu_req.mask.set(i);
+				lsu_req.addrs.at(i) = trace_data->mem_addrs.at(t0 + i).addr;
+				--remain_addrs_;
+				if (remain_addrs_ == 0)
+					break;
+			}
+			uint32_t tag = 0;
+			if (!is_write) {
+				uint32_t count = lsu_req.mask.count();
+				bool is_eop = (remain_addrs_ == 0);
+				tag = state.pending_rd_reqs.allocate({trace, count, is_eop});
+			}
+			lsu_req.tag  = tag;
+			lsu_req.cid  = trace->cid;
+			lsu_req.uuid = trace->uuid;
+
+			// send memory request
+			core_->lmem_switch_.at(block_idx)->ReqIn.push(lsu_req);
+			DT(3, this->name() << "-mem-req: " << lsu_req);
+
+			// update stats
+			auto num_addrs = lsu_req.mask.count();
+			if (is_write) {
+				core_->perf_stats_.stores += num_addrs;
+			} else {
+				core_->perf_stats_.loads += num_addrs;
+				pending_loads_ += num_addrs;
 			}
 		}
-		uint32_t tag = 0;
 
-		if (!is_write) {
-			tag = state.pending_rd_reqs.allocate({trace, lsu_req.mask});
+		if (remain_addrs_ == 0) {
+			// do not wait on writes
+			if (is_write) {
+				Outputs.at(iw).push(trace, 1);
+			}
+			// remove input
+			input.pop();
 		}
-		lsu_req.tag  = tag;
-		lsu_req.cid  = trace->cid;
-		lsu_req.uuid = trace->uuid;
-
-		// send memory request
-		core_->lmem_switch_.at(block_idx)->ReqIn.push(lsu_req);
-		DT(3, this->name() << "-mem-req: " << lsu_req);
-
-		// update stats
-		auto num_addrs = lsu_req.mask.count();
-		if (is_write) {
-			core_->perf_stats_.stores += num_addrs;
-		} else {
-			core_->perf_stats_.loads += num_addrs;
-			pending_loads_ += num_addrs;
-		}
-
-		// do not wait on writes
-		if (is_write) {
-			Outputs.at(iw).push(trace, 1);
-		}
-
-		// remove input
-		input.pop();
 	}
 }
 
