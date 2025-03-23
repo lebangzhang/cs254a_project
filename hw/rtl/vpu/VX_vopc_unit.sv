@@ -28,6 +28,8 @@ module VX_vopc_unit import VX_gpu_pkg::*; #(
 
     VX_vgpr_if.master       vgpr_if,
 
+    VX_vpu_states_if.master vpu_states_if,
+
     VX_operands_if.master   operands_if
 );
     `UNUSED_SPARAM (INSTANCE_ID)
@@ -299,6 +301,7 @@ module VX_vopc_unit import VX_gpu_pkg::*; #(
     ) decoder (
         .clk       (clk),
         .reset     (reset),
+        .vpu_states_if(vpu_states_if),
         .valid     (state == STATE_DECODE),
         .instr_in  (instr_orig),
         .instr_out (instr_decoded)

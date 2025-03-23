@@ -25,6 +25,10 @@ module VX_issue import VX_gpu_pkg::*; #(
     output issue_perf_t     issue_perf,
 `endif
 
+`ifdef EXT_V_ENABLE
+    VX_vpu_states_if.master vpu_states_if,
+`endif
+
     VX_decode_if.slave      decode_if,
     VX_writeback_if.slave   writeback_if [`ISSUE_WIDTH],
     VX_dispatch_if.master   dispatch_if [NUM_EX_UNITS * `ISSUE_WIDTH]
@@ -87,6 +91,9 @@ module VX_issue import VX_gpu_pkg::*; #(
             .reset        (reset),
         `ifdef PERF_ENABLE
             .issue_perf   (per_issue_perf[issue_id]),
+        `endif
+        `ifdef EXT_V_ENABLE
+            .vpu_states_if(vpu_states_if),
         `endif
             .decode_if    (per_issue_decode_if),
             .writeback_if (writeback_if[issue_id]),

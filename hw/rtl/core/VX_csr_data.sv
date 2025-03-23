@@ -51,6 +51,10 @@ import VX_fpu_pkg::*;
     VX_fpu_csr_if.slave                 fpu_csr_if [`NUM_FPU_BLOCKS],
 `endif
 
+`ifdef EXT_V_ENABLE
+    VX_vpu_states_if.slave              vpu_states_if,
+`endif
+
     input wire [PERF_CTR_BITS-1:0]      cycles,
     input wire [`NUM_WARPS-1:0]         active_warps,
     input wire [`NUM_WARPS-1:0][`NUM_THREADS-1:0] thread_masks,
@@ -123,6 +127,13 @@ import VX_fpu_pkg::*;
 `ifdef EXT_V_ENABLE
 
     vpu_csrs_t [`NUM_WARPS-1:0] vpu_csrs;
+
+    always @(posedge clk) begin
+        if (vpu_states_if.valid) begin
+            vpu_csrs[vpu_states_if.wid].vtype <= vpu_states_if.data.vtype;
+            vpu_csrs[vpu_states_if.wid].vl <= vpu_states_if.data.vl;
+        end
+    end
 
 `endif
 

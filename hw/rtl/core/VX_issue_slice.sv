@@ -26,6 +26,10 @@ module VX_issue_slice import VX_gpu_pkg::*; #(
     output issue_perf_t     issue_perf,
 `endif
 
+`ifdef EXT_V_ENABLE
+    VX_vpu_states_if.master vpu_states_if,
+`endif
+
     VX_decode_if.slave      decode_if,
     VX_writeback_if.slave   writeback_if,
     VX_dispatch_if.master   dispatch_if [NUM_EX_UNITS]
@@ -78,6 +82,7 @@ module VX_issue_slice import VX_gpu_pkg::*; #(
      `endif
         .writeback_if   (writeback_if),
         .scoreboard_if  (scoreboard_if),
+        .vpu_states_if  (vpu_states_if),
         .operands_if    (operands_if)
     );
 

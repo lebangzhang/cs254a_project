@@ -70,6 +70,13 @@ module VX_issue_top import VX_gpu_pkg::*; #(
     VX_dispatch_if  dispatch_if[NUM_EX_UNITS * `ISSUE_WIDTH]();
     VX_writeback_if writeback_if[`ISSUE_WIDTH]();
 
+`ifdef EXT_V_ENABLE
+    VX_vpu_states_if vpu_states_if();
+    assign vpu_states_if.valid = 1'b0;
+    assign vpu_states_if.wid   = '0;
+    assign vpu_states_if.data  = '0;
+`endif
+
     assign decode_if.valid = decode_valid;
     assign decode_if.data.uuid = decode_uuid;
     assign decode_if.data.wid = decode_wid;
@@ -140,6 +147,10 @@ module VX_issue_top import VX_gpu_pkg::*; #(
 
     `ifdef PERF_ENABLE
         .issue_perf     (issue_perf),
+    `endif
+
+    `ifdef EXT_V_ENABLE
+        .vpu_states_if  (vpu_states_if),
     `endif
 
         .decode_if      (decode_if),

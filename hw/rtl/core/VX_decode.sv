@@ -39,7 +39,9 @@ module VX_decode import VX_gpu_pkg::*; #(
 
     // inputs
     VX_fetch_if.slave       fetch_if,
-
+`ifdef EXT_V_ENABLE
+    VX_vpu_states_if.slave  vpu_states_if,
+`endif
     // outputs
     VX_decode_if.master     decode_if,
     VX_decode_sched_if.master decode_sched_if
@@ -158,6 +160,20 @@ module VX_decode import VX_gpu_pkg::*; #(
     wire [5:0] funct6= instr[31:26];
     wire [1:0]  vset = instr[31:30];
     wire [7:0]  zimm = instr[27:20];
+
+    vpu_states_t [`NUM_WARPS-1:0] vpu_states;
+
+    always @(posedge clk) begin
+        if (reset) begin
+            vpu_states <= '0;
+        end else begin
+            if (vpu_states_if.valid) begin
+                vpu_states[vpu_states_if.wid] <= vpu_states_if.data;
+            end
+        end
+    end
+
+    `UNUSED_VAR (vpu_states)
 
     reg [INST_VPU_OP_BITS-1:0] vop_type;
     always @(*) begin
@@ -634,7 +650,7 @@ module VX_decode import VX_gpu_pkg::*; #(
                         `USED_VREG (rd);
                     end
                     3'd3: begin // OPIVI
-                         op_type = INST_OP_BITS'(INST_VPU_VOP);
+                        op_type = INST_OP_BITS'(INST_VPU_VOP);
                         op_args.vpu.vop.op = vop_type;
                         op_args.vpu.vop.vm = vm;
                         op_args.vpu.vop.use_imm = 1;

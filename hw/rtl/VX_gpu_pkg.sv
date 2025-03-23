@@ -133,6 +133,7 @@ package VX_gpu_pkg;
     localparam VL_COUNT = `VLEN / `XLEN;
     localparam VL_BITS  = `CLOG2(VL_COUNT);
     localparam VL_WIDTH = `UP(VL_BITS);
+    localparam VL_MAX_W = `CLOG2(`VLEN + 1);
 
     ///////////////////////////////////////////////////////////////////////////
 
@@ -468,11 +469,17 @@ package VX_gpu_pkg;
 
     typedef struct packed {
         logic [VL_WIDTH-1:0] vstart;
-        logic [0:0] vxsat;
-        logic [1:0] vxrm;
-        logic [VL_WIDTH-1:0] vl;
-        vpu_type_t vtype;
+        logic [0:0]          vxsat;
+        logic [1:0]          vxrm;
+        logic [VL_MAX_W-1:0] vl;
+        vpu_type_t           vtype;
     } vpu_csrs_t;
+
+    typedef struct packed {
+        vpu_type_t           vtype;
+        logic [VL_MAX_W-1:0] vl;
+        logic [VL_MAX_W-1:0] vlmax;
+    } vpu_states_t;
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -560,7 +567,6 @@ package VX_gpu_pkg;
         logic [($bits(alu_args_t)-1)-1:0] __padding;
         logic is_neg;
     } wctl_args_t;
-
 
 `ifdef EXT_V_ENABLE
 

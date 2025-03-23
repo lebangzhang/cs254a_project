@@ -1403,14 +1403,10 @@ public:
       uint32_t vta   = (zimm >> shift_v_ta) & mask_v_ta;
       uint32_t vma   = (zimm >> shift_v_ma) & mask_v_ma;
 
-      bool negativeLmul = (vlmul >> 2);
-      uint32_t vlenDividedByLmul = VLEN >> (0x8 - vlmul);
-      uint32_t vlenMultipliedByLmul = VLEN << vlmul;
-      uint32_t vlenTimesLmul = negativeLmul ? vlenDividedByLmul : vlenMultipliedByLmul;
-      uint32_t vsew_bits = 1 << (3 + vsew);
-
-      uint32_t vlmax = vlenTimesLmul / vsew_bits;
-      uint32_t vill = (vsew_bits > XLEN) || (vlmax < (VLEN / XLEN));
+      uint32_t vlmul_neg  = (vlmul >> 2);
+      uint32_t vlmul_shft = vlmul & 0b11;
+      uint32_t vlmax = (vlmul_neg ? (VLENB >> vlmul_shft) : (VLENB << vlmul_shft)) / vsew;
+      uint32_t vill = (vsew > XLENB) || (vlmax > VLEN);
 
       uint32_t vl;
       if (instr.hasImm()) {
@@ -1425,6 +1421,10 @@ public:
 
       if (vill) {
         vl = 0;
+        vma = 0;
+        vta = 0;
+        vsew = 0;
+        vlmul = 0;
       }
 
       DP(4, "Vset(i)vl(i) - vill: " << vill << " vma: " << vma << " vta: " << vta << " lmul: " << vlmul << " sew: " << vsew << " vl: " << vl << " vlmax: " << vlmax);

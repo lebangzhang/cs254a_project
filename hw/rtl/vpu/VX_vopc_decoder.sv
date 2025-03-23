@@ -20,6 +20,8 @@ module VX_vopc_decoder import VX_gpu_pkg::*; #(
     input wire          clk,
     input wire          reset,
 
+    VX_vpu_states_if.master vpu_states_if,
+
     input wire          valid,
 
     input instr_data_t  instr_in,
@@ -27,11 +29,12 @@ module VX_vopc_decoder import VX_gpu_pkg::*; #(
 );
 
     `UNUSED_SPARAM (INSTANCE_ID)
-    `UNUSED_PARAM (ISSUE_ID)
 
     `UNUSED_VAR (reset)
     `UNUSED_VAR (valid)
     `UNUSED_VAR (instr_in)
+
+    logic valid_r;
 
     logic [EX_BITS-1:0]                ex_type_r, ex_type_n;
     logic [INST_OP_BITS-1:0]           op_type_r, op_type_n;
@@ -41,6 +44,8 @@ module VX_vopc_decoder import VX_gpu_pkg::*; #(
     logic [`SIMD_WIDTH-1:0][`XLEN-1:0] rs1_data_r, rs1_data_n;
     logic [`SIMD_WIDTH-1:0][`XLEN-1:0] rs2_data_r, rs2_data_n;
     logic [`SIMD_WIDTH-1:0][`XLEN-1:0] rs3_data_r, rs3_data_n;
+
+    vpu_states_t [PER_ISSUE_WARPS-1:0] vpu_states;
 
     always @(*) begin
         ex_type_n   = 'x;
@@ -56,6 +61,10 @@ module VX_vopc_decoder import VX_gpu_pkg::*; #(
     end
 
     always @(posedge clk) begin
+        if (reset) begin
+            vpu_states <= '0;
+        end
+        valid_r     <=  valid;
         ex_type_r   <= ex_type_n;
         op_type_r   <= op_type_n;
         op_args_r   <= op_args_n;
@@ -65,6 +74,11 @@ module VX_vopc_decoder import VX_gpu_pkg::*; #(
         rs2_data_r  <= rs2_data_n;
         rs3_data_r  <= rs3_data_n;
     end
+
+    // vpu states
+    assign vpu_states_if.valid = valid_r;
+    assign vpu_states_if.wid   = wis_to_wid(instr_in.wis, ISSUE_ID);
+    assign vpu_states_if.data  = vpu_states[instr_in.wis];
 
     // decoded instruction
     assign instr_out.uuid       = instr_in.uuid;

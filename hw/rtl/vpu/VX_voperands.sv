@@ -23,9 +23,9 @@ module VX_voperands import VX_gpu_pkg::*; #(
 `ifdef PERF_ENABLE
     output wire [PERF_CTR_BITS-1:0] perf_stalls,
 `endif
-
     VX_writeback_if.slave   writeback_if,
     VX_scoreboard_if.slave  scoreboard_if,
+    VX_vpu_states_if.master vpu_states_if,
     VX_operands_if.master   operands_if
 );
     localparam NUM_OPDS  = NUM_SRC_OPDS + 1;
@@ -89,7 +89,21 @@ module VX_voperands import VX_gpu_pkg::*; #(
     `UNUSED_VAR (per_opc_scoreboard_ready)
 
     for (genvar i = 0; i < `NUM_OPCS; ++i) begin : g_collectors
-        if (i < (`NUM_OPCS-1)) begin : g_scalar
+        if (i == 0) begin : g_vector
+            VX_vopc_unit #(
+                .INSTANCE_ID (`SFORMATF(("%s-collector%0d", INSTANCE_ID, i))),
+                .ISSUE_ID (ISSUE_ID)
+            ) vopc_unit (
+                .clk          (clk),
+                .reset        (reset),
+                .wait_mask    (per_opc_wait_mask[i]),
+                .scoreboard_if(per_opc_scoreboard_if[i]),
+                .gpr_if       (per_opc_gpr_if[i]),
+                .vgpr_if      (vgpr_if[0]),
+                .vpu_states_if(vpu_states_if),
+                .operands_if  (per_opc_operands_if[i])
+            );
+        end else begin : g_scalar
             VX_opc_unit #(
                 .INSTANCE_ID (`SFORMATF(("%s-collector%0d", INSTANCE_ID, i))),
                 .ISSUE_ID (ISSUE_ID)
@@ -101,19 +115,7 @@ module VX_voperands import VX_gpu_pkg::*; #(
                 .gpr_if       (per_opc_gpr_if[i]),
                 .operands_if  (per_opc_operands_if[i])
             );
-        end else begin : g_vector
-            VX_vopc_unit #(
-                .INSTANCE_ID (`SFORMATF(("%s-collector%0d", INSTANCE_ID, i))),
-                .ISSUE_ID (ISSUE_ID)
-            ) vopc_unit (
-                .clk          (clk),
-                .reset        (reset),
-                .wait_mask    (per_opc_wait_mask[i]),
-                .scoreboard_if(per_opc_scoreboard_if[i]),
-                .gpr_if       (per_opc_gpr_if[i]),
-                .vgpr_if      (vgpr_if[0]),
-                .operands_if  (per_opc_operands_if[i])
-            );
+
         end
     end
 

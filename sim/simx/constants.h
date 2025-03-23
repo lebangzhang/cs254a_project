@@ -24,6 +24,7 @@
 #define MEM_CLOCK_RATIO   1
 #endif
 
+inline constexpr int XLENB            = (XLEN / 8);
 inline constexpr int VLENB            = (VLEN / 8);
 
 inline constexpr int LSU_WORD_SIZE    = (XLEN / 8);
@@ -32,7 +33,7 @@ inline constexpr int LSU_NUM_REQS	    = (NUM_LSU_BLOCKS * LSU_CHANNELS);
 
 // The dcache uses coalesced memory blocks
 inline constexpr int DCACHE_WORD_SIZE = LSU_LINE_SIZE;
-inline constexpr int DCACHE_CHANNELS 	= UP((NUM_LSU_LANES * (XLEN / 8)) / DCACHE_WORD_SIZE);
+inline constexpr int DCACHE_CHANNELS 	= UP((NUM_LSU_LANES * XLENB) / DCACHE_WORD_SIZE);
 inline constexpr int DCACHE_NUM_REQS	= (NUM_LSU_BLOCKS * DCACHE_CHANNELS);
 
 inline constexpr int NUM_SOCKETS      = UP(NUM_CORES / SOCKET_SIZE);

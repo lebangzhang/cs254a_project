@@ -76,6 +76,10 @@ module VX_core import VX_gpu_pkg::*; #(
     end
 `endif
 
+`ifdef EXT_V_ENABLE
+    VX_vpu_states_if vpu_states_if();
+`endif
+
     base_dcrs_t base_dcrs;
 
     VX_dcr_data dcr_data (
@@ -133,6 +137,9 @@ module VX_core import VX_gpu_pkg::*; #(
         .reset          (reset),
         .fetch_if       (fetch_if),
         .decode_if      (decode_if),
+    `ifdef EXT_V_ENABLE
+        .vpu_states_if  (vpu_states_if),
+    `endif
         .decode_sched_if(decode_sched_if)
     );
 
@@ -146,6 +153,10 @@ module VX_core import VX_gpu_pkg::*; #(
 
     `ifdef PERF_ENABLE
         .issue_perf     (pipeline_perf.issue),
+    `endif
+
+    `ifdef EXT_V_ENABLE
+        .vpu_states_if  (vpu_states_if),
     `endif
 
         .decode_if      (decode_if),
@@ -165,6 +176,10 @@ module VX_core import VX_gpu_pkg::*; #(
     `ifdef PERF_ENABLE
         .sysmem_perf    (sysmem_perf_tmp),
         .pipeline_perf  (pipeline_perf),
+    `endif
+
+    `ifdef EXT_V_ENABLE
+        .vpu_states_if  (vpu_states_if),
     `endif
 
         .base_dcrs      (base_dcrs),
