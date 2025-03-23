@@ -30,7 +30,7 @@ module VX_opc_unit import VX_gpu_pkg::*; #(
     `UNUSED_PARAM (ISSUE_ID)
 
     localparam NUM_OPDS  = NUM_SRC_OPDS + 1;
-    localparam SCB_DATAW = UUID_WIDTH + ISSUE_WIS_W + `NUM_THREADS + PC_BITS + EX_BITS + INST_OP_BITS + INST_ARGS_BITS + NUM_OPDS + (NUM_OPDS * REG_IDX_BITS);
+    localparam IN_DATAW  = UUID_WIDTH + ISSUE_WIS_W + `NUM_THREADS + PC_BITS + EX_BITS + INST_OP_BITS + INST_ARGS_BITS + NUM_OPDS + (NUM_OPDS * REG_IDX_BITS);
     localparam OUT_DATAW = UUID_WIDTH + ISSUE_WIS_W + SIMD_IDX_W + VL_WIDTH + `SIMD_WIDTH + PC_BITS + EX_BITS + INST_OP_BITS + INST_ARGS_BITS + 1 + NR_BITS + (NUM_SRC_OPDS * `SIMD_WIDTH * `XLEN) + 1 + 1;
 
     localparam STATE_IDLE     = 0;
@@ -49,8 +49,9 @@ module VX_opc_unit import VX_gpu_pkg::*; #(
     wire [SIMD_IDX_W-1:0] simd_pid;
     wire simd_sop, simd_eop;
 
+    // hold current instruction
     VX_pipe_buffer #(
-        .DATAW (SCB_DATAW)
+        .DATAW (IN_DATAW)
     ) stanging_buf (
         .clk      (clk),
         .reset    (reset),
@@ -62,20 +63,24 @@ module VX_opc_unit import VX_gpu_pkg::*; #(
         .ready_out(staging_if.ready)
     );
 
-    //wire enqueue = (state == STATE_IDLE) && staging_if.ready;
-    wire dequeue = (state == STATE_DISPATCH) && output_ready;
+    // wire enqueue = (state == STATE_IDLE) && staging_if.ready;
+    wire dispatch_fire = (state == STATE_DISPATCH) && output_ready;
 
-    assign staging_if.ready = dequeue && simd_eop;
+    // pop current instruction
+    assign staging_if.ready = dispatch_fire && simd_eop;
 
+    // Reg File request and response handshake
     wire gpr_req_fire = gpr_if.req_valid && gpr_if.req_ready;
     wire gpr_rsp_fire = gpr_if.rsp_valid;
 
+    // calculate register numbers
     wire [NR_S_BITS-1:0] stg_rd  = to_sreg_number(staging_if.data.rd);
     wire [NR_S_BITS-1:0] stg_rs1 = to_sreg_number(staging_if.data.rs1);
     wire [NR_S_BITS-1:0] stg_rs2 = to_sreg_number(staging_if.data.rs2);
     wire [NR_S_BITS-1:0] stg_rs3 = to_sreg_number(staging_if.data.rs3);
     wire [NUM_SRC_OPDS-1:0][NR_S_BITS-1:0] stg_src_regs = {stg_rs3, stg_rs2, stg_rs1};
 
+    // determine source operands to fetch
     wire [NUM_SRC_OPDS-1:0] opds_to_fetch;
     for (genvar i = 0; i < NUM_SRC_OPDS; ++i) begin : g_opds_to_fetch
         assign opds_to_fetch[i] = staging_if.data.used_rs[i] && (stg_src_regs[i] != 0);
@@ -86,6 +91,7 @@ module VX_opc_unit import VX_gpu_pkg::*; #(
         state_n = state;
         opds_needed_n = opds_needed;
         opds_busy_n = opds_busy;
+
         case (state)
         STATE_IDLE: begin
             if (staging_if.valid) begin
@@ -123,9 +129,9 @@ module VX_opc_unit import VX_gpu_pkg::*; #(
         endcase
     end
 
+    // select next operand to fetch
     wire [SRC_OPD_WIDTH-1:0] opd_id;
     wire opd_fetch_valid;
-
     VX_priority_encoder #(
         .N (NUM_SRC_OPDS)
     ) opd_id_sel (
@@ -135,17 +141,19 @@ module VX_opc_unit import VX_gpu_pkg::*; #(
         `UNUSED_PIN (onehot_out)
     );
 
-    // operands fetch request
+    // create GPR request
     assign gpr_if.req_valid = opd_fetch_valid;
     assign gpr_if.req_data.opd_id = opd_id;
     assign gpr_if.req_data.sid = simd_pid;
     assign gpr_if.req_data.wis = staging_if.data.wis;
     assign gpr_if.req_data.reg_id = stg_src_regs[opd_id];
 
-    // operands fetch response
+    // operands buffer
     reg [NUM_SRC_OPDS-1:0][`SIMD_WIDTH-1:0][`XLEN-1:0] opd_values;
+
+    // handle GPR response
     always @(posedge clk) begin
-        if (reset || dequeue) begin
+        if (reset || dispatch_fire) begin
             for (integer i = 0; i < NUM_SRC_OPDS; ++i) begin
                 opd_values[i] <= '0;
             end
@@ -169,14 +177,7 @@ module VX_opc_unit import VX_gpu_pkg::*; #(
         end
     end
 
-    // wait for dependency check
-    wire dep_check_ready = (wait_mask == 0);
-
-    wire output_ready_w;
-    assign output_ready = output_ready_w && dep_check_ready;
-    wire output_valid = (state == STATE_DISPATCH) && dep_check_ready;
-
-    // simd iterator
+    // simd iterator (skip requests with inactive threads)
     VX_nz_iterator #(
         .DATAW   (`SIMD_WIDTH),
         .N       (SIMD_COUNT),
@@ -186,7 +187,7 @@ module VX_opc_unit import VX_gpu_pkg::*; #(
         .reset   (reset),
         .valid_in(staging_if.valid),
         .data_in (staging_if.data.tmask),
-        .next    (dequeue),
+        .next    (dispatch_fire),
         `UNUSED_PIN (valid_out),
         .data_out(simd_out),
         .pid     (simd_pid),
@@ -194,7 +195,13 @@ module VX_opc_unit import VX_gpu_pkg::*; #(
         .eop     (simd_eop)
     );
 
-    // instruction dispatch
+    // hold dispatch until dependency check is ready
+    wire dep_check_ready = (wait_mask == 0);
+    wire output_ready_w;
+    assign output_ready = output_ready_w && dep_check_ready;
+    wire output_valid = (state == STATE_DISPATCH) && dep_check_ready;
+
+    // buffer out dispatch response
     VX_elastic_buffer #(
         .DATAW   (OUT_DATAW),
         .SIZE    (0),

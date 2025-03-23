@@ -39,8 +39,7 @@ module VX_vredopc_unit import VX_gpu_pkg::*; #(
     `UNUSED_SPARAM (INSTANCE_ID)
     `UNUSED_PARAM (ISSUE_ID)
 
-
-    localparam NUM_OPDS = NUM_SRC_OPDS + 1;
+    localparam NUM_OPDS  = NUM_SRC_OPDS + 1;
     localparam SCB_DATAW = UUID_WIDTH + ISSUE_WIS_W + `NUM_THREADS + PC_BITS + EX_BITS + INST_OP_BITS + INST_ARGS_BITS + NUM_OPDS + (NUM_OPDS * REG_IDX_BITS);
     localparam OUT_DATAW = UUID_WIDTH + ISSUE_WIS_W + SIMD_IDX_W + VL_WIDTH + `SIMD_WIDTH + PC_BITS + EX_BITS + INST_OP_BITS + INST_ARGS_BITS + 1 + NR_BITS + (NUM_SRC_OPDS * `SIMD_WIDTH * `XLEN) + 1 + 1;
 

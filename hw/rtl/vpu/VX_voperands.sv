@@ -110,7 +110,6 @@ module VX_voperands import VX_gpu_pkg::*; #(
                 .reset        (reset),
                 .wait_mask    (per_opc_wait_mask[i]),
                 .scoreboard_if(per_opc_scoreboard_if[i]),
-                .writeback_if (writeback_if),
                 .gpr_if       (per_opc_gpr_if[i]),
                 .vgpr_if      (vgpr_if[0]),
                 .operands_if  (per_opc_operands_if[i])

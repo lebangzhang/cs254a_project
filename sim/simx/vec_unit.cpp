@@ -1495,13 +1495,9 @@ public:
       vpu_states_.at(wid).vxsat = value & 0b1;
       vpu_states_.at(wid).vxrm = (value >> 1) & 0b11;
       return true;
-    case VX_CSR_VL:
-      vpu_states_.at(wid).vl = value;
-      return true;
+    case VX_CSR_VL: // read only
     case VX_CSR_VTYPE:
-      vpu_states_.at(wid).vtype.value = value;
-      return true;
-    case VX_CSR_VLENB: // read only
+    case VX_CSR_VLENB:
       std::abort();
       [[fallthrough]];
     default:

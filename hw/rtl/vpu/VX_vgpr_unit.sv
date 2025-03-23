@@ -13,13 +13,6 @@
 
 `include "VX_define.vh"
 
-// reset all GPRs in debug mode
-`ifdef SIMULATION
-`ifndef NDEBUG
-`define GPR_RESET
-`endif
-`endif
-
 module VX_vgpr_unit import VX_gpu_pkg::*; #(
     parameter `STRING INSTANCE_ID = "",
     parameter NUM_REQS = 1,
@@ -150,7 +143,7 @@ module VX_vgpr_unit import VX_gpu_pkg::*; #(
 
         wire [BANK_ADDR_WIDTH-1:0] bank_rd_addr;
         if (SIMD_IDX_BITS != 0 || PER_BANK_WIS_BITS != 0) begin : g_bank_rd_addr
-           wire [(SIMD_IDX_BITS + PER_BANK_WIS_BITS)-1:0] tmp;
+            wire [(SIMD_IDX_BITS + PER_BANK_WIS_BITS)-1:0] tmp;
             `CONCAT(tmp, bank_req_sid, bank_req_wis, SIMD_IDX_BITS, PER_BANK_WIS_BITS);
             assign bank_rd_addr = {tmp, bank_reg_id, bank_req_lid};
         end else begin : g_bank_rd_addr_0
