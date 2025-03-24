@@ -199,10 +199,12 @@ void LsuUnit::tick() {
 				if (remain_addrs_ == 0)
 					break;
 			}
+
+			uint32_t count = lsu_req.mask.count();
+			bool is_eop = (remain_addrs_ == 0);
+
 			uint32_t tag = 0;
 			if (!is_write) {
-				uint32_t count = lsu_req.mask.count();
-				bool is_eop = (remain_addrs_ == 0);
 				tag = state.pending_rd_reqs.allocate({trace, count, is_eop});
 			}
 			lsu_req.tag  = tag;
@@ -214,12 +216,11 @@ void LsuUnit::tick() {
 			DT(3, this->name() << "-mem-req: " << lsu_req);
 
 			// update stats
-			auto num_addrs = lsu_req.mask.count();
 			if (is_write) {
-				core_->perf_stats_.stores += num_addrs;
+				core_->perf_stats_.stores += count;
 			} else {
-				core_->perf_stats_.loads += num_addrs;
-				pending_loads_ += num_addrs;
+				core_->perf_stats_.loads += count;
+				pending_loads_ += count;
 			}
 		}
 

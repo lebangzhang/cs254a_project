@@ -621,6 +621,17 @@ package VX_gpu_pkg;
         vpu_args_vset_t vset;
     } vpu_args_t;
 
+    function logic [VL_MAX_W-1:0] vlmax_cacl(input logic[2:0] vlmul, input logic[1:0] vsew);
+        logc [VL_MAX_W-1:0] vlen_lmul = (vlmul == 3'b000) ? VLENB       : // vlmul = 1
+                                        (vlmul == 3'b001) ? VLENB << 1  : // vlmul = 2
+                                        (vlmul == 3'b010) ? VLENB << 2  : // vlmul = 4
+                                        (vlmul == 3'b011) ? VLENB << 3  : // vlmul = 8
+                                        (vlmul == 3'b111) ? VLENB >> 1  : // vlmul = 1/2
+                                        (vlmul == 3'b110) ? VLENB >> 2  : // vlmul = 1/4
+                                                            VLENB >> 3;   // vlmul = 1/8 (101)
+        return (vlen_lmul >> vsew);
+    endfunction
+
 `endif
 
     typedef union packed {

@@ -44,10 +44,13 @@ module VX_vopc_decoder import VX_gpu_pkg::*; #(
     logic [`SIMD_WIDTH-1:0][`XLEN-1:0] rs1_data_r, rs1_data_n;
     logic [`SIMD_WIDTH-1:0][`XLEN-1:0] rs2_data_r, rs2_data_n;
     logic [`SIMD_WIDTH-1:0][`XLEN-1:0] rs3_data_r, rs3_data_n;
+    loigc is_vset_r, is_vset_n;
 
     vpu_states_t [PER_ISSUE_WARPS-1:0] vpu_states;
 
+
     always @(*) begin
+        is_vset_n   = 0;
         ex_type_n   = 'x;
         op_type_n   = 'x;
         op_args_n   = 'x;
@@ -64,7 +67,8 @@ module VX_vopc_decoder import VX_gpu_pkg::*; #(
         if (reset) begin
             vpu_states <= '0;
         end
-        valid_r     <=  valid;
+        valid_r     <= valid;
+        is_vset_r   <= is_vset_n;
         ex_type_r   <= ex_type_n;
         op_type_r   <= op_type_n;
         op_args_r   <= op_args_n;
@@ -76,7 +80,7 @@ module VX_vopc_decoder import VX_gpu_pkg::*; #(
     end
 
     // vpu states
-    assign vpu_states_if.valid = valid_r;
+    assign vpu_states_if.valid = valid_r && is_vset_r;
     assign vpu_states_if.wid   = wis_to_wid(instr_in.wis, ISSUE_ID);
     assign vpu_states_if.data  = vpu_states[instr_in.wis];
 

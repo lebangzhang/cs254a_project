@@ -67,6 +67,9 @@ module VX_voperands import VX_gpu_pkg::*; #(
     reg [`NUM_OPCS-1:0] select_opcs;
     always @(*) begin
         select_opcs = ~per_opc_busy;
+        if (operands_if.data.ex_type != EX_VPU) begin
+            select_opcs = ~0; // collector unit 0 is exclusively for VPU instructions
+        end
     end
 
     VX_stream_arb #(
