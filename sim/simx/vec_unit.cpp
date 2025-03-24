@@ -1344,9 +1344,9 @@ public:
       uint32_t vta   = (zimm >> shift_v_ta) & mask_v_ta;
       uint32_t vma   = (zimm >> shift_v_ma) & mask_v_ma;
 
-      uint32_t vlmul_neg  = (vlmul >> 2);
-      uint32_t vlmul_shft = vlmul & 0b11;
-      uint32_t vlmax = (vlmul_neg ? (VLENB >> vlmul_shft) : (VLENB << vlmul_shft)) >> vsew;
+      uint32_t vlmul_neg = (vlmul >> 2);
+      uint32_t vlen_mul = vlmul_neg ? (VLENB >> (8 - vlmul)) : (VLENB << vlmul);
+      uint32_t vlmax = vlen_mul >> vsew;
       uint32_t vill = ((1 << vsew) > XLENB) || (vlmax > VLEN);
 
       uint32_t vl;
