@@ -621,13 +621,13 @@ package VX_gpu_pkg;
         vpu_args_vset_t vset;
     } vpu_args_t;
 
-    function logic [VL_MAX_W-1:0] vlmax_cacl(input logic[2:0] vlmul, input logic[1:0] vsew);
-        logc [VL_MAX_W-1:0] vlen_lmul = (vlmul == 3'b000) ? VLENB       : // vlmul = 1
-                                        (vlmul == 3'b001) ? VLENB << 1  : // vlmul = 2
-                                        (vlmul == 3'b010) ? VLENB << 2  : // vlmul = 4
-                                        (vlmul == 3'b011) ? VLENB << 3  : // vlmul = 8
-                                        (vlmul == 3'b111) ? VLENB >> 1  : // vlmul = 1/2
-                                        (vlmul == 3'b110) ? VLENB >> 2  : // vlmul = 1/4
+    function automatic logic [VL_MAX_W-1:0] vlmax_cacl(input logic[2:0] vlmul, input logic[1:0] vsew);
+        logic [VL_MAX_W-1:0] vlen_lmul = (vlmul == 3'b000) ? VLENB       : // vlmul = 1
+                                         (vlmul == 3'b001) ? VLENB << 1  : // vlmul = 2
+                                         (vlmul == 3'b010) ? VLENB << 2  : // vlmul = 4
+                                         (vlmul == 3'b011) ? VLENB << 3  : // vlmul = 8
+                                         (vlmul == 3'b111) ? VLENB >> 1  : // vlmul = 1/2
+                                         (vlmul == 3'b110) ? VLENB >> 2  : // vlmul = 1/4
                                                             VLENB >> 3;   // vlmul = 1/8 (101)
         return (vlen_lmul >> vsew);
     endfunction
@@ -862,7 +862,7 @@ package VX_gpu_pkg;
     localparam ISSUE_WIS_BITS = `CLOG2(PER_ISSUE_WARPS);
     localparam ISSUE_WIS_W = `UP(ISSUE_WIS_BITS);
 
-    function logic [NW_WIDTH-1:0] wis_to_wid(
+    function automatic logic [NW_WIDTH-1:0] wis_to_wid(
         input logic [ISSUE_WIS_W-1:0] wis,
         input logic [ISSUE_ISW_W-1:0] isw
     );
@@ -875,7 +875,7 @@ package VX_gpu_pkg;
         end
     endfunction
 
-    function logic [ISSUE_ISW_W-1:0] wid_to_isw(
+    function automatic logic [ISSUE_ISW_W-1:0] wid_to_isw(
         input logic [NW_WIDTH-1:0] wid
     );
         if (ISSUE_ISW_BITS != 0) begin
@@ -885,7 +885,7 @@ package VX_gpu_pkg;
         end
     endfunction
 
-    function logic [ISSUE_WIS_W-1:0] wid_to_wis(
+    function automatic logic [ISSUE_WIS_W-1:0] wid_to_wis(
         input logic [NW_WIDTH-1:0] wid
     );
         if (ISSUE_WIS_BITS != 0) begin
@@ -897,7 +897,7 @@ package VX_gpu_pkg;
 
     ///////////////////////// Miscaellaneous functions ////////////////////////
 
-    function logic [SFU_WIDTH-1:0] op_to_sfu_type(
+    function automatic logic [SFU_WIDTH-1:0] op_to_sfu_type(
         input logic [INST_OP_BITS-1:0] op_type
     );
         case (op_type)
@@ -908,11 +908,11 @@ package VX_gpu_pkg;
         endcase
     endfunction
 
-    function logic [NR_BITS-1:0] to_reg_number(input reg_idx_t reg_idx);
+    function automatic logic [NR_BITS-1:0] to_reg_number(input reg_idx_t reg_idx);
         return {reg_idx.rtype, reg_idx.id};
     endfunction
 
-    function logic [NR_S_BITS-1:0] to_sreg_number(input reg_idx_t reg_idx);
+    function automatic logic [NR_S_BITS-1:0] to_sreg_number(input reg_idx_t reg_idx);
     `ifdef EXT_F_ENABLE
         return {reg_idx.rtype[0], reg_idx.id};
     `else
@@ -920,11 +920,11 @@ package VX_gpu_pkg;
     `endif
     endfunction
 
-    function logic [NR_V_BITS-1:0] to_vreg_number(input reg_idx_t reg_idx);
+    function automatic logic [NR_V_BITS-1:0] to_vreg_number(input reg_idx_t reg_idx);
         return reg_idx.id;
     endfunction
 
-    function logic [RV_REGS-1:0] to_reg_mask(input reg_idx_t reg_idx);
+    function automatic logic [RV_REGS-1:0] to_reg_mask(input reg_idx_t reg_idx);
         return ((1 << (1 << reg_idx.ext))-1) << reg_idx.id;
     endfunction
 

@@ -94,8 +94,6 @@ module VX_vredopc_unit import VX_gpu_pkg::*; #(
     wire vgpr_req_fire = vgpr_if.req_valid && vgpr_if.req_ready;
     wire vgpr_rsp_fire = vgpr_if.rsp_valid;
 
-
-
     // ** SubModule 4 : Dequeue Signals **
 
     // dequeue         : True if a request is sent out to dispatch

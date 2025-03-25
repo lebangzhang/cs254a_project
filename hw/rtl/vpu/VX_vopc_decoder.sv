@@ -44,10 +44,9 @@ module VX_vopc_decoder import VX_gpu_pkg::*; #(
     logic [`SIMD_WIDTH-1:0][`XLEN-1:0] rs1_data_r, rs1_data_n;
     logic [`SIMD_WIDTH-1:0][`XLEN-1:0] rs2_data_r, rs2_data_n;
     logic [`SIMD_WIDTH-1:0][`XLEN-1:0] rs3_data_r, rs3_data_n;
-    loigc is_vset_r, is_vset_n;
+    logic is_vset_r, is_vset_n;
 
     vpu_states_t [PER_ISSUE_WARPS-1:0] vpu_states;
-
 
     always @(*) begin
         is_vset_n   = 0;
@@ -59,8 +58,6 @@ module VX_vopc_decoder import VX_gpu_pkg::*; #(
         rs1_data_n  = 'x;
         rs2_data_n  = 'x;
         rs3_data_n  = 'x;
-
-        //--
     end
 
     always @(posedge clk) begin
