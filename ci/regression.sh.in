@@ -410,8 +410,6 @@ vector()
     make -C sim/simx clean && CONFIGS="-DVLEN=256 -DEXT_V_ENABLE" make -C sim/simx
     VLEN=256 REG_TESTS=1 GEN_TESTS=0 ./tests/riscv/riscv-vector-tests/run-test.sh
 
-   <build>/tests/riscv/riscv-vector-tests/../../../sim/simx/simx -v vle8ff_v-0.bin > run.log
-
     echo "vector tests done!"
 }
 
