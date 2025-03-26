@@ -177,7 +177,7 @@ void Core::reset() {
   pending_icache_.clear();
 
   ibuffer_idx_ = 0;
-  pending_instrs_ = 0;
+  pending_instrs_.clear();
   pending_ifetches_ = 0;
 
   perf_stats_ = PerfStats();
@@ -209,7 +209,7 @@ void Core::schedule() {
 
   // advance to fetch stage
   fetch_latch_.push(trace);
-  ++pending_instrs_;
+  pending_instrs_.push_back(trace);
 }
 
 void Core::fetch() {
@@ -394,7 +394,10 @@ void Core::commit() {
         scoreboard_.release(trace);
       }
 
-      --pending_instrs_;
+      pending_instrs_.remove(trace);
+
+      // delete the trace
+      trace_pool_.deallocate(trace, 1);
 
       perf_stats_.instrs += trace->tmask.count();
     }
@@ -405,9 +408,6 @@ void Core::commit() {
     }
 
     commit_arb->Outputs.at(0).pop();
-
-    // delete the trace
-    delete trace;
   }
 }
 
@@ -416,7 +416,15 @@ int Core::get_exitcode() const {
 }
 
 bool Core::running() const {
-  return emulator_.running() || (pending_instrs_ != 0);
+#ifndef NDEBUG
+  if (!emulator_.running() && !pending_instrs_.empty()) {
+    for (auto& trace : pending_instrs_) {
+      DT(4, "pipeline-pending: " << *trace);
+    }
+    return false;
+  }
+#endif
+  return emulator_.running() || !pending_instrs_.empty();
 }
 
 void Core::resume(uint32_t wid) {

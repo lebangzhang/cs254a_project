@@ -155,6 +155,10 @@ public:
   }
 #endif
 
+  auto& trace_pool() {
+    return trace_pool_;
+  }
+
   const PerfStats& perf_stats() const {
     return perf_stats_;
   }
@@ -193,7 +197,7 @@ private:
   PipelineLatch decode_latch_;
 
   HashTable<instr_trace_t*> pending_icache_;
-  uint64_t pending_instrs_;
+  std::list<instr_trace_t*, PoolAllocator<instr_trace_t*, 64>> pending_instrs_;
 
   uint64_t pending_ifetches_;
 
@@ -203,6 +207,8 @@ private:
 
   uint32_t commit_exe_;
   uint32_t ibuffer_idx_;
+
+  PoolAllocator<instr_trace_t, 64> trace_pool_;
 
   friend class LsuUnit;
   friend class AluUnit;

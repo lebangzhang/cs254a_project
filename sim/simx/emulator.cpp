@@ -190,7 +190,8 @@ instr_trace_t* Emulator::step() {
   DP(1, "Instr 0x" << std::hex << instr_code << ": " << std::dec << *instr);
 
   // Create trace
-  auto trace = new instr_trace_t(uuid, arch_);
+  auto trace_alloc = core_->trace_pool().allocate(1);
+  auto trace = new (trace_alloc) instr_trace_t(uuid, arch_);
 
   // Execute
   this->execute(*instr, scheduled_warp, trace);

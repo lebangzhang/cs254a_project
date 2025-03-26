@@ -469,7 +469,7 @@ std::ostream &operator<<(std::ostream &os, const Instr &instr) {
 }
 
 std::shared_ptr<Instr> Emulator::decode(uint32_t code) const {
-  auto instr = std::make_shared<Instr>();
+  auto instr = std::allocate_shared<Instr>(instr_pool_);
   auto op = Opcode((code >> shift_opcode) & mask_opcode);
   instr->setOpcode(op);
 

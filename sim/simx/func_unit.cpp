@@ -226,7 +226,7 @@ void LsuUnit::tick() {
 
 		if (remain_addrs_ == 0) {
 			// do not wait on writes
-			if (is_write) {
+			if (is_write || 0 == trace_data->mem_addrs.size()) {
 				Outputs.at(iw).push(trace, 1);
 			}
 			// remove input

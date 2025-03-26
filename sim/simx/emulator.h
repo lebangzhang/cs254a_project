@@ -148,6 +148,8 @@ private:
 #ifdef EXT_V_ENABLE
   VecUnit::Ptr vec_unit_;
 #endif
+
+  PoolAllocator<Instr, 64> instr_pool_;
 };
 
 }

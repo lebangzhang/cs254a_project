@@ -167,23 +167,10 @@ public:
     , pkt_(pkt)
   {}
 
-  void* operator new(size_t /*size*/) {
-    return allocator_.allocate();
-  }
-
-  void operator delete(void* ptr) {
-    allocator_.deallocate(ptr);
-  }
-
 protected:
   Func func_;
   Pkt  pkt_;
-
-  static MemoryPool<SimCallEvent<Pkt>> allocator_;
 };
-
-template <typename Pkt>
-MemoryPool<SimCallEvent<Pkt>> SimCallEvent<Pkt>::allocator_(64);
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -200,23 +187,10 @@ public:
     , pkt_(pkt)
   {}
 
-  void* operator new(size_t /*size*/) {
-    return allocator_.allocate();
-  }
-
-  void operator delete(void* ptr) {
-    allocator_.deallocate(ptr);
-  }
-
 protected:
   const SimPort<Pkt>* port_;
   Pkt pkt_;
-
-  static MemoryPool<SimPortEvent<Pkt>> allocator_;
 };
-
-template <typename Pkt>
-MemoryPool<SimPortEvent<Pkt>> SimPortEvent<Pkt>::allocator_(64);
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -323,7 +297,8 @@ public:
                 const Pkt& pkt,
                 uint64_t delay) {
     assert(delay != 0);
-    auto evt = std::make_shared<SimCallEvent<Pkt>>(callback, pkt, cycles_ + delay);
+    static PoolAllocator<SimCallEvent<Pkt>, 64> s_allocator;
+    auto evt = std::allocate_shared<SimCallEvent<Pkt>>(s_allocator, callback, pkt, cycles_ + delay);
     events_.emplace_back(evt);
   }
 
@@ -376,7 +351,8 @@ private:
   template <typename Pkt>
   void schedule(const SimPort<Pkt>* port, const Pkt& pkt, uint64_t delay) {
     assert(delay != 0);
-    auto evt = SimEventBase::Ptr(new SimPortEvent<Pkt>(port, pkt, cycles_ + delay));
+    static PoolAllocator<SimPortEvent<Pkt>, 64> s_allocator;
+    auto evt = std::allocate_shared<SimPortEvent<Pkt>>(s_allocator, port, pkt, cycles_ + delay);
     events_.emplace_back(evt);
   }
 
