@@ -131,10 +131,10 @@ Core::Core(const SimContext& ctx,
   }
 
   // initialize dispatchers
-  dispatchers_.at((int)FUType::ALU) = SimPlatform::instance().create_object<Dispatcher>(arch, 2, NUM_ALU_BLOCKS, NUM_ALU_LANES);
-  dispatchers_.at((int)FUType::FPU) = SimPlatform::instance().create_object<Dispatcher>(arch, 2, NUM_FPU_BLOCKS, NUM_FPU_LANES);
-  dispatchers_.at((int)FUType::LSU) = SimPlatform::instance().create_object<Dispatcher>(arch, 2, NUM_LSU_BLOCKS, NUM_LSU_LANES);
-  dispatchers_.at((int)FUType::SFU) = SimPlatform::instance().create_object<Dispatcher>(arch, 2, NUM_SFU_BLOCKS, NUM_SFU_LANES);
+  dispatchers_.at((int)FUType::ALU) = SimPlatform::instance().create_object<Dispatcher>(this, 2, NUM_ALU_BLOCKS, NUM_ALU_LANES);
+  dispatchers_.at((int)FUType::FPU) = SimPlatform::instance().create_object<Dispatcher>(this, 2, NUM_FPU_BLOCKS, NUM_FPU_LANES);
+  dispatchers_.at((int)FUType::LSU) = SimPlatform::instance().create_object<Dispatcher>(this, 2, NUM_LSU_BLOCKS, NUM_LSU_LANES);
+  dispatchers_.at((int)FUType::SFU) = SimPlatform::instance().create_object<Dispatcher>(this, 2, NUM_SFU_BLOCKS, NUM_SFU_LANES);
 
   // initialize execute units
   func_units_.at((int)FUType::ALU) = SimPlatform::instance().create_object<AluUnit>(this);
@@ -393,14 +393,12 @@ void Core::commit() {
       if (trace->wb) {
         scoreboard_.release(trace);
       }
-
       pending_instrs_.remove(trace);
-
-      // delete the trace
-      trace_pool_.deallocate(trace, 1);
-
       perf_stats_.instrs += trace->tmask.count();
     }
+
+    // delete the trace
+    trace_pool_.deallocate(trace, 1);
 
     perf_stats_.opds_stalls = 0;
     for (uint32_t i = 0; i < ISSUE_WIDTH; ++i) {
