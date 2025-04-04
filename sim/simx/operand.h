@@ -45,6 +45,75 @@ struct RegRsp {
 
 
 
+
+class RegFile : public SimObject<RegFile> {
+
+private:
+
+    static constexpr uint32_t NUM_BANKS = 4;
+
+    // Maybe need to make public ??? 
+    static constexpr uint32_t NUM_UNITS = 4;
+
+    uint32_t total_stalls_ = 0; 
+
+public:
+
+    std::vector<SimPort<RegReq>> ReqIn;
+    std::vector<SimPort<RegRsp>> ReqOut;
+    
+    RegFile(const SimContext& ctx)
+            : SimObject<RegFile>(ctx, "Register File")
+            , ReqIn(NUM_UNITS, this)
+            , ReqOut(NUM_UNITS, this)
+    {
+        total_stalls_ = 0;
+    }
+
+    virtual ~RegFile() {}
+    
+    virtual void reset() {
+        total_stalls_ = 0;
+    }
+
+    virtual void tick() {
+    
+        if(ReqIn.empty())
+            return;
+
+        /*// TO FIX : NOTE : A different algo used here ???? (helps check) ******/
+        for(uint32_t i=0; i < NUM_BANKS; i++){
+
+            uint32_t bank_stall = 0;
+            for(uint32_t j=0; j < NUM_UNITS; j++ ){
+
+
+                if(!ReqIn.at(i).empty()){
+                    auto request = ReqIn.at(i).front();
+
+                    if(request.src_reg_idx % NUM_BANKS == 0){
+
+                        RegRsp response;
+                        ReqOut.at(i).push(response, bank_stall);
+                        ReqIn.at(i).pop();
+
+                        bank_stall += 1;
+                    }
+                }
+            }
+        }
+    }
+
+    uint32_t total_stalls() const {
+		return total_stalls_;
+	}
+
+};
+
+
+
+
+
 /* Standard OPC Units */
 class OpcUnit : public SimObject<OpcUnit> {
 
@@ -78,14 +147,16 @@ public:
 
     virtual void tick() {
 
+        total_stalls_ += 1;
+
         if(Input.empty())
             return;
-        
+
         auto trace = Input.front();
-        
+
         uint32_t stalls = 0;
 
-        // Get Number of opd to fetch
+        /*// Get Number of opd to fetch*/
         int opd_to_fetch[3] = {0, 0, 0}; 
         for(int i = 0; i < NUM_SRC_REGS; i++){
             if( (trace->src_regs[i].type != RegType::None) && (trace->src_regs[i].idx != 0) ) {
@@ -93,20 +164,22 @@ public:
             }
         }
 
-        // Handle RegFile Response 
+        // handle regfile response 
         if(!regfile_rsp_port.empty()){
             regfile_rsp_port.pop();
         }
 
+
         // Send to Reg File 
         int pending = 0;
         for(int i=0; i < NUM_SRC_REGS; i++){
+            
             if(opd_to_fetch[i] != 0){
                 RegReq opd_request;
                 opd_request.src_reg_idx = opd_to_fetch[i];
 
                 if(regfile_req_port.empty()){
-                    regfile_req_port.push(opd_request, i);
+                    regfile_req_port.push(opd_request, 1);
                     opd_to_fetch[i] = 0;
 
                     // TO FIX : Stalls
@@ -121,6 +194,7 @@ public:
         if(pending == 0){
             Input.pop();
         }
+
     }
 
     uint32_t total_stalls() const {
@@ -129,66 +203,6 @@ public:
 };
 
 
-class RegFile : public SimObject<RegFile> {
-
-private:
-
-    static constexpr uint32_t NUM_BANKS = 4;
-
-    // Maybe need to make public ??? 
-    static constexpr uint32_t NUM_UNITS = 4;
-
-    uint32_t total_stalls_ = 0; 
-
-public:
-
-    std::vector<SimPort<RegReq>> ReqIn;
-    std::vector<SimPort<RegRsp>> ReqOut;
-    
-    RegFile(const SimContext& ctx)
-            : SimObject<RegFile>(ctx, "Register File")
-            , ReqIn(NUM_UNITS, this)
-            , ReqOut(NUM_UNITS, this)
-    {
-        total_stalls_ = 0;
-    }
-
-    virtual ~RegFile() {}
-    
-    virtual void reset() {
-        total_stalls_ = 0;
-    }
-
-    virtual void tick() {
-
-        if(ReqIn.empty())
-            return;
-
-        // TO FIX : NOTE : A different algo used here ???? (helps check) *****
-        for(uint32_t i=0; i < NUM_BANKS; i++){
-        
-            uint32_t bank_stall = 0;
-            for(uint32_t j=0; j < NUM_UNITS; j++ ){
-
-                auto request = ReqIn.at(i).front();
-                
-                if(request.src_reg_idx % NUM_BANKS == 0){
-
-                    RegRsp response;
-                    ReqOut.at(i).push(response, bank_stall);
-                    ReqIn.at(i).pop();
-
-                    bank_stall += 1;
-                }
-            }
-        }
-    }
-
-    uint32_t total_stalls() const {
-		return total_stalls_;
-	}
-
-};
 
 
 /* Operand Class */
@@ -197,35 +211,40 @@ class Operand : public SimObject<Operand> {
 private:
 
     static constexpr uint32_t NUM_STD_OPC = 4;
-
-    std::vector<OpcUnit::Ptr> opc_units_;
-
 	uint32_t total_stalls_ = 0;
 
 
 public:
     SimPort<instr_trace_t*> Input;
     SimPort<instr_trace_t*> Output;
+    std::vector<OpcUnit::Ptr> opc_units_;
 
     Operand(const SimContext& ctx)
 			: SimObject<Operand>(ctx, "Operand")
 			, Input(this)
 			, Output(this)
+            , opc_units_(NUM_STD_OPC)
     {
 		total_stalls_ = 0;
-
+      
         // Instantiate Opc Units 
         for(uint32_t i = 0; i < NUM_STD_OPC; i++){
             opc_units_.at(i) = OpcUnit::Create();
         }
 
-        // Instantiate RegFile 
+        // Instantiate Reg File
         auto regfile = RegFile::Create();
 
         // Connect Opc to RegFile
         for(uint32_t i = 0; i < NUM_STD_OPC; i++){
             opc_units_.at(i)->regfile_req_port.bind(&(regfile->ReqIn.at(i)));
         } 
+
+        for(uint32_t i = 0; i < NUM_STD_OPC; i++){
+            opc_units_.at(i)->regfile_rsp_port.bind(&(regfile->ReqOut.at(i)));
+        }
+
+
 	}
 
 
@@ -237,12 +256,14 @@ public:
 
     virtual void tick() {
 	
+        
         if(Input.empty())
             return;
 
         auto trace = Input.front();
         uint32_t stalls = 0;
-        
+
+
         // Find free OpcUnit
         for(uint32_t i = 0; i < NUM_STD_OPC; i++){
             
@@ -257,6 +278,11 @@ public:
                 break;
             }
         }
+
+
+
+
+        total_stalls_ += stalls;
 	
         // TO FIX : The Total Stalls 
         /*
