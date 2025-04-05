@@ -76,10 +76,6 @@ public:
         total_stalls_ = 0;
     }
 
-    uint32_t get_bank_id(uint32_t reg_id, uint32_t warp_id){
-        return reg_id % NUM_BANKS;
-    }
-
     virtual void tick() {
     
         if(ReqIn.empty())
@@ -93,7 +89,7 @@ public:
 
                     auto request = ReqIn.at(i).front();
 
-                    uint32_t bank = 3;
+                    uint32_t bank = request.src_reg_idx % NUM_BANKS;
 
                     if( (bank == i) ){
                         
@@ -101,10 +97,8 @@ public:
                         ReqOut.at(i).push(response, 1);
                         ReqIn.at(i).pop();
 
-                        // Once procesed that bank, go to the next one
                         break;
                     }
-                    /*if(request.src_reg_idx % NUM_BANKS == 0)*/
                 }
             }
         }
@@ -127,6 +121,7 @@ private:
 
     uint32_t total_stalls_ = 0; 
     bool locked = false;
+    uint32_t pending_rsp = 0;
 
 public:
     SimPort<instr_trace_t*> Input;
@@ -172,39 +167,37 @@ public:
                 }
             }
             locked = true;
+            pending_rsp = 0;
         }
 
-        // handle regfile response (Don't do here, model backpressure in RegFile)
-        /*
+        // Handle regfile response 
         if(!regfile_rsp_port.empty()){
             regfile_rsp_port.pop();
+            pending_rsp -= 1;
         }
-        */
 
 
         // Send to Reg File 
-        int pending = 0;
         for(int i=0; i < NUM_SRC_REGS; i++){
             
             if(opd_to_fetch[i] != 0){
 
                 RegReq opd_request;
                 opd_request.src_reg_idx = opd_to_fetch[i];
-                if(regfile_req_port.empty()){
-                    regfile_req_port.push(opd_request, 1);
-                    opd_to_fetch[i] = 0;
 
-                    // TO FIX : Stalls
-                    /*Output.push(trace, 1);*/
-                }
+                /*if(regfile_req_port.empty()){*/
+                regfile_req_port.push(opd_request, 1);
+                opd_to_fetch[i] = 0;
+                /*}*/
 
-                pending += 1;
+                pending_rsp += 1;
             }
         }
 
-        // Once all Opds sent out --> Pop from Input
-        if(pending == 0){
+        // Once all Opds sent out 
+        if(pending_rsp == 0){
             Input.pop();
+            /*Output.push(trace, 1);*/
             locked = false;
         }
 
@@ -225,6 +218,8 @@ private:
 
     static constexpr uint32_t NUM_STD_OPC = 4;
 	uint32_t total_stalls_ = 0;
+
+    uint32_t round_robin_counter = 0;
 
 
 public:
@@ -283,9 +278,25 @@ public:
                 break;
             }
         }
-        total_stalls_ += stalls;
+        /*total_stalls_ += stalls;*/
 
-        Output.push(trace, 2 + stalls);
+
+        // Round Robin to search for output 
+        for(uint32_t i = 0; i < NUM_STD_OPC; i++){
+
+            uint32_t counter = (round_robin_counter + i) % NUM_STD_OPC;
+
+            if(!opc_units_.at(counter)->Output.empty()){
+                Output.push(trace,1);
+
+                round_robin_counter += 1;
+                opc_units_.at(counter)->Output.pop();
+                break;
+            }
+
+        }
+
+        /*Output.push(trace, 2);*/
 
         // TO FIX : The Total Stalls 
         /*
