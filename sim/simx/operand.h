@@ -76,29 +76,35 @@ public:
         total_stalls_ = 0;
     }
 
+    uint32_t get_bank_id(uint32_t reg_id, uint32_t warp_id){
+        return reg_id % NUM_BANKS;
+    }
+
     virtual void tick() {
     
         if(ReqIn.empty())
             return;
 
-        /*// TO FIX : NOTE : A different algo used here ???? (helps check) ******/
         for(uint32_t i=0; i < NUM_BANKS; i++){
 
-            uint32_t bank_stall = 0;
             for(uint32_t j=0; j < NUM_UNITS; j++ ){
 
-
                 if(!ReqIn.at(i).empty()){
+
                     auto request = ReqIn.at(i).front();
 
-                    if(request.src_reg_idx % NUM_BANKS == 0){
+                    uint32_t bank = 3;
 
+                    if( (bank == i) ){
+                        
                         RegRsp response;
-                        ReqOut.at(i).push(response, bank_stall);
+                        ReqOut.at(i).push(response, 1);
                         ReqIn.at(i).pop();
 
-                        bank_stall += 1;
+                        // Once procesed that bank, go to the next one
+                        break;
                     }
+                    /*if(request.src_reg_idx % NUM_BANKS == 0)*/
                 }
             }
         }
@@ -120,6 +126,7 @@ class OpcUnit : public SimObject<OpcUnit> {
 private:
 
     uint32_t total_stalls_ = 0; 
+    bool locked = false;
 
 public:
     SimPort<instr_trace_t*> Input;
@@ -156,18 +163,23 @@ public:
 
         uint32_t stalls = 0;
 
-        /*// Get Number of opd to fetch*/
+        // Get Number of opd to fetch only once
         int opd_to_fetch[3] = {0, 0, 0}; 
-        for(int i = 0; i < NUM_SRC_REGS; i++){
-            if( (trace->src_regs[i].type != RegType::None) && (trace->src_regs[i].idx != 0) ) {
-                opd_to_fetch[i] = trace->src_regs[i].idx;
+        if(!locked) {
+            for(int i = 0; i < NUM_SRC_REGS; i++){
+                if( (trace->src_regs[i].type != RegType::None) && ((trace->src_regs[i].idx != 0) && (trace->src_regs[i].type == RegType::Integer))) {
+                    opd_to_fetch[i] = trace->src_regs[i].idx;
+                }
             }
+            locked = true;
         }
 
-        // handle regfile response 
+        // handle regfile response (Don't do here, model backpressure in RegFile)
+        /*
         if(!regfile_rsp_port.empty()){
             regfile_rsp_port.pop();
         }
+        */
 
 
         // Send to Reg File 
@@ -175,9 +187,9 @@ public:
         for(int i=0; i < NUM_SRC_REGS; i++){
             
             if(opd_to_fetch[i] != 0){
+
                 RegReq opd_request;
                 opd_request.src_reg_idx = opd_to_fetch[i];
-
                 if(regfile_req_port.empty()){
                     regfile_req_port.push(opd_request, 1);
                     opd_to_fetch[i] = 0;
@@ -190,9 +202,10 @@ public:
             }
         }
 
-        // Once all Reponse received 
+        // Once all Opds sent out --> Pop from Input
         if(pending == 0){
             Input.pop();
+            locked = false;
         }
 
     }
@@ -247,7 +260,6 @@ public:
 
 	}
 
-
     virtual ~Operand() {}
 
     virtual void reset() {
@@ -255,7 +267,6 @@ public:
 	}
 
     virtual void tick() {
-	
         
         if(Input.empty())
             return;
@@ -263,36 +274,26 @@ public:
         auto trace = Input.front();
         uint32_t stalls = 0;
 
-
         // Find free OpcUnit
         for(uint32_t i = 0; i < NUM_STD_OPC; i++){
             
             if(opc_units_.at(i)->Input.empty()){
                 opc_units_.at(i)->Input.push(trace, 1);
-
-
-                // TO FIX : The Total Stalls 
-                /*stalls += opc_units_.at(i)->total_stalls();*/
-                
                 Input.pop();
                 break;
             }
         }
-
-
-
-
         total_stalls_ += stalls;
-	
+
+        Output.push(trace, 2 + stalls);
+
         // TO FIX : The Total Stalls 
         /*
         total_stalls_ += stalls;
-
 		Output.push(trace, 2 + stalls);
-
 		DT(3, "pipeline-operands: " << *trace);
         */
-    };
+    }
 
 	uint32_t total_stalls() const {
 		return total_stalls_;
