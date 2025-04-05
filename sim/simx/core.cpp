@@ -52,17 +52,18 @@ Core::Core(const SimContext& ctx,
   , mem_coalescers_(NUM_LSU_BLOCKS)
   , pending_icache_(arch_.num_warps())
   , commit_arbs_(ISSUE_WIDTH)
+  , ibuffer_arbs_(ISSUE_WIDTH, {ArbiterType::RoundRobin, PER_ISSUE_WARPS})
 {
   char sname[100];
 
-  for (uint32_t i = 0; i < ISSUE_WIDTH; ++i) {
-    operands_.at(i) = Operand::Create();
+  for (uint32_t isw = 0; isw < ISSUE_WIDTH; ++isw) {
+    operands_.at(isw) = Operands::Create();
   }
 
   // create the memory coalescer
-  for (uint32_t i = 0; i < NUM_LSU_BLOCKS; ++i) {
-    snprintf(sname, 100, "%s-coalescer%d", this->name().c_str(), i);
-    mem_coalescers_.at(i) = MemCoalescer::Create(sname, LSU_CHANNELS, DCACHE_CHANNELS, DCACHE_WORD_SIZE, LSUQ_OUT_SIZE, 1);
+  for (uint32_t b = 0; b < NUM_LSU_BLOCKS; ++b) {
+    snprintf(sname, 100, "%s-coalescer%d", this->name().c_str(), b);
+    mem_coalescers_.at(b) = MemCoalescer::Create(sname, LSU_CHANNELS, DCACHE_CHANNELS, DCACHE_WORD_SIZE, LSUQ_OUT_SIZE, 1);
   }
 
   // create local memory
@@ -76,16 +77,16 @@ Core::Core(const SimContext& ctx,
   });
 
   // create lmem switch
-  for (uint32_t i = 0; i < NUM_LSU_BLOCKS; ++i) {
-    snprintf(sname, 100, "%s-lmem_switch%d", this->name().c_str(), i);
-    lmem_switch_.at(i) = LocalMemSwitch::Create(sname, 1);
+  for (uint32_t b = 0; b < NUM_LSU_BLOCKS; ++b) {
+    snprintf(sname, 100, "%s-lmem_switch%d", this->name().c_str(), b);
+    lmem_switch_.at(b) = LocalMemSwitch::Create(sname, 1);
   }
 
   // create dcache adapter
   std::vector<LsuMemAdapter::Ptr> lsu_dcache_adapter(NUM_LSU_BLOCKS);
-  for (uint32_t i = 0; i < NUM_LSU_BLOCKS; ++i) {
-    snprintf(sname, 100, "%s-lsu_dcache_adapter%d", this->name().c_str(), i);
-    lsu_dcache_adapter.at(i) = LsuMemAdapter::Create(sname, DCACHE_CHANNELS, 1);
+  for (uint32_t b = 0; b < NUM_LSU_BLOCKS; ++b) {
+    snprintf(sname, 100, "%s-lsu_dcache_adapter%d", this->name().c_str(), b);
+    lsu_dcache_adapter.at(b) = LsuMemAdapter::Create(sname, DCACHE_CHANNELS, 1);
   }
 
   // create lmem arbiter
@@ -124,9 +125,9 @@ Core::Core(const SimContext& ctx,
   // connect dcache adapter
   for (uint32_t b = 0; b < NUM_LSU_BLOCKS; ++b) {
     for (uint32_t c = 0; c < DCACHE_CHANNELS; ++c) {
-      uint32_t i = b * DCACHE_CHANNELS + c;
-      lsu_dcache_adapter.at(b)->ReqOut.at(c).bind(&dcache_req_ports.at(i));
-      dcache_rsp_ports.at(i).bind(&lsu_dcache_adapter.at(b)->RspOut.at(c));
+      uint32_t p = b * DCACHE_CHANNELS + c;
+      lsu_dcache_adapter.at(b)->ReqOut.at(c).bind(&dcache_req_ports.at(p));
+      dcache_rsp_ports.at(p).bind(&lsu_dcache_adapter.at(b)->RspOut.at(c));
     }
   }
 
@@ -143,13 +144,13 @@ Core::Core(const SimContext& ctx,
   func_units_.at((int)FUType::SFU) = SimPlatform::instance().create_object<SfuUnit>(this);
 
   // bind commit arbiters
-  for (uint32_t i = 0; i < ISSUE_WIDTH; ++i) {
-    snprintf(sname, 100, "%s-commit-arb%d", this->name().c_str(), i);
+  for (uint32_t isw = 0; isw < ISSUE_WIDTH; ++isw) {
+    snprintf(sname, 100, "%s-commit-arb%d", this->name().c_str(), isw);
     auto arbiter = TraceArbiter::Create(sname, ArbiterType::RoundRobin, (uint32_t)FUType::Count, 1);
-    for (uint32_t j = 0; j < (uint32_t)FUType::Count; ++j) {
-      func_units_.at(j)->Outputs.at(i).bind(&arbiter->Inputs.at(j));
+    for (uint32_t fu = 0; fu < (uint32_t)FUType::Count; ++fu) {
+      func_units_.at(fu)->Outputs.at(isw).bind(&arbiter->Inputs.at(fu));
     }
-    commit_arbs_.at(i) = arbiter;
+    commit_arbs_.at(isw) = arbiter;
   }
 
   this->reset();
@@ -176,7 +177,10 @@ void Core::reset() {
   decode_latch_.clear();
   pending_icache_.clear();
 
-  ibuffer_idx_ = 0;
+  for (auto& arb : ibuffer_arbs_) {
+    arb.reset();
+  }
+
   pending_instrs_.clear();
   pending_ifetches_ = 0;
 
@@ -276,29 +280,22 @@ void Core::decode() {
 }
 
 void Core::issue() {
-  // operands to dispatchers
-  for (uint32_t i = 0; i < ISSUE_WIDTH; ++i) {
-    auto& operand = operands_.at(i);
+  // dispatch operands
+  for (uint32_t isw = 0; isw < ISSUE_WIDTH; ++isw) {
+    auto& operand = operands_.at(isw);
     if (operand->Output.empty())
       continue;
     auto trace = operand->Output.front();
-    if (dispatchers_.at((int)trace->fu_type)->push(i, trace)) {
-      operand->Output.pop();
-      trace->log_once(false);
-    } else {
-      if (!trace->log_once(true)) {
-        DT(4, "*** dispatch-stall: " << *trace);
-      }
-    }
+    dispatchers_.at((int)trace->fu_type)->Inputs.at(isw).push(trace);
+    operand->Output.pop();
   }
 
   // issue ibuffer instructions
-  for (uint32_t i = 0; i < ISSUE_WIDTH; ++i) {
+  for (uint32_t isw = 0; isw < ISSUE_WIDTH; ++isw) {
     bool has_instrs = false;
-    bool found_match = false;
+    BitVector<> ready_set(PER_ISSUE_WARPS);
     for (uint32_t w = 0; w < PER_ISSUE_WARPS; ++w) {
-      uint32_t kk = (ibuffer_idx_ + w) % PER_ISSUE_WARPS;
-      uint32_t ii = kk * ISSUE_WIDTH + i;
+      uint32_t ii = isw  * PER_ISSUE_WARPS + w;
       auto& ibuffer = ibuffers_.at(ii);
       if (ibuffer.empty())
         continue;
@@ -343,43 +340,50 @@ void Core::issue() {
         }
       } else {
         trace->log_once(false);
-        // update scoreboard
-        DT(3, "pipeline-scoreboard: " << *trace);
-        if (trace->wb) {
-          scoreboard_.reserve(trace);
-        }
-        // to operand stage
-        operands_.at(i)->Input.push(trace, 2);
-        ibuffer.pop();
-        found_match = true;
-        break;
+        ready_set.set(w); // mark instruction as ready
       }
     }
-    if (has_instrs && !found_match) {
+
+    if (ready_set.any()) {
+      // select one instruction from ready set
+      auto g = ibuffer_arbs_.at(isw).grant(ready_set);
+      uint32_t ii = isw * PER_ISSUE_WARPS + g;
+      auto& ibuffer = ibuffers_.at(ii);
+      auto trace = ibuffer.top();
+      // update scoreboard
+      DT(3, "pipeline-scoreboard: " << *trace);
+      if (trace->wb) {
+        scoreboard_.reserve(trace);
+      }
+      // to operand stage
+      operands_.at(isw)->Input.push(trace, 2);
+      ibuffer.pop();
+    }
+
+    if (has_instrs && !ready_set.any()) {
       ++perf_stats_.scrb_stalls;
     }
   }
-  ++ibuffer_idx_;
 }
 
 void Core::execute() {
-  for (uint32_t i = 0; i < (uint32_t)FUType::Count; ++i) {
-    auto& dispatch = dispatchers_.at(i);
-    auto& func_unit = func_units_.at(i);
-    for (uint32_t j = 0; j < ISSUE_WIDTH; ++j) {
-      if (dispatch->Outputs.at(j).empty())
+  for (uint32_t fu = 0; fu < (uint32_t)FUType::Count; ++fu) {
+    auto& dispatch = dispatchers_.at(fu);
+    auto& func_unit = func_units_.at(fu);
+    for (uint32_t isw = 0; isw < ISSUE_WIDTH; ++isw) {
+      if (dispatch->Outputs.at(isw).empty())
         continue;
-      auto trace = dispatch->Outputs.at(j).front();
-      func_unit->Inputs.at(j).push(trace, 2);
-      dispatch->Outputs.at(j).pop();
+      auto trace = dispatch->Outputs.at(isw).front();
+      func_unit->Inputs.at(isw).push(trace, 2);
+      dispatch->Outputs.at(isw).pop();
     }
   }
 }
 
 void Core::commit() {
   // process completed instructions
-  for (uint32_t i = 0; i < ISSUE_WIDTH; ++i) {
-    auto& commit_arb = commit_arbs_.at(i);
+  for (uint32_t isw = 0; isw < ISSUE_WIDTH; ++isw) {
+    auto& commit_arb = commit_arbs_.at(isw);
     if (commit_arb->Outputs.at(0).empty())
       continue;
     auto trace = commit_arb->Outputs.at(0).front();
@@ -399,11 +403,6 @@ void Core::commit() {
 
     // delete the trace
     trace_pool_.deallocate(trace, 1);
-
-    perf_stats_.opds_stalls = 0;
-    for (uint32_t i = 0; i < ISSUE_WIDTH; ++i) {
-      perf_stats_.opds_stalls += operands_.at(i)->total_stalls();
-    }
 
     commit_arb->Outputs.at(0).pop();
   }
@@ -439,6 +438,14 @@ bool Core::wspawn(uint32_t num_warps, Word nextPC) {
 
 void Core::attach_ram(RAM* ram) {
   emulator_.attach_ram(ram);
+}
+
+const Core::PerfStats& Core::perf_stats() const {
+  perf_stats_.opds_stalls = 0;
+  for (uint32_t isw = 0; isw < ISSUE_WIDTH; ++isw) {
+    perf_stats_.opds_stalls += operands_.at(isw)->total_stalls();
+  }
+  return perf_stats_;
 }
 
 #ifdef VM_ENABLE

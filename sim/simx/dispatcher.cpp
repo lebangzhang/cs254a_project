@@ -19,10 +19,9 @@ using namespace vortex;
 Dispatcher::Dispatcher(const SimContext& ctx, Core* core, uint32_t buf_size, uint32_t block_size, uint32_t num_lanes)
   : SimObject<Dispatcher>(ctx, "Dispatcher")
   , Outputs(ISSUE_WIDTH, this)
-  , Inputs_(ISSUE_WIDTH, this)
+  , Inputs(ISSUE_WIDTH, this)
   , arch_(core->arch())
   , core_(core)
-  , queues_(ISSUE_WIDTH, std::queue<instr_trace_t*>())
   , buf_size_(buf_size)
   , block_size_(block_size)
   , num_lanes_(num_lanes)
@@ -42,21 +41,11 @@ void Dispatcher::reset() {
 }
 
 void Dispatcher::tick() {
-  for (uint32_t i = 0; i < ISSUE_WIDTH; ++i) {
-    auto& queue = queues_.at(i);
-    if (queue.empty())
-      continue;
-    auto trace = queue.front();
-    Inputs_.at(i).push(trace, 1);
-    queue.pop();
-  }
-
-  // round-robin a trace from each input queues
-  // and issue them in parallel to output queues
+  // process inputs
   uint32_t block_sent = 0;
   for (uint32_t b = 0; b < block_size_; ++b) {
     uint32_t i = batch_idx_ * block_size_ + b;
-    auto& input = Inputs_.at(i);
+    auto& input = Inputs.at(i);
     if (input.empty()) {
       ++block_sent;
       continue;
@@ -121,11 +110,3 @@ void Dispatcher::tick() {
     }
   }
 };
-
-bool Dispatcher::push(uint32_t issue_index, instr_trace_t* trace) {
-  auto& queue = queues_.at(issue_index);
-  if (queue.size() >= buf_size_)
-    return false;
-  queue.push(trace);
-  return true;
-}

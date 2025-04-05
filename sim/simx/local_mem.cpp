@@ -101,7 +101,7 @@ public:
 	}
 
 	const PerfStats& perf_stats() const {
-		perf_stats_.bank_stalls = mem_xbar_->req_collisions();
+		perf_stats_.bank_stalls = mem_xbar_->collisions();
 		return perf_stats_;
 	}
 };

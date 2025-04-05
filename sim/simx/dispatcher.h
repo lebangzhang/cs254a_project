@@ -24,6 +24,7 @@ class Core;
 class Dispatcher : public SimObject<Dispatcher> {
 public:
 	std::vector<SimPort<instr_trace_t*>> Outputs;
+	std::vector<SimPort<instr_trace_t*>> Inputs;
 
 	Dispatcher(const SimContext& ctx, Core* core, uint32_t buf_size, uint32_t block_size, uint32_t num_lanes);
 
@@ -33,13 +34,9 @@ public:
 
 	virtual void tick();
 
-	bool push(uint32_t issue_index, instr_trace_t* trace);
-
 private:
-	std::vector<SimPort<instr_trace_t*>> Inputs_;
 	const Arch& arch_;
 	Core* core_;
-	std::vector<std::queue<instr_trace_t*>> queues_;
 	uint32_t buf_size_;
 	uint32_t block_size_;
 	uint32_t num_lanes_;

@@ -17,7 +17,7 @@
 
 namespace vortex {
 
-class Operand : public SimObject<Operand> {
+class Operands : public SimObject<Operands> {
 private:
 		static constexpr uint32_t NUM_BANKS = 4;
 		uint32_t total_stalls_ = 0;
@@ -26,15 +26,15 @@ public:
     SimPort<instr_trace_t*> Input;
     SimPort<instr_trace_t*> Output;
 
-    Operand(const SimContext& ctx)
-			: SimObject<Operand>(ctx, "Operand")
+    Operands(const SimContext& ctx)
+			: SimObject<Operands>(ctx, "Operands")
 			, Input(this)
 			, Output(this)
     {
 			total_stalls_ = 0;
 		}
 
-    virtual ~Operand() {}
+    virtual ~Operands() {}
 
     virtual void reset() {
 			total_stalls_ = 0;

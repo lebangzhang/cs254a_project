@@ -309,17 +309,165 @@ inline std::ostream &operator<<(std::ostream &os, const VpuType& type) {
 
 enum class ArbiterType {
   Priority,
-  RoundRobin
+  RoundRobin,
+  Matrix
 };
 
 inline std::ostream &operator<<(std::ostream &os, const ArbiterType& type) {
   switch (type) {
   case ArbiterType::Priority:   os << "Priority"; break;
   case ArbiterType::RoundRobin: os << "RoundRobin"; break;
+  case ArbiterType::Matrix:     os << "Matrix"; break;
   default: assert(false);
   }
   return os;
-}///////////////////////////////////////////////////////////////////////////////
+}
+
+class IArbiterImpl {
+public:
+  IArbiterImpl() {}
+  virtual ~IArbiterImpl() {}
+  virtual uint32_t grant(const BitVector<>& requests) = 0;
+  virtual void reset() = 0;
+};
+
+class PriorityArbiter : public IArbiterImpl {
+public:
+  PriorityArbiter(uint32_t size) : size_(size) {
+    this->reset();
+  }
+
+  uint32_t grant(const BitVector<>& requests) override {
+    assert(requests.size() == size_);
+    for (uint32_t i = 0; i < size_; ++i) {
+      if (requests.test(i)) {
+        return i;
+      }
+    }
+    return -1;
+  }
+
+  void reset() override {
+    //--
+  }
+private:
+  uint32_t size_;
+};
+
+class RoundRobinArbiter : public IArbiterImpl {
+public:
+  RoundRobinArbiter(uint32_t size) : size_(size) {
+    this->reset();
+  }
+
+  uint32_t grant(const BitVector<>& requests) override {
+    assert(requests.size() == size_);
+    uint32_t start = (last_grant_ + 1) % size_;
+    for (uint32_t i = 0; i < size_; ++i) {
+      uint32_t idx = (start + i) % size_;
+      if (requests.test(idx)) {
+        last_grant_ = idx;
+        return idx;
+      }
+    }
+    return -1;
+  }
+
+  void reset() override {
+    last_grant_ = 0;
+  }
+
+private:
+  uint32_t size_;
+  uint32_t last_grant_;
+};
+
+class MatrixArbiter : public IArbiterImpl {
+public:
+  MatrixArbiter(uint32_t size)
+    : size_(size)
+    , priority_matrix_(size, std::vector<bool>(size)) {
+    this->reset();
+  }
+
+  uint32_t grant(const BitVector<>& requests) override {
+    assert(requests.size() == size_);
+    for (uint32_t i = 0; i < size_; ++i) {
+      if (requests[i]) {
+        // Check if this request has the highest priority by comparing it
+        bool highest_priority = true;
+        for (uint32_t j = 0; j < size_; ++j) {
+          if (requests[j] && priority_matrix_[i][j]) {
+            // If there is any active request with higher priority, this is not the highest
+            highest_priority = false;
+            break;
+          }
+        }
+
+        if (highest_priority) {
+          // Update the priority matrix: clear the row and set the column
+          for (uint32_t j = 0; j < size_; ++j) {
+            if (i != j) {
+              priority_matrix_[i][j] = false;
+              priority_matrix_[j][i] = true;
+            }
+          }
+          return i; // Return the granted request index
+        }
+      }
+    }
+    return -1;
+  }
+
+  void reset() override {
+    // Initialize the priority matrix
+    for (uint32_t i = 0; i < size_; ++i) {
+      priority_matrix_[i].resize(size_);
+      // Initialize only the upper triangle to true
+      for (uint32_t j = i + 1; j < size_; ++j) {
+        priority_matrix_[i][j] = true;
+      }
+    }
+  }
+
+private:
+  uint32_t size_;
+  std::vector<std::vector<bool>> priority_matrix_;
+};
+
+class Arbiter {
+public:
+  Arbiter(ArbiterType type = ArbiterType::Priority, uint32_t size = 0) {
+    switch (type) {
+    case ArbiterType::Priority:
+      impl_ = std::make_shared<PriorityArbiter>(size);
+      break;
+    case ArbiterType::RoundRobin:
+      impl_ = std::make_shared<RoundRobinArbiter>(size);
+      break;
+    case ArbiterType::Matrix:
+      impl_ = std::make_shared<MatrixArbiter>(size);
+      break;
+    default:
+      assert(false); // Should never reach here
+    }
+  }
+
+  virtual ~Arbiter() {}
+
+  uint32_t grant(const BitVector<>& requests) {
+    return impl_->grant(requests);
+  }
+
+  void reset() {
+    impl_->reset();
+  }
+
+private:
+  std::shared_ptr<IArbiterImpl> impl_;
+};
+
+///////////////////////////////////////////////////////////////////////////////
 
 struct LsuReq {
   BitVector<> mask;
@@ -508,27 +656,26 @@ private:
 ///////////////////////////////////////////////////////////////////////////////
 
 template <typename Type>
-class Arbiter : public SimObject<Arbiter<Type>> {
+class ArbiterSwitch : public SimObject<ArbiterSwitch<Type>> {
 public:
   typedef Type ReqType;
 
   std::vector<SimPort<Type>> Inputs;
   std::vector<SimPort<Type>> Outputs;
 
-  Arbiter(
+  ArbiterSwitch(
     const SimContext& ctx,
     const char* name,
     ArbiterType type,
     uint32_t num_inputs,
     uint32_t num_outputs = 1,
     uint32_t delay = 1
-  ) : SimObject<Arbiter<Type>>(ctx, name)
+  ) : SimObject<ArbiterSwitch<Type>>(ctx, name)
     , Inputs(num_inputs, this)
     , Outputs(num_outputs, this)
-    , type_(type)
     , delay_(delay)
-    , grants_(num_outputs, 0)
     , lg2_num_reqs_(log2ceil(num_inputs / num_outputs))
+    , arbiters_(num_outputs, {type, 1u << lg2_num_reqs_})
   {
     assert(delay != 0);
     assert(num_inputs <= 64);
@@ -544,8 +691,8 @@ public:
   }
 
   void reset() {
-    for (auto& grant : grants_) {
-      grant = 0;
+    for (auto& arb : arbiters_) {
+      arb.reset();
     }
   }
 
@@ -560,37 +707,30 @@ public:
 
     // process inputs
     for (uint32_t o = 0; o < O; ++o) {
+      BitVector<> requests(R);
       for (uint32_t r = 0; r < R; ++r) {
-        uint32_t g = (grants_.at(o) + r) & (R-1);
-        uint32_t j = o * R + g;
-        if (j >= I)
+        uint32_t i = o * R + r;
+        if (i >= I)
           continue;
-
-        auto& req_in = Inputs.at(j);
-        if (!req_in.empty()) {
-          auto& req = req_in.front();
-          DT(4, this->name() << "-req" << o << ": " << req);
-          Outputs.at(o).push(req, delay_);
-          req_in.pop();
-          this->update_grant(o, g);
-          break;
-        }
+        requests.set(r, !Inputs.at(i).empty());
+      }
+      if (requests.any()) {
+        uint32_t g = arbiters_.at(o).grant(requests);
+        uint32_t i = o * R + g;
+        auto& req_in = Inputs.at(i);
+        auto& req = req_in.front();
+        DT(4, this->name() << "-req" << o << ": " << req);
+        Outputs.at(o).push(req, delay_);
+        req_in.pop();
       }
     }
   }
 
 protected:
 
-  void update_grant(uint32_t index, uint32_t grant) {
-    if (type_ == ArbiterType::RoundRobin) {
-      grants_.at(index) = grant + 1;
-    }
-  }
-
-  ArbiterType type_;
   uint32_t delay_;
-  std::vector<uint32_t> grants_;
   uint32_t lg2_num_reqs_;
+  std::vector<Arbiter> arbiters_;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -606,7 +746,6 @@ public:
   CrossBar(
     const SimContext& ctx,
     const char* name,
-    ArbiterType type,
     uint32_t num_inputs,
     uint32_t num_outputs = 1,
     uint32_t delay = 1,
@@ -615,9 +754,7 @@ public:
     : SimObject<CrossBar<Type>>(ctx, name)
     , Inputs(num_inputs, this)
     , Outputs(num_outputs, this)
-    , type_(type)
     , delay_(delay)
-    , grants_(num_outputs, 0)
     , lg2_inputs_(log2ceil(num_inputs))
     , lg2_outputs_(log2ceil(num_outputs))
     , collisions_(0) {
@@ -635,24 +772,18 @@ public:
   }
 
   void reset() {
-    for (auto& grant : grants_) {
-      grant = 0;
-    }
+    //--
   }
 
   void tick() {
     uint32_t I = Inputs.size();
     uint32_t O = Outputs.size();
-    uint32_t R = 1 << lg2_inputs_;
 
     // process incoming requests
     for (uint32_t o = 0; o < O; ++o) {
       int32_t input_idx = -1;
       bool has_collision = false;
-      for (uint32_t r = 0; r < R; ++r) {
-        uint32_t i = (grants_.at(o) + r) & (R-1);
-        if (i >= I)
-          continue;
+      for (uint32_t i = 0; i < I; ++i) {
         auto& req_in = Inputs.at(i);
         if (req_in.empty())
           continue;
@@ -677,7 +808,6 @@ public:
         DT(4, this->name() << "-req" << o << ": " << req);
         Outputs.at(o).push(req, delay_);
         req_in.pop();
-        this->update_grant(o, input_idx);
         collisions_ += has_collision;
       }
     }
@@ -689,15 +819,7 @@ public:
 
 protected:
 
-  void update_grant(uint32_t index, uint32_t grant) {
-    if (type_ == ArbiterType::RoundRobin) {
-      grants_.at(index) = grant + 1;
-    }
-  }
-
-  ArbiterType type_;
   uint32_t delay_;
-  std::vector<uint32_t> grants_;
   uint32_t lg2_inputs_;
   uint32_t lg2_outputs_;
   std::function<uint32_t(const Type& req)> output_sel_;
@@ -731,10 +853,9 @@ public:
     , RspIn(num_inputs, this)
     , ReqOut(num_outputs, this)
     , RspOut(num_outputs, this)
-    , type_(type)
     , delay_(delay)
-    , grants_(num_outputs, 0)
     , lg2_num_reqs_(log2ceil(num_inputs / num_outputs))
+    , arbiters_(num_outputs, {type, 1u << lg2_num_reqs_})
   {
     assert(delay != 0);
     assert(num_inputs <= 64);
@@ -751,8 +872,8 @@ public:
   }
 
   void reset() {
-    for (auto& grant : grants_) {
-      grant = 0;
+    for (auto& arb : arbiters_) {
+      arb.reset();
     }
   }
 
@@ -775,49 +896,42 @@ public:
           g = rsp.tag & (R-1);
           rsp.tag >>= lg2_num_reqs_;
         }
-        uint32_t j = o * R + g;
-        DT(4, this->name() << "-rsp" << j << ": " << rsp);
-        RspIn.at(j).push(rsp, 1);
+        uint32_t i = o * R + g;
+        DT(4, this->name() << "-rsp" << i << ": " << rsp);
+        RspIn.at(i).push(rsp, 1);
         rsp_out.pop();
       }
     }
 
     // process incoming requests
     for (uint32_t o = 0; o < O; ++o) {
+      BitVector<> requests(R);
       for (uint32_t r = 0; r < R; ++r) {
-        uint32_t g = (grants_.at(o) + r) & (R-1);
-        uint32_t j = o * R + g;
-        if (j >= I)
+        uint32_t i = o * R + r;
+        if (i >= I)
           continue;
-
-        auto& req_in = ReqIn.at(j);
-        if (!req_in.empty()) {
-          auto& req = req_in.front();
-          if (lg2_num_reqs_ != 0) {
-            req.tag = (req.tag << lg2_num_reqs_) | g;
-          }
-          DT(4, this->name() << "-req" << o << ": " << req);
-          ReqOut.at(o).push(req, delay_);
-          req_in.pop();
-          this->update_grant(o, g);
-          break;
+        requests.set(r, !ReqIn.at(i).empty());
+      }
+      if (requests.any()) {
+        uint32_t g = arbiters_.at(o).grant(requests);
+        uint32_t i = o * R + g;
+        auto& req_in = ReqIn.at(i);
+        auto& req = req_in.front();
+        if (lg2_num_reqs_ != 0) {
+          req.tag = (req.tag << lg2_num_reqs_) | g;
         }
+        DT(4, this->name() << "-req" << o << ": " << req);
+        ReqOut.at(o).push(req, delay_);
+        req_in.pop();
       }
     }
   }
 
 protected:
 
-  void update_grant(uint32_t index, uint32_t grant) {
-    if (type_ == ArbiterType::RoundRobin) {
-      grants_.at(index) = grant + 1;
-    }
-  }
-
-  ArbiterType type_;
   uint32_t delay_;
-  std::vector<uint32_t> grants_;
   uint32_t lg2_num_reqs_;
+  std::vector<Arbiter> arbiters_;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -848,14 +962,11 @@ public:
     , RspIn(num_inputs, this)
     , ReqOut(num_outputs, this)
     , RspOut(num_outputs, this)
-    , type_(type)
+    , arbiter_(type, num_outputs)
     , delay_(delay)
-    , req_grants_(num_outputs, 0)
-    , rsp_grants_(num_inputs, 0)
     , lg2_inputs_(log2ceil(num_inputs))
     , lg2_outputs_(log2ceil(num_outputs))
-    , req_collisions_(0)
-    , rsp_collisions_(0) {
+    , collisions_(0) {
     assert(delay != 0);
     assert(num_inputs <= 64);
     assert(num_outputs <= 64);
@@ -871,47 +982,33 @@ public:
   }
 
   void reset() {
-    for (auto& grant : req_grants_) {
-      grant = 0;
-    }
-    for (auto& grant : rsp_grants_) {
-      grant = 0;
-    }
+    arbiter_.reset();
   }
 
   void tick() {
     uint32_t I = ReqIn.size();
     uint32_t O = ReqOut.size();
     uint32_t R = 1 << lg2_inputs_;
-    uint32_t T = 1 << lg2_outputs_;
 
     // process outgoing responses
     for (uint32_t i = 0; i < I; ++i) {
-      int32_t output_idx = -1;
-      bool has_collision = false;
-      for (uint32_t t = 0; t < T; ++t) {
-        uint32_t o = (rsp_grants_.at(i) + t) & (T-1);
-        if (o >= O)
-          continue;
+      BitVector<> requests(O);
+      for (uint32_t o = 0; o < O; ++o) {
         auto& rsp_out = RspOut.at(o);
         if (rsp_out.empty())
           continue;
         auto& rsp = rsp_out.front();
-        uint32_t input_idx = 0;
+        // skip if response is not going to current input
         if (lg2_inputs_ != 0) {
-          input_idx = rsp.tag & (R-1);
-          // skip if response is not going to current input
+          uint32_t input_idx = rsp.tag & (R-1);
           if (input_idx != i)
             continue;
         }
-        if (output_idx != -1) {
-          has_collision = true;
-          continue;
-        }
-        output_idx = o;
+        requests.set(o);
       }
-      if (output_idx != -1) {
-        auto& rsp_out = RspOut.at(output_idx);
+      if (requests.any()) {
+        uint32_t g = arbiter_.grant(requests);
+        auto& rsp_out = RspOut.at(g);
         auto& rsp = rsp_out.front();
         if (lg2_inputs_ != 0) {
           rsp.tag >>= lg2_inputs_;
@@ -919,8 +1016,6 @@ public:
         DT(4, this->name() << "-rsp" << i << ": " << rsp);
         RspIn.at(i).push(rsp, 1);
         rsp_out.pop();
-        this->update_rsp_grant(i, output_idx);
-        rsp_collisions_ += has_collision;
       }
     }
 
@@ -928,10 +1023,7 @@ public:
     for (uint32_t o = 0; o < O; ++o) {
       int32_t input_idx = -1;
       bool has_collision = false;
-      for (uint32_t r = 0; r < R; ++r) {
-        uint32_t i = (req_grants_.at(o) + r) & (R-1);
-        if (i >= I)
-          continue;
+      for (uint32_t i = 0; i < I; ++i) {
         auto& req_in = ReqIn.at(i);
         if (req_in.empty())
           continue;
@@ -959,43 +1051,23 @@ public:
         DT(4, this->name() << "-req" << o << ": " << req);
         ReqOut.at(o).push(req, delay_);
         req_in.pop();
-        this->update_req_grant(o, input_idx);
-        req_collisions_ += has_collision;
+        collisions_ += has_collision;
       }
     }
   }
 
-  uint64_t req_collisions() const {
-    return req_collisions_;
-  }
-
-  uint64_t rsp_collisions() const {
-    return rsp_collisions_;
+  uint64_t collisions() const {
+    return collisions_;
   }
 
 protected:
 
-  void update_req_grant(uint32_t index, uint32_t grant) {
-    if (type_ == ArbiterType::RoundRobin) {
-      req_grants_.at(index) = grant + 1;
-    }
-  }
-
-  void update_rsp_grant(uint32_t index, uint32_t grant) {
-    if (type_ == ArbiterType::RoundRobin) {
-      rsp_grants_.at(index) = grant + 1;
-    }
-  }
-
-  ArbiterType type_;
+  Arbiter  arbiter_;
   uint32_t delay_;
-  std::vector<uint32_t> req_grants_;
-  std::vector<uint32_t> rsp_grants_;
   uint32_t lg2_inputs_;
   uint32_t lg2_outputs_;
   std::function<uint32_t(const Req& req)> output_sel_;
-  uint64_t req_collisions_;
-  uint64_t rsp_collisions_;
+  uint64_t collisions_;
 };
 
 ///////////////////////////////////////////////////////////////////////////////

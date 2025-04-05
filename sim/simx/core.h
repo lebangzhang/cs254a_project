@@ -22,7 +22,7 @@
 #include "local_mem.h"
 #include "ibuffer.h"
 #include "scoreboard.h"
-#include "operand.h"
+#include "operands.h"
 #include "dispatcher.h"
 #include "func_unit.h"
 #include "mem_coalescer.h"
@@ -37,7 +37,7 @@ class Socket;
 class Arch;
 class DCRS;
 
-using TraceArbiter = Arbiter<instr_trace_t*>;
+using TraceArbiter = ArbiterSwitch<instr_trace_t*>;
 
 class Core : public SimObject<Core> {
 public:
@@ -159,9 +159,7 @@ public:
     return trace_pool_;
   }
 
-  const PerfStats& perf_stats() const {
-    return perf_stats_;
-  }
+  const PerfStats& perf_stats() const;
 
   int get_exitcode() const;
 
@@ -186,7 +184,7 @@ private:
 
   std::vector<IBuffer> ibuffers_;
   Scoreboard scoreboard_;
-  std::vector<Operand::Ptr> operands_;
+  std::vector<Operands::Ptr> operands_;
   std::vector<Dispatcher::Ptr> dispatchers_;
   std::vector<FuncUnit::Ptr> func_units_;
   LocalMem::Ptr local_mem_;
@@ -201,12 +199,12 @@ private:
 
   uint64_t pending_ifetches_;
 
-  PerfStats perf_stats_;
+  mutable PerfStats perf_stats_;
 
   std::vector<TraceArbiter::Ptr> commit_arbs_;
 
   uint32_t commit_exe_;
-  uint32_t ibuffer_idx_;
+  std::vector<Arbiter> ibuffer_arbs_;
 
   PoolAllocator<instr_trace_t, 64> trace_pool_;
 
