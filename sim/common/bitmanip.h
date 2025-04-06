@@ -16,6 +16,8 @@
 #include <cstdint>
 #include <assert.h>
 
+namespace vortex {
+
 template <typename T>
 constexpr uint32_t count_leading_zeros(T value) {
   static_assert(std::is_integral<T>::value, "invalid data type");
@@ -148,4 +150,6 @@ constexpr T zext(const T& word, uint32_t width) {
 constexpr int pow2_sqrt(int x) {
   assert(ispow2(x));
   return 1 << (count_trailing_zeros(x) / 2);
+}
+
 }

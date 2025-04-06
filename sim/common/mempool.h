@@ -16,6 +16,8 @@
 #include <memory>
 #include <cassert>
 
+namespace vortex {
+
 // Memory pool for fixed-size objects with fallback to new/delete
 template<typename T, size_t PoolSize = 64>
 class MemoryPool {
@@ -109,4 +111,6 @@ bool operator==(const PoolAllocator<T1, N>&, const PoolAllocator<T2, N>&) noexce
 template<typename T1, typename T2, size_t N>
 bool operator!=(const PoolAllocator<T1, N>&, const PoolAllocator<T2, N>&) noexcept {
   return false;
+}
+
 }

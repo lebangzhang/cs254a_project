@@ -563,11 +563,11 @@ private:
 			case bank_req_t::Replay: {
 				// send core response
 				if (!pipeline_req.write || config_.write_reponse) {
-					for (auto& info : pipeline_req.ports) {
-						if (!info.valid)
+					for (auto& port : pipeline_req.ports) {
+						if (!port.valid)
 							continue;
-						MemRsp core_rsp{info.req_tag, pipeline_req.cid, pipeline_req.uuid};
-						simobject_->CoreRspPorts.at(info.req_id).push(core_rsp, config_.latency);
+						MemRsp core_rsp{port.req_tag, pipeline_req.cid, pipeline_req.uuid};
+						simobject_->CoreRspPorts.at(port.req_id).push(core_rsp, config_.latency);
 						DT(3, simobject_->name() << "-bank" << bank_id << "-replay: " << core_rsp);
 					}
 				}
@@ -620,11 +620,11 @@ private:
 					}
 					// send core response
 					if (!pipeline_req.write || config_.write_reponse) {
-						for (auto& info : pipeline_req.ports) {
-							if (!info.valid)
+						for (auto& port : pipeline_req.ports) {
+							if (!port.valid)
 								continue;
-							MemRsp core_rsp{info.req_tag, pipeline_req.cid, pipeline_req.uuid};
-							simobject_->CoreRspPorts.at(info.req_id).push(core_rsp, config_.latency);
+							MemRsp core_rsp{port.req_tag, pipeline_req.cid, pipeline_req.uuid};
+							simobject_->CoreRspPorts.at(port.req_id).push(core_rsp, config_.latency);
 							DT(3, simobject_->name() << "-bank" << bank_id << "-core-rsp: " << core_rsp);
 						}
 					}
@@ -662,11 +662,11 @@ private:
 						}
 						// send core response
 						if (config_.write_reponse) {
-							for (auto& info : pipeline_req.ports) {
-								if (!info.valid)
+							for (auto& port : pipeline_req.ports) {
+								if (!port.valid)
 									continue;
-								MemRsp core_rsp{info.req_tag, pipeline_req.cid, pipeline_req.uuid};
-								simobject_->CoreRspPorts.at(info.req_id).push(core_rsp, config_.latency);
+								MemRsp core_rsp{port.req_tag, pipeline_req.cid, pipeline_req.uuid};
+								simobject_->CoreRspPorts.at(port.req_id).push(core_rsp, config_.latency);
 								DT(3, simobject_->name() << "-bank" << bank_id << "-core-rsp: " << core_rsp);
 							}
 						}

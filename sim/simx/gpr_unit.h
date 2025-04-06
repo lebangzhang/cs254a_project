@@ -17,40 +17,26 @@
 
 namespace vortex {
 
-/* Requests to Reg File */
-struct RegReq {
-
-  uint32_t src_reg_idx;
-
-  RegReq(uint32_t _src_reg_idx = 0) : src_reg_idx(_src_reg_idx) {}
-};
-
-// Probably don't need this
-// TO FIX : Possible Remove this
-/* Response from Reg File */
-struct RegRsp {
-
-  uint32_t valid;
-
-  RegRsp(uint32_t _valid = 0) : valid(_valid) {}
-};
-
-class GprUnit : public SimObject<GprUnit> {
-
-private:
-  static constexpr uint32_t NUM_BANKS = 4;
-
-  // Maybe need to make public ???
-  static constexpr uint32_t NUM_UNITS = 4;
-
-  uint32_t total_stalls_ = 0;
-
+template <uint32_t NUM_REQS, uint32_t NUM_BANKS>
+class GprUnit : public SimObject<GprUnit<NUM_REQS, NUM_BANKS>> {
 public:
-  std::vector<SimPort<RegReq>> ReqIn;
-  std::vector<SimPort<RegRsp>> ReqOut;
+  struct Req {
+    uint32_t opd;
+    uint32_t rid;
+    uint32_t wis;
+  };
+
+  struct Rsp {
+    uint32_t opd;
+  };
+
+  std::vector<SimPort<Req>> ReqIn;
+  std::vector<SimPort<Rsp>> ReqOut;
 
   GprUnit(const SimContext &ctx)
-      : SimObject<GprUnit>(ctx, "Register File"), ReqIn(NUM_UNITS, this), ReqOut(NUM_UNITS, this) {
+      : SimObject<GprUnit<NUM_REQS, NUM_BANKS>>(ctx, "GprUnit")
+      , ReqIn(NUM_REQS, this)
+      , ReqOut(NUM_REQS, this) {
     total_stalls_ = 0;
   }
 
@@ -61,26 +47,18 @@ public:
   }
 
   virtual void tick() {
-
     if (ReqIn.empty())
       return;
-
     for (uint32_t i = 0; i < NUM_BANKS; i++) {
-
-      for (uint32_t j = 0; j < NUM_UNITS; j++) {
-
+      for (uint32_t j = 0; j < NUM_REQS; j++) {
         if (!ReqIn.at(i).empty()) {
-
-          auto request = ReqIn.at(i).front();
-
-          uint32_t bank = request.src_reg_idx % NUM_BANKS;
-
-          if ((bank == i)) {
-
-            RegRsp response;
-            ReqOut.at(i).push(response, 1);
+          auto& req = ReqIn.at(i).front();
+          uint32_t bank_id = get_bank_id(req);
+          if ((bank_id == i)) {
+            Rsp rsp;
+            rsp.opd = req.opd;
+            ReqOut.at(i).push(rsp, 1);
             ReqIn.at(i).pop();
-
             break;
           }
         }
@@ -90,6 +68,13 @@ public:
 
   uint32_t total_stalls() const {
     return total_stalls_;
+  }
+
+private:
+  uint32_t total_stalls_ = 0;
+
+  uint32_t get_bank_id(const Req& req) const {
+    return req.rid % NUM_BANKS;
   }
 };
 

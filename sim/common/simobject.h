@@ -21,10 +21,12 @@
 #include <queue>
 #include <assert.h>
 #include "mempool.h"
+#include "util.h"
+#include "linked_list.h"
+
+namespace vortex {
 
 class SimObjectBase;
-
-///////////////////////////////////////////////////////////////////////////////
 
 class SimPortBase {
 public:
@@ -35,13 +37,18 @@ public:
   }
 
 protected:
-  SimPortBase(SimObjectBase* module)
-    : module_(module)
-  {}
+  SimPortBase(SimObjectBase* module): module_(module) {}
+
+  virtual void do_pop() = 0;
 
   SimPortBase& operator=(const SimPortBase&) = delete;
 
   SimObjectBase* module_;
+
+  LinkedListNode<SimPortBase> pop_list_;
+  LinkedListNode<SimPortBase> push_list_;
+
+  friend class SimPlatform;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -51,19 +58,25 @@ class SimPort : public SimPortBase {
 public:
   typedef std::function<void (const Pkt&, uint64_t)> TxCallback;
 
-  SimPort(SimObjectBase* module)
+  SimPort(SimObjectBase* module, uint32_t capacity = 0)
     : SimPortBase(module)
+    , capacity_(capacity)
     , sink_(nullptr)
     , tx_cb_(nullptr)
+    , chained_(false)
   {}
 
   void bind(SimPort<Pkt>* sink) {
     assert(sink_ == nullptr);
+    sink->chained_ = true;
     sink_ = sink;
   }
 
   void unbind() {
-    sink_ = nullptr;
+    if (sink_) {
+      sink_->chained_ = false;
+      sink_ = nullptr;
+    }
   }
 
   bool connected() const {
@@ -78,6 +91,18 @@ public:
     return queue_.empty();
   }
 
+  bool full() const {
+    return (capacity_ != 0 && queue_.size() >= capacity_);
+  }
+
+  uint32_t size() const {
+    return queue_.size();
+  }
+
+  uint32_t capacity() const {
+    return capacity_;
+  }
+
   const Pkt& front() const {
     return queue_.front();
   }
@@ -86,13 +111,12 @@ public:
     return queue_.front().pkt;
   }
 
-  void push(const Pkt& pkt, uint64_t delay = 1) const;
-
-  uint64_t pop() {
-    auto cycles = queue_.front().cycles;
-    queue_.pop();
-    return cycles;
+  void push(const Pkt& pkt, uint64_t delay = 1) {
+    __assert(!chained_, "cannot execute push on a chained port!")
+    this->do_push(pkt, delay);
   }
+
+  uint64_t pop();
 
   void tx_callback(const TxCallback& callback) {
     tx_cb_ = callback;
@@ -111,8 +135,16 @@ protected:
   };
 
   std::queue<timed_pkt_t> queue_;
+  uint32_t   capacity_;
   SimPort*   sink_;
   TxCallback tx_cb_;
+  bool chained_;
+
+  void do_pop() override {
+    queue_.pop();
+  }
+
+  void do_push(const Pkt& pkt, uint64_t delay);
 
   void transfer(const Pkt& data, uint64_t cycles) {
     if (tx_cb_) {
@@ -194,7 +226,14 @@ protected:
 
 ///////////////////////////////////////////////////////////////////////////////
 
-class SimContext;
+class SimContext {
+private:
+  SimContext() {}
+
+  friend class SimPlatform;
+};
+
+///////////////////////////////////////////////////////////////////////////////
 
 class SimObjectBase {
 public:
@@ -208,16 +247,17 @@ public:
 
 protected:
 
-  SimObjectBase(const SimContext& ctx, const std::string& name);
+  SimObjectBase(const SimContext&, const std::string& name) : name_(name) {}
 
 private:
+
+  std::string name_;
 
   virtual void do_reset() = 0;
 
   virtual void do_tick() = 0;
 
-  std::string name_;
-
+  friend class SimPortBase;
   friend class SimPlatform;
 };
 
@@ -254,13 +294,6 @@ private:
   void do_tick() override {
     this->impl()->tick();
   }
-};
-
-class SimContext {
-private:
-  SimContext() {}
-
-  friend class SimPlatform;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -311,7 +344,8 @@ public:
   }
 
   void tick() {
-    // evaluate events
+    //printf("*** tick: %lu\n", cycles_);
+    // fire events
     auto evt_it = events_.begin();
     auto evt_it_end = events_.end();
     while (evt_it != evt_it_end) {
@@ -323,10 +357,16 @@ public:
         ++evt_it;
       }
     }
-    // evaluate components
-    for (auto& object : objects_) {
+    // execute objects
+    for (auto object : objects_) {
       object->do_tick();
     }
+    // realize objects
+    for (auto it = pop_list_.begin(); it != pop_list_.end();) {
+      it->do_pop();
+      it = pop_list_.erase(it);
+    }
+    push_list_.clear();
     // advance clock
     ++cycles_;
   }
@@ -349,26 +389,54 @@ private:
   }
 
   template <typename Pkt>
-  void schedule(const SimPort<Pkt>* port, const Pkt& pkt, uint64_t delay) {
+  void schedule_push(SimPort<Pkt>* port, const Pkt& pkt, uint64_t delay) {
+    //printf("*** schedule_push: %s::%p\n", port->module()->name().c_str(), port);
     assert(delay != 0);
+    if (port->capacity() != 0) {
+      __assert(0 == push_list_.count(port), "cannot enqueue a port multiple times during the same cycle!");
+      push_list_.push_back(port);
+    }
+
+    // schedule update event
     static PoolAllocator<SimPortEvent<Pkt>, 64> s_allocator;
     auto evt = std::allocate_shared<SimPortEvent<Pkt>>(s_allocator, port, pkt, cycles_ + delay);
     events_.emplace_back(evt);
   }
 
+  template <typename Pkt>
+  void schedule_pop(SimPort<Pkt>* port) {
+    //printf("*** schedule_pop: %s::%p\n", port->module()->name().c_str(), port);
+    __assert(0 == pop_list_.count(port), "cannot dequeue a port multiple times during the same cycle!");
+    pop_list_.push_back(port);
+  }
+
   std::list<SimObjectBase::Ptr> objects_;
   std::list<SimEventBase::Ptr> events_;
+  LinkedList<SimPortBase, &SimPortBase::push_list_> push_list_;
+  LinkedList<SimPortBase, &SimPortBase::pop_list_> pop_list_;
   uint64_t cycles_;
 
   template <typename U> friend class SimPort;
-  friend class SimObjectBase;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
 
-inline SimObjectBase::SimObjectBase(const SimContext&, const std::string& name)
-  : name_(name)
-{}
+template <typename Pkt>
+void SimPort<Pkt>::do_push(const Pkt& pkt, uint64_t delay) {
+  if (sink_ && !tx_cb_) {
+    sink_->do_push(pkt, delay);
+  } else {
+    SimPlatform::instance().schedule_push(this, pkt, delay);
+  }
+}
+
+template <typename Pkt>
+uint64_t SimPort<Pkt>::pop() {
+  SimPlatform::instance().schedule_pop(this);
+  return queue_.front().cycles;
+}
+
+///////////////////////////////////////////////////////////////////////////////
 
 template <typename Impl>
 template <typename... Args>
@@ -376,11 +444,4 @@ typename SimObject<Impl>::Ptr SimObject<Impl>::Create(Args&&... args) {
   return SimPlatform::instance().create_object<Impl>(std::forward<Args>(args)...);
 }
 
-template <typename Pkt>
-void SimPort<Pkt>::push(const Pkt& pkt, uint64_t delay) const {
-  if (sink_ && !tx_cb_) {
-    reinterpret_cast<const SimPort<Pkt>*>(sink_)->push(pkt, delay);
-  } else {
-    SimPlatform::instance().schedule(this, pkt, delay);
-  }
 }

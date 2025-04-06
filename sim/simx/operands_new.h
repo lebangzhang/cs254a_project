@@ -20,93 +20,77 @@
 namespace vortex {
 
 class Operands : public SimObject<Operands> {
-
-private:
-  uint32_t total_stalls_ = 0;
-  uint32_t round_robin_counter = 0;
-
 public:
-  SimPort<instr_trace_t *> Input;
-  SimPort<instr_trace_t *> Output;
-  std::vector<OpcUnit::Ptr> opc_units_;
+  SimPort<instr_trace_t*> Input;
+  SimPort<instr_trace_t*> Output;
 
   Operands(const SimContext &ctx)
       : SimObject<Operands>(ctx, "Operands")
       , Input(this)
       , Output(this)
-      , opc_units_(NUM_OPCS) {
-    total_stalls_ = 0;
-
-    // Instantiate Opc Units
+      , opc_units_(NUM_OPCS)
+      , gpr_unit_(GprUnit::Create())
+      , out_arb_(ArbiterType::RoundRobin, NUM_OPCS) {
+    // create OPC units
     for (uint32_t i = 0; i < NUM_OPCS; i++) {
       opc_units_.at(i) = OpcUnit::Create();
     }
-
-    // Instantiate Reg File
-    auto gpr_unit = GprUnit::Create();
-
-    // Connect Opc to GprUnit
+    // connect OPC to GPR
     for (uint32_t i = 0; i < NUM_OPCS; i++) {
-      opc_units_.at(i)->gpr_req_port.bind(&gpr_unit->ReqIn.at(i));
+      opc_units_.at(i)->gpr_req_port.bind(&gpr_unit_->ReqIn.at(i));
+      gpr_unit_->ReqOut.at(i).bind(&opc_units_.at(i)->gpr_rsp_port);
     }
-
-    for (uint32_t i = 0; i < NUM_OPCS; i++) {
-      opc_units_.at(i)->gpr_rsp_port.bind(&gpr_unit->ReqOut.at(i));
-    }
+    // initialize
+    this->reset();
   }
 
   virtual ~Operands() {}
 
   virtual void reset() {
+    out_arb_.reset();
     total_stalls_ = 0;
   }
 
   virtual void tick() {
+    // process outgoing instructions
+    {
+      BitVector<> valid_set(NUM_OPCS);
+      for (uint32_t i = 0; i < NUM_OPCS; i++) {
+        valid_set.set(i, !opc_units_.at(i)->Output.empty());
+      }
+      if (valid_set.any()) {
+        uint32_t g = out_arb_.grant(valid_set);
+        auto trace = opc_units_.at(g)->Output.front();
+        this->Output.push(trace, 1);
+        opc_units_.at(g)->Output.pop();
+      }
+    }
 
+    // process incoming instructions
     if (Input.empty())
       return;
-
-    auto trace = Input.front();
-    uint32_t stalls = 0;
-
-    // Find free OpcUnit
+    auto trace = this->Input.front();
     for (uint32_t i = 0; i < NUM_OPCS; i++) {
-
-      if (opc_units_.at(i)->Input.empty()) {
-        opc_units_.at(i)->Input.push(trace, 1);
-        Input.pop();
-        break;
-      }
+      // skip is busy
+      if (!opc_units_.at(i)->Input.empty())
+        continue;
+      // assign instruction
+      opc_units_.at(i)->Input.push(trace, 1);
+      Input.pop();
+      break;
     }
-    /*total_stalls_ += stalls;*/
-
-    // Round Robin to search for output
-    for (uint32_t i = 0; i < NUM_OPCS; i++) {
-
-      uint32_t counter = (round_robin_counter + i) % NUM_OPCS;
-
-      if (!opc_units_.at(counter)->Output.empty()) {
-        Output.push(trace, 1);
-
-        round_robin_counter += 1;
-        opc_units_.at(counter)->Output.pop();
-        break;
-      }
-    }
-
-    /*Output.push(trace, 2);*/
-
-    // TO FIX : The Total Stalls
-    /*
-    total_stalls_ += stalls;
-Output.push(trace, 2 + stalls);
-DT(3, "pipeline-operands: " << *trace);
-    */
   }
 
   uint32_t total_stalls() const {
     return total_stalls_;
   }
+
+private:
+  typedef GprUnit<NUM_OPCS, NUM_GPR_BANKS> GPR;
+  std::vector<OpcUnit::Ptr> opc_units_;
+  GPR::Ptr gpr_unit_;
+  uint32_t total_stalls_ = 0;
+  Arbiter out_arb_;
 };
 
 } // namespace vortex

@@ -18,10 +18,21 @@
 #include <assert.h>
 #include <bitmanip.h>
 
+namespace vortex {
+
 template <typename... Args>
 void unused(Args&&...) {}
 
 #define __unused(...) unused(__VA_ARGS__)
+
+#define __assert(cond, msg) \
+  if (!(cond)) { \
+    std::cerr << "Assertion failed: " << msg << "\n"; \
+    std::cerr << "File: " << __FILE__ << "\n"; \
+    std::cerr << "Line: " << __LINE__ << "\n"; \
+    std::cerr << "Function: " << __func__ << "\n"; \
+    std::abort(); \
+  }
 
 // return file extension
 const char* fileExtension(const char* filepath);
@@ -71,8 +82,6 @@ const char* fileExtension(const char* filepath);
 
 void *aligned_malloc(size_t size, size_t alignment);
 void aligned_free(void *ptr);
-
-namespace vortex {
 
 // Verilator data type casting
 template <typename R, size_t W, typename Enable = void>
