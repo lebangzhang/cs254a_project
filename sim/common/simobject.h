@@ -112,7 +112,8 @@ public:
   }
 
   void push(const Pkt& pkt, uint64_t delay = 1) {
-    __assert(!chained_, "cannot execute push on a chained port!")
+    __assert(!chained_, "cannot enqueue a chained port!")
+    __assert(!full(), "cannot enqueue a full port!");
     this->do_push(pkt, delay);
   }
 
