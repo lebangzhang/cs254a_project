@@ -27,6 +27,12 @@
 inline constexpr int XLENB            = (XLEN / 8);
 inline constexpr int VLENB            = (VLEN / 8);
 
+inline constexpr int MAX_NUM_CORES    = 1024;
+inline constexpr int MAX_NUM_THREADS  = 32;
+inline constexpr int MAX_NUM_WARPS    = 32;
+inline constexpr int MAX_NUM_REGS     = 32;
+inline constexpr int NUM_SRC_REGS     = 3;
+
 inline constexpr int LSU_WORD_SIZE    = (XLEN / 8);
 inline constexpr int LSU_CHANNELS     = NUM_LSU_LANES;
 inline constexpr int LSU_NUM_REQS	    = (NUM_LSU_BLOCKS * LSU_CHANNELS);

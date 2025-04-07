@@ -23,20 +23,20 @@ public:
   struct Req {
     uint32_t opd;
     uint32_t rid;
-    uint32_t wis;
+    uint32_t wid;
   };
 
   struct Rsp {
     uint32_t opd;
   };
 
-  std::vector<SimPort<Req>> ReqIn;
-  std::vector<SimPort<Rsp>> ReqOut;
+  std::array<SimPort<Req>, NUM_REQS> ReqIn;
+  std::array<SimPort<Rsp>, NUM_REQS> RspOut;
 
   GprUnit(const SimContext &ctx)
-      : SimObject<GprUnit<NUM_REQS, NUM_BANKS>>(ctx, "GprUnit")
-      , ReqIn(NUM_REQS, this)
-      , ReqOut(NUM_REQS, this) {
+    : SimObject<GprUnit<NUM_REQS, NUM_BANKS>>(ctx, "GprUnit")
+    , ReqIn(make_array<SimPort<Req>, NUM_REQS>(this, 2))
+    , RspOut(make_array<SimPort<Rsp>, NUM_REQS>(this)) {
     total_stalls_ = 0;
   }
 
@@ -49,16 +49,16 @@ public:
   virtual void tick() {
     if (ReqIn.empty())
       return;
-    for (uint32_t i = 0; i < NUM_BANKS; i++) {
-      for (uint32_t j = 0; j < NUM_REQS; j++) {
-        if (!ReqIn.at(i).empty()) {
-          auto& req = ReqIn.at(i).front();
+    for (uint32_t b = 0; b < NUM_BANKS; b++) {
+      for (uint32_t r = 0; r < NUM_REQS; r++) {
+        if (!ReqIn.at(r).empty()) {
+          auto& req = ReqIn.at(r).front();
           uint32_t bank_id = get_bank_id(req);
-          if ((bank_id == i)) {
+          if ((bank_id == b)) {
             Rsp rsp;
             rsp.opd = req.opd;
-            ReqOut.at(i).push(rsp, 1);
-            ReqIn.at(i).pop();
+            RspOut.at(r).push(rsp);
+            ReqIn.at(r).pop();
             break;
           }
         }
@@ -77,5 +77,7 @@ private:
     return req.rid % NUM_BANKS;
   }
 };
+
+typedef GprUnit<NUM_OPCS * NUM_SRC_REGS, NUM_GPR_BANKS> GPR;
 
 } // namespace vortex

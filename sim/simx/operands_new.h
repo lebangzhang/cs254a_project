@@ -29,7 +29,7 @@ public:
       , Input(this)
       , Output(this)
       , opc_units_(NUM_OPCS)
-      , gpr_unit_(GprUnit::Create())
+      , gpr_unit_(GPR::Create())
       , out_arb_(ArbiterType::RoundRobin, NUM_OPCS) {
     // create OPC units
     for (uint32_t i = 0; i < NUM_OPCS; i++) {
@@ -37,8 +37,10 @@ public:
     }
     // connect OPC to GPR
     for (uint32_t i = 0; i < NUM_OPCS; i++) {
-      opc_units_.at(i)->gpr_req_port.bind(&gpr_unit_->ReqIn.at(i));
-      gpr_unit_->ReqOut.at(i).bind(&opc_units_.at(i)->gpr_rsp_port);
+      for (uint32_t j = 0; j < NUM_SRC_REGS; j++) {
+        opc_units_.at(i)->gpr_req_ports.at(j).bind(&gpr_unit_->ReqIn.at(i * NUM_SRC_REGS + j));
+        gpr_unit_->RspOut.at(i * NUM_SRC_REGS + j).bind(&opc_units_.at(i)->gpr_rsp_ports.at(j));
+      }
     }
     // initialize
     this->reset();
@@ -72,7 +74,7 @@ public:
     auto trace = this->Input.front();
     for (uint32_t i = 0; i < NUM_OPCS; i++) {
       // skip is busy
-      if (!opc_units_.at(i)->Input.empty())
+      if (opc_units_.at(i)->Input.full())
         continue;
       // assign instruction
       opc_units_.at(i)->Input.push(trace, 1);
@@ -86,7 +88,6 @@ public:
   }
 
 private:
-  typedef GprUnit<NUM_OPCS, NUM_GPR_BANKS> GPR;
   std::vector<OpcUnit::Ptr> opc_units_;
   GPR::Ptr gpr_unit_;
   uint32_t total_stalls_ = 0;

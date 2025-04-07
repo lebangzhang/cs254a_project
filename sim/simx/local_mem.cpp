@@ -88,7 +88,7 @@ public:
 			if (!bank_req.write || config_.write_reponse) {
 				// send xbar response
 				MemRsp bank_rsp{bank_req.tag, bank_req.cid, bank_req.uuid};
-				mem_xbar_->RspOut.at(i).push(bank_rsp, 1);
+				mem_xbar_->RspOut.at(i).push(bank_rsp);
 			}
 
 			// update perf counters

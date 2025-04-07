@@ -15,6 +15,8 @@
 
 #include <cstdint>
 #include <algorithm>
+#include <array>
+#include <utility>
 #include <assert.h>
 #include <bitmanip.h>
 
@@ -102,5 +104,15 @@ public:
     return reinterpret_cast<R>(&obj);
   }
 };
+
+template <typename T, std::size_t N, typename... Args, std::size_t... Is>
+constexpr std::array<T, N> make_array_impl(std::index_sequence<Is...>, Args&&... args) {
+  return { { (static_cast<void>(Is), T(std::forward<Args>(args)...))... } };
+}
+
+template <typename T, std::size_t N, typename... Args>
+constexpr std::array<T, N> make_array(Args&&... args) {
+  return make_array_impl<T, N>(std::make_index_sequence<N>{}, std::forward<Args>(args)...);
+}
 
 }

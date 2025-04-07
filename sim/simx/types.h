@@ -45,12 +45,6 @@ typedef __int128_t DWordI;
 #error unsupported XLEN
 #endif
 
-#define MAX_NUM_CORES   1024
-#define MAX_NUM_THREADS 32
-#define MAX_NUM_WARPS   32
-#define MAX_NUM_REGS    32
-#define NUM_SRC_REGS    3
-
 typedef std::bitset<MAX_NUM_CORES>   CoreMask;
 typedef std::bitset<MAX_NUM_REGS>    RegMask;
 typedef std::bitset<MAX_NUM_THREADS> ThreadMask;
@@ -892,13 +886,14 @@ public:
       if (!rsp_out.empty()) {
         auto& rsp = rsp_out.front();
         uint32_t g = 0;
+        Rsp in_rsp(rsp);
         if (lg2_num_reqs_ != 0) {
           g = rsp.tag & (R-1);
-          rsp.tag >>= lg2_num_reqs_;
+          in_rsp.tag = rsp.tag >> lg2_num_reqs_;
         }
         uint32_t i = o * R + g;
-        DT(4, this->name() << "-rsp" << i << ": " << rsp);
-        RspIn.at(i).push(rsp, 1);
+        DT(4, this->name() << "-rsp" << i << ": " << in_rsp);
+        RspIn.at(i).push(in_rsp, 1);
         rsp_out.pop();
       }
     }
@@ -1010,11 +1005,12 @@ public:
         uint32_t g = arbiter_.grant(requests);
         auto& rsp_out = RspOut.at(g);
         auto& rsp = rsp_out.front();
+        Rsp in_rsp(rsp);
         if (lg2_inputs_ != 0) {
-          rsp.tag >>= lg2_inputs_;
+          in_rsp.tag = rsp.tag >> lg2_inputs_;
         }
-        DT(4, this->name() << "-rsp" << i << ": " << rsp);
-        RspIn.at(i).push(rsp, 1);
+        DT(4, this->name() << "-rsp" << i << ": " << in_rsp);
+        RspIn.at(i).push(in_rsp, 1);
         rsp_out.pop();
       }
     }

@@ -21,20 +21,18 @@ namespace vortex {
 /* Standard OPC Units */
 class OpcUnit : public SimObject<OpcUnit> {
 public:
-  typedef GprUnit<NUM_OPCS, NUM_GPR_BANKS> GPR;
-
   SimPort<instr_trace_t *> Input;
   SimPort<instr_trace_t *> Output;
 
-  SimPort<GPR::Req> gpr_req_port;
-  SimPort<GPR::Rsp> gpr_rsp_port;
+  std::array<SimPort<GPR::Req>, NUM_SRC_REGS> gpr_req_ports;
+  std::array<SimPort<GPR::Rsp>, NUM_SRC_REGS> gpr_rsp_ports;
 
   OpcUnit(const SimContext &ctx)
     : SimObject<OpcUnit>(ctx, "OpcUnit")
-    , Input(this)
+    , Input(this, 1)
     , Output(this)
-    , gpr_req_port(this)
-    , gpr_rsp_port(this) {
+    , gpr_req_ports(make_array<SimPort<GPR::Req>, NUM_SRC_REGS>(this))
+    , gpr_rsp_ports(make_array<SimPort<GPR::Rsp>, NUM_SRC_REGS>(this)) {
     this->reset();
   }
 
@@ -42,53 +40,66 @@ public:
 
   virtual void reset() {
     opd_to_fetch_.reset();
-    pending_rsp_ = 0;
+    pending_rsps_ = 0;
     total_stalls_ = 0;
   }
 
   virtual void tick() {
-    // process outgoing instructions
-    {
-      //--
-    }
-
     // process incoming instructions
     if (Input.empty())
       return;
     auto trace = Input.front();
-    if (!opd_to_fetch_.any()) {
+    if (0 == pending_rsps_) {
       // calculate operands to fetch
       for (int i = 0; i < NUM_SRC_REGS; i++) {
         if ((trace->src_regs[i].type != RegType::None)
-         && (trace->src_regs[i].idx == 0 && trace->src_regs[i].type == RegType::Integer)) {
-          opd_to_fetch_. set(i);
-          ++pending_rsp_;
+         && !(trace->src_regs[i].idx == 0 && trace->src_regs[i].type == RegType::Integer)) {
+          // skip duplicates
+          bool is_dup = false;
+          for (int j = 0; j < i; j++) {
+            if (trace->src_regs[i].idx == trace->src_regs[j].idx) {
+              is_dup = true;
+              break;
+            }
+          }
+          if (!is_dup) {
+            opd_to_fetch_.set(i);
+            ++pending_rsps_;
+          }
         }
       }
     }
 
-    // Send to GPR
+    // Send GPR requests
     for (int i = 0; i < NUM_SRC_REGS; i++) {
-
-      if (opd_to_fetch[i] != 0) {
-
-        RegReq opd_request;
-        opd_request.src_reg_idx = opd_to_fetch[i];
-
-        /*if(gpr_req_port.empty()){*/
-        gpr_req_port.push(opd_request, 1);
-        opd_to_fetch[i] = 0;
-        /*}*/
-
-        pending_rsp += 1;
+      if (opd_to_fetch_.test(i)) {
+        if (gpr_req_ports.at(i).full())
+          continue;
+        GPR::Req gpr_req;
+        gpr_req.rid = trace->src_regs[i].idx;
+        gpr_req.wid = trace->wid;
+        gpr_req.opd = i;
+        gpr_req_ports.at(i).push(gpr_req);
+        opd_to_fetch_.reset(i);
       }
     }
 
-    // Once all Opds sent out
-    if (pending_rsp == 0) {
+    // process incoming GPR responses
+    for (uint32_t i = 0; i < NUM_SRC_REGS; i++) {
+      if (gpr_rsp_ports.at(i).empty())
+        continue;
+      assert(pending_rsps_ != 0);
+      --pending_rsps_;
+      auto rsp = gpr_rsp_ports.at(i).front();
+      __unused(rsp);
+      gpr_rsp_ports.at(i).pop();
+    }
+
+    // process outgoing instructions
+    if (0 == pending_rsps_) {
+      auto trace = Input.front();
+      this->Output.push(trace);
       Input.pop();
-      /*Output.push(trace, 1);*/
-      locked = false;
     }
   }
 
@@ -98,7 +109,7 @@ public:
 
 private:
   std::bitset<NUM_SRC_REGS> opd_to_fetch_;
-  uint32_t pending_rsp_ = 0;
+  uint32_t pending_rsps_ = 0;
   uint32_t total_stalls_ = 0;
 };
 

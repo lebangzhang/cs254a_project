@@ -62,19 +62,20 @@ public:
     : SimPortBase(module)
     , capacity_(capacity)
     , sink_(nullptr)
+    , source_(nullptr)
     , tx_cb_(nullptr)
-    , chained_(false)
   {}
 
   void bind(SimPort<Pkt>* sink) {
+    __assert(0 == capacity_, "only virtual ports can be used a link!")
     assert(sink_ == nullptr);
-    sink->chained_ = true;
+    sink->source_ = this;
     sink_ = sink;
   }
 
   void unbind() {
     if (sink_) {
-      sink_->chained_ = false;
+      sink_->source_ = nullptr;
       sink_ = nullptr;
     }
   }
@@ -87,33 +88,55 @@ public:
     return sink_;
   }
 
+  SimPort* source() const {
+    return source_;
+  }
+
   bool empty() const {
+    if (sink_) {
+      return sink_->empty();
+    }
     return queue_.empty();
   }
 
   bool full() const {
+    if (sink_) {
+      return sink_->full();
+    }
     return (capacity_ != 0 && queue_.size() >= capacity_);
   }
 
   uint32_t size() const {
+    if (sink_) {
+      return sink_->size();
+    }
     return queue_.size();
   }
 
   uint32_t capacity() const {
+    if (sink_) {
+      return sink_->capacity();
+    }
     return capacity_;
   }
 
   const Pkt& front() const {
+    if (sink_) {
+      return sink_->front();
+    }
     return queue_.front();
   }
 
   Pkt& front() {
+    if (sink_) {
+      return sink_->front();
+    }
     return queue_.front().pkt;
   }
 
   void push(const Pkt& pkt, uint64_t delay = 1) {
-    __assert(!chained_, "cannot enqueue a chained port!")
-    __assert(!full(), "cannot enqueue a full port!");
+    __assert(source_ == nullptr, "cannot enqueue a sink port!")
+    __assert(!this->full(), "cannot enqueue a full port!");
     this->do_push(pkt, delay);
   }
 
@@ -138,8 +161,8 @@ protected:
   std::queue<timed_pkt_t> queue_;
   uint32_t   capacity_;
   SimPort*   sink_;
+  SimPort*   source_;
   TxCallback tx_cb_;
-  bool chained_;
 
   void do_pop() override {
     queue_.pop();
@@ -345,7 +368,6 @@ public:
   }
 
   void tick() {
-    //printf("*** tick: %lu\n", cycles_);
     // fire events
     auto evt_it = events_.begin();
     auto evt_it_end = events_.end();
@@ -391,7 +413,6 @@ private:
 
   template <typename Pkt>
   void schedule_push(SimPort<Pkt>* port, const Pkt& pkt, uint64_t delay) {
-    //printf("*** schedule_push: %s::%p\n", port->module()->name().c_str(), port);
     assert(delay != 0);
     if (port->capacity() != 0) {
       __assert(0 == push_list_.count(port), "cannot enqueue a port multiple times during the same cycle!");
@@ -406,7 +427,6 @@ private:
 
   template <typename Pkt>
   void schedule_pop(SimPort<Pkt>* port) {
-    //printf("*** schedule_pop: %s::%p\n", port->module()->name().c_str(), port);
     __assert(0 == pop_list_.count(port), "cannot dequeue a port multiple times during the same cycle!");
     pop_list_.push_back(port);
   }
@@ -434,6 +454,8 @@ void SimPort<Pkt>::do_push(const Pkt& pkt, uint64_t delay) {
 template <typename Pkt>
 uint64_t SimPort<Pkt>::pop() {
   SimPlatform::instance().schedule_pop(this);
+  __assert(sink_ == nullptr, "cannot dequeue a stub port!")
+  __assert(!this->empty(), "cannot dequeue an empty port!");
   return queue_.front().cycles;
 }
 
