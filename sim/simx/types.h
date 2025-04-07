@@ -657,10 +657,15 @@ public:
   struct RspType {
     Type     data;
     uint32_t index;
+
     RspType(const Type& _data, uint32_t _index = 0)
       : data(_data)
       , index(_index)
     {}
+
+    operator Type() const {
+      return data;
+    }
   };
 
   std::vector<SimPort<ReqType>> Inputs;
@@ -746,10 +751,15 @@ public:
   struct RspType {
     Type     data;
     uint32_t index;
+
     RspType(const Type& _data, uint32_t _index = 0)
       : data(_data)
       , index(_index)
     {}
+
+    operator Type() const {
+      return data;
+    }
   };
 
   std::vector<SimPort<ReqType>> Inputs;
@@ -867,17 +877,28 @@ public:
     , RspIn(num_inputs, this)
     , ReqOut(num_outputs, this)
     , RspOut(num_outputs, this)
-    , delay_(delay)
+    , arbiter_(nullptr)
     , lg2_num_reqs_(log2ceil(num_inputs / num_outputs))
-    , arbiters_(num_outputs, {type, 1u << lg2_num_reqs_})
   {
-    assert(delay != 0);
-    assert(num_inputs <= 64);
-    assert(num_outputs <= 64);
-    assert(num_inputs >= num_outputs);
-
-    // bypass mode
-    if (num_inputs == num_outputs) {
+    if (num_inputs != num_outputs) {
+      // allocate arbiter
+      arbiter_ = ReqArb::Create(name, type, num_inputs, num_outputs, delay);
+      // bind arbiter inputs and outputs
+      for (uint32_t i = 0; i < num_inputs; ++i) {
+        ReqIn.at(i).bind(&arbiter_->Inputs.at(i));
+      }
+      for (uint32_t o = 0; o < num_outputs; ++o) {
+        arbiter_->Outputs.at(o).bind(&ReqOut.at(o),
+          [lg2_num_reqs = lg2_num_reqs_](const typename ReqArb::RspType& arb_rsp) {
+            Req req(arb_rsp.data);
+            if (lg2_num_reqs != 0) {
+              req.tag = (req.tag << lg2_num_reqs) | arb_rsp.index;
+            }
+            return req;
+          });
+      }
+    } else {
+      // bypass mode
       for (uint32_t i = 0; i < num_inputs; ++i) {
         ReqIn.at(i).bind(&ReqOut.at(i));
         RspOut.at(i).bind(&RspIn.at(i));
@@ -886,19 +907,15 @@ public:
   }
 
   void reset() {
-    for (auto& arb : arbiters_) {
-      arb.reset();
-    }
+    //--
   }
 
   void tick() {
-    uint32_t I = ReqIn.size();
+    if (!arbiter_)
+      return;
+
     uint32_t O = ReqOut.size();
     uint32_t R = 1 << lg2_num_reqs_;
-
-    // skip bypass mode
-    if (I == O)
-      return;
 
     // process outgoing responses
     for (uint32_t o = 0; o < O; ++o) {
@@ -917,36 +934,13 @@ public:
         rsp_out.pop();
       }
     }
-
-    // process incoming requests
-    for (uint32_t o = 0; o < O; ++o) {
-      BitVector<> requests(R);
-      for (uint32_t r = 0; r < R; ++r) {
-        uint32_t i = o * R + r;
-        if (i >= I)
-          continue;
-        requests.set(r, !ReqIn.at(i).empty());
-      }
-      if (requests.any()) {
-        uint32_t g = arbiters_.at(o).grant(requests);
-        uint32_t i = o * R + g;
-        auto& req_in = ReqIn.at(i);
-        auto& req = req_in.front();
-        if (lg2_num_reqs_ != 0) {
-          req.tag = (req.tag << lg2_num_reqs_) | g;
-        }
-        DT(4, this->name() << "-req" << o << ": " << req);
-        ReqOut.at(o).push(req, delay_);
-        req_in.pop();
-      }
-    }
   }
 
 protected:
+  typedef TxArbiter<Req> ReqArb;
 
-  uint32_t delay_;
+  typename ReqArb::Ptr arbiter_;
   uint32_t lg2_num_reqs_;
-  std::vector<Arbiter> arbiters_;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -968,31 +962,40 @@ public:
     const char* name,
     ArbiterType type,
     uint32_t num_inputs,
-    uint32_t num_outputs = 1,
-    uint32_t delay = 1,
-    std::function<uint32_t(const Req& req)> output_sel = nullptr
+    uint32_t num_outputs,
+    std::function<uint32_t(const Req& req)> output_sel,
+    uint32_t delay = 1
   )
     : SimObject<TxRxCrossBar<Req, Rsp>>(ctx, name)
     , ReqIn(num_inputs, this)
     , RspIn(num_inputs, this)
     , ReqOut(num_outputs, this)
     , RspOut(num_outputs, this)
+    , crossbar_(nullptr)
     , arbiter_(type, num_outputs)
-    , delay_(delay)
-    , lg2_inputs_(log2ceil(num_inputs))
-    , lg2_outputs_(log2ceil(num_outputs))
-    , collisions_(0) {
-    assert(delay != 0);
-    assert(num_inputs <= 64);
-    assert(num_outputs <= 64);
-    assert(ispow2(num_inputs));
-    assert(ispow2(num_outputs));
-    if (output_sel != nullptr) {
-      output_sel_ = output_sel;
+    , lg2_inputs_(log2ceil(num_inputs)) {
+
+    if (num_inputs != 1 || num_outputs != 1) {
+      // allocate crossbar
+      crossbar_ = ReqXbar::Create(name, num_inputs, num_outputs, output_sel, delay);
+      // bind crossbar inputs and outputs
+      for (uint32_t i = 0; i < num_inputs; ++i) {
+        ReqIn.at(i).bind(&crossbar_->Inputs.at(i));
+      }
+      for (uint32_t o = 0; o < num_outputs; ++o) {
+        crossbar_->Outputs.at(o).bind(&ReqOut.at(o),
+          [lg2_inputs = lg2_inputs_](const typename ReqXbar::RspType& xbar_rsp) {
+            Req req(xbar_rsp.data);
+            if (lg2_inputs != 0) {
+              req.tag = (req.tag << lg2_inputs) | xbar_rsp.index;
+            }
+            return req;
+          });
+      }
     } else {
-      output_sel_ = [this](const Req& req) {
-        return (uint32_t)bit_getw(req.addr, 0, (lg2_outputs_-1));
-      };
+      // bypass mode
+      ReqIn.at(0).bind(&ReqOut.at(0));
+      RspOut.at(0).bind(&RspIn.at(0));
     }
   }
 
@@ -1001,6 +1004,9 @@ public:
   }
 
   void tick() {
+    if (!crossbar_)
+      return;
+
     uint32_t I = ReqIn.size();
     uint32_t O = ReqOut.size();
     uint32_t R = 1 << lg2_inputs_;
@@ -1034,56 +1040,18 @@ public:
         rsp_out.pop();
       }
     }
-
-    // process incoming requests
-    for (uint32_t o = 0; o < O; ++o) {
-      int32_t input_idx = -1;
-      bool has_collision = false;
-      for (uint32_t i = 0; i < I; ++i) {
-        auto& req_in = ReqIn.at(i);
-        if (req_in.empty())
-          continue;
-        auto& req = req_in.front();
-        uint32_t output_idx = 0;
-        if (lg2_outputs_ != 0) {
-          // select output index
-          output_idx = output_sel_(req);
-          // skip if request is not going to current output
-          if (output_idx != o)
-            continue;
-        }
-        if (input_idx != -1) {
-          has_collision = true;
-          break;
-        }
-        input_idx = i;
-      }
-      if (input_idx != -1) {
-        auto& req_in = ReqIn.at(input_idx);
-        auto& req = req_in.front();
-        if (lg2_inputs_ != 0) {
-          req.tag = (req.tag << lg2_inputs_) | input_idx;
-        }
-        DT(4, this->name() << "-req" << o << ": " << req);
-        ReqOut.at(o).push(req, delay_);
-        req_in.pop();
-        collisions_ += has_collision;
-      }
-    }
   }
 
   uint64_t collisions() const {
-    return collisions_;
+    return crossbar_->collisions();
   }
 
 protected:
+  typedef TxCrossBar<Req> ReqXbar;
 
-  Arbiter  arbiter_;
-  uint32_t delay_;
+  typename ReqXbar::Ptr crossbar_;
+  Arbiter arbiter_;
   uint32_t lg2_inputs_;
-  uint32_t lg2_outputs_;
-  std::function<uint32_t(const Req& req)> output_sel_;
-  uint64_t collisions_;
 };
 
 ///////////////////////////////////////////////////////////////////////////////

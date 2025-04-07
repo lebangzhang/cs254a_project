@@ -106,6 +106,17 @@ public:
     };
   }
 
+  template <typename U, typename Converter>
+  void bind(SimPort<U>* sink, const Converter& converter) {
+    __assert(0 == capacity_, "only virtual ports can be used a link!")
+    assert(sink_ == nullptr);
+    sink->source_ = this;
+    sink_ = sink;
+    sink_transfer_ = [sink, converter](const Pkt& pkt, uint64_t cycles) {
+      sink->transfer(static_cast<U>(converter(pkt)), cycles);
+    };
+  }
+
   void unbind() {
     if (sink_) {
       sink_->source_ = nullptr;

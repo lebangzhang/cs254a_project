@@ -45,7 +45,7 @@ public:
 		snprintf(sname, 100, "%s-xbar", simobject->name().c_str());
 		uint32_t lg2_line_size = log2ceil(config_.line_size);
 		uint32_t num_banks = 1 << config.B;
-		mem_xbar_ = MemCrossBar::Create(sname, ArbiterType::Priority, config.num_reqs, num_banks, 1,
+		mem_xbar_ = MemCrossBar::Create(sname, ArbiterType::Priority, config.num_reqs, num_banks,
 		 [lg2_line_size, num_banks](const MemCrossBar::ReqType& req) {
     	// Custom logic to calculate the output index using bank interleaving
 			return (uint32_t)((req.addr >> lg2_line_size) & (num_banks-1));
