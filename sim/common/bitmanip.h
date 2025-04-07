@@ -118,6 +118,8 @@ constexpr uint64_t bit_reverse(uint64_t bits) {
 
 constexpr uint64_t bit_reverse(uint64_t bits, uint32_t width) {
   assert(width <= 64);
+  if (width == 64)
+    return bit_reverse(bits);
   uint64_t reversed(0);
   for (uint32_t i = 0; i < width; ++i) {
     if (bits & (1ULL << i)) {

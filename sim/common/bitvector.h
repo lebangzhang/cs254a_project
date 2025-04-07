@@ -30,8 +30,17 @@ private:
     return pos / BITS_PER_WORD;
   }
 
-  constexpr T bitMask(size_t pos) const {
+  constexpr T wordOffset(size_t pos) const {
     return T(1) << (pos % BITS_PER_WORD);
+  }
+
+  constexpr T bitMask(size_t size) const {
+    if (size == 0)
+      return 0;
+    if (size < BITS_PER_WORD) {
+      return (T(1) << size) - 1;
+    }
+    return ~T(0);
   }
 
   void updateAllZero() {
@@ -39,6 +48,17 @@ private:
       all_zero_ = (single_word_ == 0);
     } else {
       all_zero_ = std::all_of(words_.begin(), words_.end(), [](T word) { return word == 0; });
+    }
+  }
+
+  void clearUnusedBits() {
+    if (size_ <= BITS_PER_WORD) {
+      single_word_ &= bitMask(size_);
+    } else {
+      size_t last_word_bits = size_ % BITS_PER_WORD;
+      if (last_word_bits != 0) {
+        words_.back() &= bitMask(last_word_bits);
+      }
     }
   }
 
@@ -50,7 +70,8 @@ public:
     if (size <= BITS_PER_WORD) {
       single_word_ = 0;
     } else {
-      words_.resize((size + (BITS_PER_WORD - 1)) / BITS_PER_WORD, 0);
+      size_t num_blocks = (size + (BITS_PER_WORD - 1)) / BITS_PER_WORD;
+      words_.resize(num_blocks, 0);
     }
   }
 
@@ -59,9 +80,9 @@ public:
   void set(size_t pos) {
     if (pos >= size_) throw std::out_of_range("Index out of range");
     if (size_ <= BITS_PER_WORD) {
-      single_word_ |= this->bitMask(pos);
+      single_word_ |= this->wordOffset(pos);
     } else {
-      words_[this->wordIndex(pos)] |= this->bitMask(pos);
+      words_[this->wordIndex(pos)] |= this->wordOffset(pos);
     }
     all_zero_ = false;
   }
@@ -86,9 +107,9 @@ public:
   void reset(size_t pos) {
     if (pos >= size_) throw std::out_of_range("Index out of range");
     if (size_ <= BITS_PER_WORD) {
-      single_word_ &= ~this->bitMask(pos);
+      single_word_ &= ~this->wordOffset(pos);
     } else {
-      words_[this->wordIndex(pos)] &= ~this->bitMask(pos);
+      words_[this->wordIndex(pos)] &= ~this->wordOffset(pos);
     }
     this->updateAllZero();
   }
@@ -96,9 +117,9 @@ public:
   bool test(size_t pos) const {
     if (pos >= size_) throw std::out_of_range("Index out of range");
     if (size_ <= BITS_PER_WORD) {
-      return single_word_ & this->bitMask(pos);
+      return single_word_ & this->wordOffset(pos);
     } else {
-      return words_[this->wordIndex(pos)] & this->bitMask(pos);
+      return words_[this->wordIndex(pos)] & this->wordOffset(pos);
     }
   }
 
@@ -107,22 +128,29 @@ public:
   }
 
   void resize(size_t new_size) {
-    if (new_size <= BITS_PER_WORD && size_ <= BITS_PER_WORD){
-      size_ = new_size;
+    if (new_size == size_)
       return;
-    }
     if (new_size <= BITS_PER_WORD) {
-      words_.clear();
-      single_word_ = 0;
+      T new_word;
+      if (size_ <= BITS_PER_WORD) {
+        new_word = single_word_;
+      } else {
+        new_word = words_.at(0);
+        words_.clear();
+      }
+      single_word_ = new_word;
     } else {
-      words_.resize((new_size + (BITS_PER_WORD - 1)) / BITS_PER_WORD, 0);
+      size_t num_blocks = (new_size + (BITS_PER_WORD - 1)) / BITS_PER_WORD;
+      words_.resize(num_blocks, 0);
     }
     size_ = new_size;
+    this->clearUnusedBits();
     this->updateAllZero();
   }
 
   bool operator==(const BitVector& other) const {
-    if (size_ != other.size_) return false;
+    if (size_ != other.size_)
+      return false;
     if (size_ <= BITS_PER_WORD) {
       return single_word_ == other.single_word_;
     } else {
@@ -185,6 +213,7 @@ public:
         word = ~word;
       }
     }
+    this->clearUnusedBits();
     this->updateAllZero();
   }
 
@@ -198,13 +227,7 @@ public:
     if (size_ == 0)
       return;
     if (size_ <= BITS_PER_WORD) {
-      T reversed = 0;
-      for (size_t i = 0; i < size_; ++i) {
-        if (single_word_ & (T(1) << i)) {
-          reversed |= T(1) << (size_ - 1 - i);
-        }
-      }
-      single_word_ = reversed;
+      single_word_ = static_cast<T>(bit_reverse(single_word_, BITS_PER_WORD));
     } else {
       size_t remaining_bits = size_ % BITS_PER_WORD;
       if (remaining_bits != 0) {
@@ -223,19 +246,31 @@ public:
       } else {
         std::reverse(words_.begin(), words_.end());
         for (auto &word : words_) {
-          word = static_cast<T>(bit_reverse(static_cast<uint64_t>(word)));
+          word = static_cast<T>(bit_reverse(word, BITS_PER_WORD));
         }
       }
     }
   }
 
   size_t count() const {
-    if (size_ <= BITS_PER_WORD) {
-      return __builtin_popcount(single_word_);
+   if (size_ <= BITS_PER_WORD) {
+      if constexpr (sizeof(T) <= sizeof(unsigned int)) {
+        return __builtin_popcount(single_word_);
+      } else if constexpr (sizeof(T) <= sizeof(unsigned long)) {
+        return __builtin_popcountl(single_word_);
+      } else {
+        return __builtin_popcountll(single_word_);
+      }
     } else {
       size_t count = 0;
       for (auto word : words_) {
-        count += __builtin_popcount(word);
+        if constexpr (sizeof(T) <= sizeof(unsigned int)) {
+          count += __builtin_popcount(word);
+        } else if constexpr (sizeof(T) <= sizeof(unsigned long)) {
+          count += __builtin_popcountl(word);
+        } else {
+          count += __builtin_popcountll(word);
+        }
       }
       return count;
     }
@@ -254,7 +289,7 @@ public:
     T full_mask = ~T(0);
     T rem_mask = (T(1) << remaining_bits) - 1;
     if (size_ <= BITS_PER_WORD) {
-      auto expected = (remaining_bits == 0) ? full_mask : rem_mask;
+      auto expected = (remaining_bits != 0) ? rem_mask : full_mask;
       return (single_word_ == expected);
     } else {
       size_t num_blocks = size_ / BITS_PER_WORD;
@@ -262,7 +297,7 @@ public:
         if (words_[i] != full_mask)
           return false;
       }
-      if (remaining_bits > 0) {
+      if (remaining_bits != 0) {
         if ((words_[num_blocks] & rem_mask) != rem_mask)
           return false;
       }
@@ -276,8 +311,7 @@ public:
       return *this;
     }
     if (size_ <= BITS_PER_WORD) {
-      single_word_ <<= shift;
-      single_word_ &= (T(1) << size_) - 1;
+      single_word_ = single_word_ << shift;
     } else {
       size_t word_shift = shift / BITS_PER_WORD;
       size_t bit_shift = shift % BITS_PER_WORD;
@@ -296,6 +330,7 @@ public:
         words_[0] <<= bit_shift;
       }
     }
+    this->clearUnusedBits();
     this->updateAllZero();
     return *this;
   }
@@ -405,13 +440,16 @@ public:
 
 }
 
-// std::hash specialization for BitVector
 namespace std {
 
 template <typename T>
 struct hash<vortex::BitVector<T>> {
   size_t operator()(const vortex::BitVector<T>& bv) const {
-    return hash<std::string>()(bv.to_string());
+    size_t seed = bv.size_;
+    for (auto word : bv.words_) {
+      seed ^= hash<T>()(word) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+    }
+    return seed;
   }
 };
 
