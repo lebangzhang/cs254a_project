@@ -145,40 +145,35 @@ public:
     return old;
   }
 
+  friend std::ostream &operator<<(std::ostream &os, const instr_trace_t& trace) {
+    os << "cid=" << trace.cid;
+    os << ", wid=" << trace.wid;
+    os << ", tmask=";
+    for (uint32_t i = 0, n = trace.arch.num_threads(); i < n; ++i) {
+        os << trace.tmask.test(i);
+    }
+    os << ", PC=0x" << std::hex << trace.PC << std::dec;
+    os << ", wb=" << trace.wb;
+    if (trace.dst_reg.type != RegType::None) {
+      os << ", rd=" << trace.dst_reg.type << trace.dst_reg.idx;
+    }
+    for (uint32_t i = 0; i < trace.src_regs.size(); ++i) {
+      if (trace.src_regs[i].type != RegType::None) {
+        os << ", rs" << i << "=" << trace.src_regs[i].type << trace.src_regs[i].idx;
+      }
+    }
+    os << ", ex=" << trace.fu_type;
+    if (trace.pid != -1) {
+      os << ", pid=" << trace.pid;
+      os << ", sop=" << trace.sop;
+      os << ", eop=" << trace.eop;
+    }
+    os << " (#" << trace.uuid << ")";
+    return os;
+  }
+
 private:
   bool log_once_;
 };
-
-inline std::ostream &operator<<(std::ostream &os, const instr_trace_t& trace) {
-  os << "cid=" << trace.cid;
-  os << ", wid=" << trace.wid;
-  os << ", tmask=";
-  for (uint32_t i = 0, n = trace.arch.num_threads(); i < n; ++i) {
-      os << trace.tmask.test(i);
-  }
-  os << ", PC=0x" << std::hex << trace.PC << std::dec;
-  os << ", wb=" << trace.wb;
-  if (trace.dst_reg.type != RegType::None) {
-     os << ", rd=" << trace.dst_reg.type << trace.dst_reg.idx;
-  }
-  for (uint32_t i = 0; i < trace.src_regs.size(); ++i) {
-    if (trace.src_regs[i].type != RegType::None) {
-      os << ", rs" << i << "=" << trace.src_regs[i].type << trace.src_regs[i].idx;
-    }
-  }
-  os << ", ex=" << trace.fu_type;
-  if (trace.pid != -1) {
-    os << ", pid=" << trace.pid;
-    os << ", sop=" << trace.sop;
-    os << ", eop=" << trace.eop;
-  }
-  os << " (#" << trace.uuid << ")";
-  return os;
-}
-
-inline std::ostream &operator<<(std::ostream &os, instr_trace_t* trace) {
-  os << *trace;
-  return os;
-}
 
 }

@@ -65,6 +65,7 @@ public:
         auto trace = opc_units_.at(g)->Output.front();
         this->Output.push(trace, 1);
         opc_units_.at(g)->Output.pop();
+        DT(3, "pipeline-operands: " << *trace);
       }
     }
 
@@ -77,7 +78,7 @@ public:
       if (opc_units_.at(i)->Input.full())
         continue;
       // assign instruction
-      opc_units_.at(i)->Input.push(trace, 1);
+      opc_units_.at(i)->Input.push(trace);
       Input.pop();
       break;
     }

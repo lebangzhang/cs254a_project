@@ -36,14 +36,38 @@ public:
     return module_;
   }
 
+  SimPortBase* sink() const {
+    return sink_;
+  }
+
+  SimPortBase* source() const {
+    return source_;
+  }
+
+  virtual bool empty() const = 0;
+
+  virtual bool full() const = 0;
+
+  virtual uint32_t size() const = 0;
+
+  virtual uint32_t capacity() const = 0;
+
 protected:
-  SimPortBase(SimObjectBase* module): module_(module) {}
+  SimPortBase(SimObjectBase* module, uint32_t capacity)
+    : module_(module)
+    , capacity_(capacity)
+    , sink_(nullptr)
+    , source_(nullptr)
+  {}
 
   virtual void do_pop() = 0;
 
   SimPortBase& operator=(const SimPortBase&) = delete;
 
   SimObjectBase* module_;
+  uint32_t       capacity_;
+  SimPortBase*   sink_;
+  SimPortBase*   source_;
 
   LinkedListNode<SimPortBase> pop_list_;
   LinkedListNode<SimPortBase> push_list_;
@@ -59,10 +83,7 @@ public:
   typedef std::function<void (const Pkt&, uint64_t)> TxCallback;
 
   SimPort(SimObjectBase* module, uint32_t capacity = 0)
-    : SimPortBase(module)
-    , capacity_(capacity)
-    , sink_(nullptr)
-    , source_(nullptr)
+    : SimPortBase(module, capacity)
     , tx_cb_(nullptr)
   {}
 
@@ -71,49 +92,50 @@ public:
     assert(sink_ == nullptr);
     sink->source_ = this;
     sink_ = sink;
+    sink_transfer_ = nullptr;
+  }
+
+  template <typename U>
+  void bind(SimPort<U>* sink) {
+    __assert(0 == capacity_, "only virtual ports can be used a link!")
+    assert(sink_ == nullptr);
+    sink->source_ = this;
+    sink_ = sink;
+    sink_transfer_ = [sink](const Pkt& pkt, uint64_t cycles) {
+      sink->transfer(static_cast<U>(pkt), cycles);
+    };
   }
 
   void unbind() {
     if (sink_) {
       sink_->source_ = nullptr;
       sink_ = nullptr;
+      sink_transfer_ = nullptr;
     }
   }
 
-  bool connected() const {
-    return (sink_ != nullptr);
-  }
-
-  SimPort* sink() const {
-    return sink_;
-  }
-
-  SimPort* source() const {
-    return source_;
-  }
-
-  bool empty() const {
+  bool empty() const override {
     if (sink_) {
       return sink_->empty();
     }
     return queue_.empty();
   }
 
-  bool full() const {
+  bool full() const override {
     if (sink_) {
       return sink_->full();
     }
     return (capacity_ != 0 && queue_.size() >= capacity_);
   }
 
-  uint32_t size() const {
+  uint32_t size() const override {
     if (sink_) {
       return sink_->size();
     }
     return queue_.size();
   }
 
-  uint32_t capacity() const {
+  uint32_t capacity() const override {
     if (sink_) {
       return sink_->capacity();
     }
@@ -121,35 +143,23 @@ public:
   }
 
   const Pkt& front() const {
-    if (sink_) {
-      return sink_->front();
-    }
+    __assert(sink_ == nullptr, "cannot be called on a stub port!")
+    __assert(!this->empty(), "port is empty!");
     return queue_.front();
   }
 
   Pkt& front() {
-    if (sink_) {
-      return sink_->front();
-    }
+    __assert(sink_ == nullptr, "cannot be called on a stub port!")
+    __assert(!this->empty(), "port is empty!");
     return queue_.front().pkt;
   }
 
-  void push(const Pkt& pkt, uint64_t delay = 1) {
-    __assert(source_ == nullptr, "cannot enqueue a sink port!")
-    __assert(!this->full(), "cannot enqueue a full port!");
-    this->do_push(pkt, delay);
-  }
+  void push(const Pkt& pkt, uint64_t delay = 1);
 
   uint64_t pop();
 
   void tx_callback(const TxCallback& callback) {
     tx_cb_ = callback;
-  }
-
-  uint64_t arrival_time() const {
-    if (queue_.empty())
-      return 0;
-    return queue_.front().cycles;
   }
 
 protected:
@@ -159,31 +169,32 @@ protected:
   };
 
   std::queue<timed_pkt_t> queue_;
-  uint32_t   capacity_;
-  SimPort*   sink_;
-  SimPort*   source_;
   TxCallback tx_cb_;
+  TxCallback sink_transfer_;
+
+  void transfer(const Pkt& pkt, uint64_t cycles) {
+    if (tx_cb_) {
+      tx_cb_(pkt, cycles);
+    }
+    if (sink_) {
+      if (sink_transfer_) {
+        sink_transfer_(pkt, cycles);
+      } else {
+        reinterpret_cast<SimPort<Pkt>*>(sink_)->transfer(pkt, cycles);
+      }
+    } else {
+      queue_.push({pkt, cycles});
+    }
+  }
 
   void do_pop() override {
     queue_.pop();
   }
 
-  void do_push(const Pkt& pkt, uint64_t delay);
-
-  void transfer(const Pkt& data, uint64_t cycles) {
-    if (tx_cb_) {
-      tx_cb_(data, cycles);
-    }
-    if (sink_) {
-      sink_->transfer(data, cycles);
-    } else {
-      queue_.push({data, cycles});
-    }
-  }
-
   SimPort& operator=(const SimPort&) = delete;
 
   template <typename U> friend class SimPortEvent;
+  template <typename U> friend class SimPort;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -443,19 +454,17 @@ private:
 ///////////////////////////////////////////////////////////////////////////////
 
 template <typename Pkt>
-void SimPort<Pkt>::do_push(const Pkt& pkt, uint64_t delay) {
-  if (sink_ && !tx_cb_) {
-    sink_->do_push(pkt, delay);
-  } else {
-    SimPlatform::instance().schedule_push(this, pkt, delay);
-  }
+void SimPort<Pkt>::push(const Pkt& pkt, uint64_t delay) {
+  __assert(source_ == nullptr, "cannot be called on a sink port!")
+  __assert(!this->full(), "port is full!");
+  SimPlatform::instance().schedule_push(this, pkt, delay);
 }
 
 template <typename Pkt>
 uint64_t SimPort<Pkt>::pop() {
+  __assert(sink_ == nullptr, "cannot be called on a stub port!")
+  __assert(!this->empty(), "port is empty!");
   SimPlatform::instance().schedule_pop(this);
-  __assert(sink_ == nullptr, "cannot dequeue a stub port!")
-  __assert(!this->empty(), "cannot dequeue an empty port!");
   return queue_.front().cycles;
 }
 

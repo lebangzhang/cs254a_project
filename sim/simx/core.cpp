@@ -386,7 +386,7 @@ void Core::commit() {
     auto& commit_arb = commit_arbs_.at(isw);
     if (commit_arb->Outputs.at(0).empty())
       continue;
-    auto trace = commit_arb->Outputs.at(0).front();
+    auto trace = commit_arb->Outputs.at(0).front().data;
 
     // advance to commit stage
     DT(3, "pipeline-commit: " << *trace);

@@ -24,58 +24,69 @@ public:
     uint32_t opd;
     uint32_t rid;
     uint32_t wid;
+
+    friend std::ostream& operator<<(std::ostream& os, const Req& req) {
+      os << "opd=" << req.opd << ", rid=" << req.rid << ", wid=" << req.wid;
+      return os;
+    }
   };
 
   struct Rsp {
     uint32_t opd;
+
+    friend std::ostream& operator<<(std::ostream& os, const Rsp& rsp) {
+      os << "opd=" << rsp.opd;
+      return os;
+    }
   };
+
+  using ReqXbar = TxCrossBar<Req>;
 
   std::array<SimPort<Req>, NUM_REQS> ReqIn;
   std::array<SimPort<Rsp>, NUM_REQS> RspOut;
 
   GprUnit(const SimContext &ctx)
     : SimObject<GprUnit<NUM_REQS, NUM_BANKS>>(ctx, "GprUnit")
-    , ReqIn(make_array<SimPort<Req>, NUM_REQS>(this, 2))
+    , ReqIn(make_array<SimPort<Req>, NUM_REQS>(this))
     , RspOut(make_array<SimPort<Rsp>, NUM_REQS>(this)) {
-    total_stalls_ = 0;
+    char sname[100];
+		snprintf(sname, 100, "%s-xbar", this->name().c_str());
+    crossbar_ = ReqXbar::Create(sname, NUM_REQS, NUM_BANKS,
+		 [](const Req& req)->uint32_t {
+			return req.rid % NUM_BANKS;
+		});
+    for (uint32_t i = 0; i < NUM_REQS; ++i) {
+			ReqIn.at(i).bind(&crossbar_->Inputs.at(i));
+		}
   }
 
   virtual ~GprUnit() {}
 
   virtual void reset() {
-    total_stalls_ = 0;
+    //--
   }
 
   virtual void tick() {
     if (ReqIn.empty())
       return;
     for (uint32_t b = 0; b < NUM_BANKS; b++) {
-      for (uint32_t r = 0; r < NUM_REQS; r++) {
-        if (!ReqIn.at(r).empty()) {
-          auto& req = ReqIn.at(r).front();
-          uint32_t bank_id = get_bank_id(req);
-          if ((bank_id == b)) {
-            Rsp rsp;
-            rsp.opd = req.opd;
-            RspOut.at(r).push(rsp);
-            ReqIn.at(r).pop();
-            break;
-          }
-        }
-      }
+      auto& output = crossbar_->Outputs.at(b);
+      if (output.empty())
+        continue;
+      auto& req = output.front();
+      Rsp rsp;
+      rsp.opd = req.first.opd;
+      RspOut.at(req.second).push(rsp);
+      output.pop();
     }
   }
 
   uint32_t total_stalls() const {
-    return total_stalls_;
+    return crossbar_.collisions();
   }
 
 private:
-  uint32_t total_stalls_ = 0;
-
-  uint32_t get_bank_id(const Req& req) const {
-    return req.rid % NUM_BANKS;
-  }
+  typename ReqXbar::Ptr crossbar_;
 };
 
 typedef GprUnit<NUM_OPCS * NUM_SRC_REGS, NUM_GPR_BANKS> GPR;

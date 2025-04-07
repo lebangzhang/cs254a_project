@@ -479,24 +479,24 @@ struct LsuReq {
     , cid(0)
     , uuid(0)
   {}
-};
 
-inline std::ostream &operator<<(std::ostream &os, const LsuReq& req) {
-  os << "rw=" << req.write << ", mask=" << req.mask << ", addr={";
-  bool first_addr = true;
-  for (size_t i = 0; i < req.mask.size(); ++i) {
-    if (!first_addr) os << ", ";
-    first_addr = false;
-    if (req.mask.test(i)) {
-      os << "0x" << std::hex << req.addrs.at(i) << std::dec;
-    } else {
-      os << "-";
+  friend std::ostream &operator<<(std::ostream &os, const LsuReq& req) {
+    os << "rw=" << req.write << ", mask=" << req.mask << ", addr={";
+    bool first_addr = true;
+    for (size_t i = 0; i < req.mask.size(); ++i) {
+      if (!first_addr) os << ", ";
+      first_addr = false;
+      if (req.mask.test(i)) {
+        os << "0x" << std::hex << req.addrs.at(i) << std::dec;
+      } else {
+        os << "-";
+      }
     }
+    os << "}, tag=0x" << std::hex << req.tag << std::dec << ", cid=" << req.cid;
+    os << " (#" << req.uuid << ")";
+    return os;
   }
-  os << "}, tag=0x" << std::hex << req.tag << std::dec << ", cid=" << req.cid;
-  os << " (#" << req.uuid << ")";
-  return os;
-}
+};
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -512,13 +512,13 @@ struct LsuRsp {
     , cid(0)
     , uuid(0)
   {}
-};
 
-inline std::ostream &operator<<(std::ostream &os, const LsuRsp& rsp) {
-  os << "mask=" << rsp.mask << ", tag=0x" << std::hex << rsp.tag << std::dec << ", cid=" << rsp.cid;
-  os << " (#" << rsp.uuid << ")";
-  return os;
-}
+  friend std::ostream &operator<<(std::ostream &os, const LsuRsp& rsp) {
+    os << "mask=" << rsp.mask << ", tag=0x" << std::hex << rsp.tag << std::dec << ", cid=" << rsp.cid;
+    os << " (#" << rsp.uuid << ")";
+    return os;
+  }
+};
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -543,15 +543,15 @@ struct MemReq {
     , cid(_cid)
     , uuid(_uuid)
   {}
-};
 
-inline std::ostream &operator<<(std::ostream &os, const MemReq& req) {
-  os << "rw=" << req.write << ", ";
-  os << "addr=0x" << std::hex << req.addr << std::dec << ", type=" << req.type;
-  os << ", tag=0x" << std::hex << req.tag << std::dec << ", cid=" << req.cid;
-  os << " (#" << req.uuid << ")";
-  return os;
-}
+  friend std::ostream &operator<<(std::ostream &os, const MemReq& req) {
+    os << "rw=" << req.write << ", ";
+    os << "addr=0x" << std::hex << req.addr << std::dec << ", type=" << req.type;
+    os << ", tag=0x" << std::hex << req.tag << std::dec << ", cid=" << req.cid;
+    os << " (#" << req.uuid << ")";
+    return os;
+  }
+};
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -565,13 +565,13 @@ struct MemRsp {
     , cid(_cid)
     , uuid(_uuid)
   {}
-};
 
-inline std::ostream &operator<<(std::ostream &os, const MemRsp& rsp) {
-  os << "tag=0x" << std::hex << rsp.tag << std::dec << ", cid=" << rsp.cid;
-  os << " (#" << rsp.uuid << ")";
-  return os;
-}
+  friend std::ostream &operator<<(std::ostream &os, const MemRsp& rsp) {
+    os << "tag=0x" << std::hex << rsp.tag << std::dec << ", cid=" << rsp.cid;
+    os << " (#" << rsp.uuid << ")";
+    return os;
+  }
+};
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -650,21 +650,30 @@ private:
 ///////////////////////////////////////////////////////////////////////////////
 
 template <typename Type>
-class ArbiterSwitch : public SimObject<ArbiterSwitch<Type>> {
+class TxArbiter : public SimObject<TxArbiter<Type>> {
 public:
   typedef Type ReqType;
 
-  std::vector<SimPort<Type>> Inputs;
-  std::vector<SimPort<Type>> Outputs;
+  struct RspType {
+    Type     data;
+    uint32_t index;
+    RspType(const Type& _data, uint32_t _index = 0)
+      : data(_data)
+      , index(_index)
+    {}
+  };
 
-  ArbiterSwitch(
+  std::vector<SimPort<ReqType>> Inputs;
+  std::vector<SimPort<RspType>> Outputs;
+
+  TxArbiter(
     const SimContext& ctx,
     const char* name,
     ArbiterType type,
     uint32_t num_inputs,
     uint32_t num_outputs = 1,
     uint32_t delay = 1
-  ) : SimObject<ArbiterSwitch<Type>>(ctx, name)
+  ) : SimObject<TxArbiter<Type>>(ctx, name)
     , Inputs(num_inputs, this)
     , Outputs(num_outputs, this)
     , delay_(delay)
@@ -714,7 +723,7 @@ public:
         auto& req_in = Inputs.at(i);
         auto& req = req_in.front();
         DT(4, this->name() << "-req" << o << ": " << req);
-        Outputs.at(o).push(req, delay_);
+        Outputs.at(o).push(RspType(req, i), delay_);
         req_in.pop();
       }
     }
@@ -730,38 +739,47 @@ protected:
 ///////////////////////////////////////////////////////////////////////////////
 
 template <typename Type>
-class CrossBar : public SimObject<CrossBar<Type>> {
+class TxCrossBar : public SimObject<TxCrossBar<Type>> {
 public:
   typedef Type ReqType;
 
-  std::vector<SimPort<Type>> Inputs;
-  std::vector<SimPort<Type>> Outputs;
+  struct RspType {
+    Type     data;
+    uint32_t index;
+    RspType(const Type& _data, uint32_t _index = 0)
+      : data(_data)
+      , index(_index)
+    {}
+  };
 
-  CrossBar(
+  std::vector<SimPort<ReqType>> Inputs;
+  std::vector<SimPort<RspType>> Outputs;
+
+  TxCrossBar(
     const SimContext& ctx,
     const char* name,
     uint32_t num_inputs,
-    uint32_t num_outputs = 1,
-    uint32_t delay = 1,
-    std::function<uint32_t(const Type& req)> output_sel = nullptr
+    uint32_t num_outputs,
+    std::function<uint32_t(const Type& req)> output_sel,
+    uint32_t delay = 1
   )
-    : SimObject<CrossBar<Type>>(ctx, name)
+    : SimObject<TxCrossBar<Type>>(ctx, name)
     , Inputs(num_inputs, this)
     , Outputs(num_outputs, this)
     , delay_(delay)
     , lg2_inputs_(log2ceil(num_inputs))
     , lg2_outputs_(log2ceil(num_outputs))
+    , output_sel_(output_sel)
     , collisions_(0) {
     assert(delay != 0);
     assert(num_inputs <= 64);
     assert(num_outputs <= 64);
     assert(ispow2(num_outputs));
-    if (output_sel != nullptr) {
-      output_sel_ = output_sel;
-    } else {
-      output_sel_ = [this](const Type& req) {
-        return (uint32_t)bit_getw(req.addr, 0, (lg2_outputs_-1));
-      };
+    assert(output_sel != nullptr);
+
+    // bypass mode
+    if (num_inputs == 1 && num_outputs == 1) {
+      Inputs.at(0).bind(&Outputs.at(0));
     }
   }
 
@@ -772,6 +790,8 @@ public:
   void tick() {
     uint32_t I = Inputs.size();
     uint32_t O = Outputs.size();
+    if (I == 1 && O == 1)
+      return;
 
     // process incoming requests
     for (uint32_t o = 0; o < O; ++o) {
@@ -792,7 +812,7 @@ public:
         }
         if (input_idx != -1) {
           has_collision = true;
-          continue;
+          break;
         }
         input_idx = i;
       }
@@ -800,7 +820,7 @@ public:
         auto& req_in = Inputs.at(input_idx);
         auto& req = req_in.front();
         DT(4, this->name() << "-req" << o << ": " << req);
-        Outputs.at(o).push(req, delay_);
+        Outputs.at(o).push(RspType(req, input_idx), delay_);
         req_in.pop();
         collisions_ += has_collision;
       }
@@ -823,7 +843,7 @@ protected:
 ///////////////////////////////////////////////////////////////////////////////
 
 template <typename Req, typename Rsp>
-class TxArbiter : public SimObject<TxArbiter<Req, Rsp>> {
+class TxRxArbiter : public SimObject<TxRxArbiter<Req, Rsp>> {
 public:
   typedef Req ReqType;
   typedef Rsp RspType;
@@ -834,7 +854,7 @@ public:
   std::vector<SimPort<Req>>  ReqOut;
   std::vector<SimPort<Rsp>>  RspOut;
 
-  TxArbiter(
+  TxRxArbiter(
     const SimContext& ctx,
     const char* name,
     ArbiterType type,
@@ -842,7 +862,7 @@ public:
     uint32_t num_outputs = 1,
     uint32_t delay = 1
   )
-    : SimObject<TxArbiter<Req, Rsp>>(ctx, name)
+    : SimObject<TxRxArbiter<Req, Rsp>>(ctx, name)
     , ReqIn(num_inputs, this)
     , RspIn(num_inputs, this)
     , ReqOut(num_outputs, this)
@@ -932,7 +952,7 @@ protected:
 ///////////////////////////////////////////////////////////////////////////////
 
 template <typename Req, typename Rsp>
-class TxCrossBar : public SimObject<TxCrossBar<Req, Rsp>> {
+class TxRxCrossBar : public SimObject<TxRxCrossBar<Req, Rsp>> {
 public:
   typedef Req ReqType;
   typedef Rsp RspType;
@@ -943,7 +963,7 @@ public:
   std::vector<SimPort<Req>> ReqOut;
   std::vector<SimPort<Rsp>> RspOut;
 
-  TxCrossBar(
+  TxRxCrossBar(
     const SimContext& ctx,
     const char* name,
     ArbiterType type,
@@ -952,7 +972,7 @@ public:
     uint32_t delay = 1,
     std::function<uint32_t(const Req& req)> output_sel = nullptr
   )
-    : SimObject<TxCrossBar<Req, Rsp>>(ctx, name)
+    : SimObject<TxRxCrossBar<Req, Rsp>>(ctx, name)
     , ReqIn(num_inputs, this)
     , RspIn(num_inputs, this)
     , ReqOut(num_outputs, this)
@@ -1034,7 +1054,7 @@ public:
         }
         if (input_idx != -1) {
           has_collision = true;
-          continue;
+          break;
         }
         input_idx = i;
       }
@@ -1118,8 +1138,8 @@ private:
   uint32_t delay_;
 };
 
-using LsuArbiter  = TxArbiter<LsuReq, LsuRsp>;
-using MemArbiter  = TxArbiter<MemReq, MemRsp>;
-using MemCrossBar = TxCrossBar<MemReq, MemRsp>;
+using LsuArbiter  = TxRxArbiter<LsuReq, LsuRsp>;
+using MemArbiter  = TxRxArbiter<MemReq, MemRsp>;
+using MemCrossBar = TxRxCrossBar<MemReq, MemRsp>;
 
 }

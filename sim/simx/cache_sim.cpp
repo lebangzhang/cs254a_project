@@ -167,26 +167,26 @@ struct bank_req_t {
 		}
 		type = ReqType::None;
 	}
-};
 
-inline std::ostream &operator<<(std::ostream &os, const bank_req_t& req) {
-  os << "set=" << req.set_id << ", rw=" << req.write;
-  os << std::dec << ", type=" << req.type;
-  os << ", tag=0x" << std::hex << req.tag;
-	os << ", req_tags={";
-	bool first_port = true;
-	for (auto& port : req.ports) {
-		if (port.valid) {
-			if (!first_port) os << ", ";
-			first_port = false;
-			os << "["  << std::dec << port.req_id << "]=0x" << std::hex << port.req_tag;
+	friend std::ostream &operator<<(std::ostream &os, const bank_req_t& req) {
+		os << "set=" << req.set_id << ", rw=" << req.write;
+		os << std::dec << ", type=" << req.type;
+		os << ", tag=0x" << std::hex << req.tag;
+		os << ", req_tags={";
+		bool first_port = true;
+		for (auto& port : req.ports) {
+			if (port.valid) {
+				if (!first_port) os << ", ";
+				first_port = false;
+				os << "["  << std::dec << port.req_id << "]=0x" << std::hex << port.req_tag;
+			}
 		}
+		os << "}";
+		os << std::dec << ", cid=" << req.cid;
+		os << " (#" << req.uuid << ")";
+		return os;
 	}
-	os << "}";
-	os << std::dec << ", cid=" << req.cid;
-  os << " (#" << req.uuid << ")";
-  return os;
-}
+};
 
 struct mshr_entry_t {
 	bank_req_t bank_req;
