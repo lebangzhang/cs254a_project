@@ -199,6 +199,9 @@ config1()
 {
     echo "begin configuration-1 tests..."
 
+    ./ci/blackbox.sh --driver=simx --cores=2 --clusters=2 --app=diverge --args="-n1" --debug=3
+    CONFIGS="-DISSUE_WIDTH=2 -DNUM_FPU_BLOCK=1 -DNUM_FPU_LANES=2" ./ci/blackbox.sh --driver=simx --app=vecaddx --debug=3
+
     # warp/threads
     ./ci/blackbox.sh --driver=rtlsim --warps=1 --threads=1 --app=diverge
     ./ci/blackbox.sh --driver=rtlsim --warps=2 --threads=1 --app=diverge
