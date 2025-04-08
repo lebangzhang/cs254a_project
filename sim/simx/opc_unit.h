@@ -18,7 +18,6 @@
 
 namespace vortex {
 
-/* Standard OPC Units */
 class OpcUnit : public SimObject<OpcUnit> {
 public:
   SimPort<instr_trace_t *> Input;
@@ -39,7 +38,6 @@ public:
   virtual ~OpcUnit() {}
 
   virtual void reset() {
-    opd_to_fetch_.reset();
     pending_rsps_ = 0;
     total_stalls_ = 0;
   }
@@ -49,38 +47,37 @@ public:
     if (Input.empty())
       return;
     auto trace = Input.front();
+
     if (0 == pending_rsps_) {
       // calculate operands to fetch
-      for (int i = 0; i < NUM_SRC_REGS; i++) {
+      std::bitset<NUM_SRC_REGS> opd_to_fetch;
+      for (uint32_t i = 0; i < NUM_SRC_REGS; i++) {
         if ((trace->src_regs[i].type != RegType::None)
          && !(trace->src_regs[i].idx == 0 && trace->src_regs[i].type == RegType::Integer)) {
           // skip duplicates
           bool is_dup = false;
-          for (int j = 0; j < i; j++) {
+          for (uint32_t j = 0; j < i; j++) {
             if (trace->src_regs[i].idx == trace->src_regs[j].idx) {
               is_dup = true;
               break;
             }
           }
           if (!is_dup) {
-            opd_to_fetch_.set(i);
+            opd_to_fetch.set(i);
             ++pending_rsps_;
           }
         }
       }
-    }
 
-    // Send GPR requests
-    for (int i = 0; i < NUM_SRC_REGS; i++) {
-      if (opd_to_fetch_.test(i)) {
-        if (gpr_req_ports.at(i).full())
-          continue;
-        GPR::Req gpr_req;
-        gpr_req.rid = trace->src_regs[i].idx;
-        gpr_req.wid = trace->wid;
-        gpr_req.opd = i;
-        gpr_req_ports.at(i).push(gpr_req);
-        opd_to_fetch_.reset(i);
+      // Send GPR requests
+      for (uint32_t i = 0; i < NUM_SRC_REGS; i++) {
+        if (opd_to_fetch.test(i)) {
+          GPR::Req gpr_req;
+          gpr_req.rid = trace->src_regs[i].idx;
+          gpr_req.wid = trace->wid;
+          gpr_req.opd = i;
+          gpr_req_ports.at(i).push(gpr_req);
+        }
       }
     }
 
@@ -108,7 +105,6 @@ public:
   }
 
 private:
-  std::bitset<NUM_SRC_REGS> opd_to_fetch_;
   uint32_t pending_rsps_ = 0;
   uint32_t total_stalls_ = 0;
 };

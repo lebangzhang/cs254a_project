@@ -53,7 +53,8 @@ public:
 		snprintf(sname, 100, "%s-xbar", this->name().c_str());
     crossbar_ = ReqXbar::Create(sname, NUM_REQS, NUM_BANKS,
 		 [](const Req& req)->uint32_t {
-			return req.rid % NUM_BANKS;
+      uint32_t bank_id = ((req.wid & BANKID_WIS_MASK) << BANKID_REG_BITS) | (req.rid & BANKID_REG_MASK);
+			return bank_id;
 		});
     for (uint32_t i = 0; i < NUM_REQS; ++i) {
 			ReqIn.at(i).bind(&crossbar_->Inputs.at(i));
@@ -75,8 +76,8 @@ public:
         continue;
       auto& req = output.front();
       Rsp rsp;
-      rsp.opd = req.first.opd;
-      RspOut.at(req.second).push(rsp);
+      rsp.opd = req.data.opd;
+      RspOut.at(req.input).push(rsp);
       output.pop();
     }
   }
@@ -87,8 +88,14 @@ public:
 
 private:
   typename ReqXbar::Ptr crossbar_;
+  constexpr static uint32_t BANK_SEL_BITS    = log2ceil(NUM_BANKS);
+  constexpr static uint32_t _BANKID_WIS_BITS = std::min<uint32_t>(ISSUE_WIS_BITS, BANK_SEL_BITS - (BANK_SEL_BITS / 2));
+  constexpr static uint32_t BANKID_WIS_BITS  = (BANK_SEL_BITS > 1 && ISSUE_WIS_BITS != 0) ? _BANKID_WIS_BITS : 0;
+  constexpr static uint32_t BANKID_REG_BITS  = BANK_SEL_BITS - BANKID_WIS_BITS;
+  constexpr static uint32_t BANKID_REG_MASK  = (1 << BANKID_REG_BITS) - 1;
+  constexpr static uint32_t BANKID_WIS_MASK  = (1 << BANKID_WIS_BITS) - 1;
 };
 
-typedef GprUnit<NUM_OPCS * NUM_SRC_REGS, NUM_GPR_BANKS> GPR;
+typedef GprUnit<NUM_OPCS * NUM_SRC_REGS, 4> GPR;
 
 } // namespace vortex
