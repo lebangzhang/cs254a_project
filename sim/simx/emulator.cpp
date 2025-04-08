@@ -183,7 +183,7 @@ instr_trace_t* Emulator::step() {
   // Decode
   auto instr = this->decode(instr_code);
   if (!instr) {
-    std::cout << "Error: invalid instruction 0x" << std::hex << instr_code << ", at PC=0x" << warp.PC << " (#" << std::dec << uuid << ")" << std::endl;
+    std::cerr << "Error: invalid instruction 0x" << std::hex << instr_code << ", at PC=0x" << warp.PC << " (#" << std::dec << uuid << ")" << std::endl;
     std::abort();
   }
 
@@ -559,12 +559,12 @@ Word Emulator::get_csr(uint32_t addr, uint32_t wid, uint32_t tid) {
       } break;
     #endif
       default:
-        std::cout << "Error: invalid MPM CLASS: value=" << perf_class << std::endl;
+        std::cerr << "Error: invalid MPM CLASS: value=" << perf_class << std::endl;
         std::abort();
         break;
       }
     } else {
-      std::cout << "Error: invalid CSR read addr=0x"<< std::hex << addr << std::dec << std::endl;
+      std::cerr << "Error: invalid CSR read addr=0x"<< std::hex << addr << std::dec << std::endl;
       std::abort();
     }
   }
@@ -607,7 +607,7 @@ void Emulator::set_csr(uint32_t addr, Word value, uint32_t wid, uint32_t tid) {
       if (vec_unit_->set_csr(addr, wid, tid, value))
         return;
     #endif
-      std::cout << "Error: invalid CSR write addr=0x" << std::hex << addr << ", value=0x" << value << std::dec << std::endl;
+      std::cerr << "Error: invalid CSR write addr=0x" << std::hex << addr << ", value=0x" << value << std::dec << std::endl;
       std::flush(std::cout);
       std::abort();
     }

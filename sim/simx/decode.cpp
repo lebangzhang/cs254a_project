@@ -486,7 +486,7 @@ std::shared_ptr<Instr> Emulator::decode(uint32_t code) const {
 
   auto op_it = sc_instTable.find(op);
   if (op_it == sc_instTable.end()) {
-    std::cout << "Error: invalid opcode: 0x" << std::hex << static_cast<int>(op) << std::dec << std::endl;
+    std::cerr << "Error: invalid opcode: 0x" << std::hex << static_cast<int>(op) << std::dec << std::endl;
     return nullptr;
   }
 

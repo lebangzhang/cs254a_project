@@ -232,6 +232,7 @@ public:
 	}
 
 	int allocate(const bank_req_t& bank_req, uint32_t line_id) {
+		assert(bank_req.type == bank_req_t::Core);
 		for (uint32_t i = 0, n = entries_.size(); i < n; ++i) {
 			auto& entry = entries_.at(i);
 			if (entry.bank_req.type == bank_req_t::None) {
@@ -495,7 +496,7 @@ public:
 				bank_req.type  = bank_req_t::Core;
 				bank_req.write = core_req.write;
 				pipeline_req   = bank_req;
-				DT(3, simobject_->name() << "-core-req: " << core_req);
+				DT(3, simobject_->name() << "-bank" << bank_id << "-core-req:" << core_req);
 			}
 
 			if (core_req.write)
@@ -687,7 +688,7 @@ private:
 							mem_req.cid   = pipeline_req.cid;
 							mem_req.uuid  = pipeline_req.uuid;
 							mem_req_ports_.at(bank_id).push(mem_req, 1);
-							DT(3, simobject_->name() << "-bank" << bank_id << "-fill: " << mem_req);
+							DT(3, simobject_->name() << "-bank" << bank_id << "-fill-req: " << mem_req);
 							++pending_fill_reqs_;
 						}
 					}

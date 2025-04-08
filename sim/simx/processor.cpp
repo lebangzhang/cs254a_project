@@ -186,9 +186,9 @@ int Processor::run() {
   try {
     return impl_->run();
   } catch (const std::exception& e) {
-    std::cerr << "Exception caught: " << e.what() << std::endl;
+    std::cerr << "Error: exception: " << e.what() << std::endl;
   } catch (...) {
-    std::cerr << "Unknown exception caught." << std::endl;
+    std::cerr << "Error: unknown exception." << std::endl;
   }
   return -1;
 }
