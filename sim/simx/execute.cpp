@@ -51,7 +51,9 @@ inline void read_register(std::vector<reg_data_t>& out, uint32_t src_index, cons
   auto reg = instr.getRSrc(src_index);
   switch (type) {
   case RegType::None:
+#ifdef EXT_V_ENABLE
   case RegType::Vector:
+#endif
     break;
   case RegType::Integer: {
     DPH(2, "Src" << src_index << " Reg: " << type << reg << "={");
@@ -684,7 +686,7 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
     trace->fu_type = FUType::LSU;
     trace->lsu_type = LsuType::LOAD;
     trace->src_regs[0] = {RegType::Integer, rsrc0};
-    auto trace_data = std::make_shared<LsuTraceData>();
+    auto trace_data = std::make_shared<LsuTraceData>(num_threads);
     trace->data = trace_data;
     if ((opcode == Opcode::L )
      || (opcode == Opcode::FL && funct3 == 2)
@@ -697,7 +699,7 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
         uint64_t mem_addr = rs1_data[t].i + immsrc;
         uint64_t read_data = 0;
         this->dcache_read(&read_data, mem_addr, data_bytes);
-        trace_data->mem_addrs.push_back({mem_addr, data_bytes});
+        trace_data->mem_addrs.at(t).push_back({mem_addr, data_bytes});
         switch (funct3) {
         case 0: // RV32I: LB
         case 1: // RV32I: LH
@@ -730,7 +732,7 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
       for (uint32_t t = thread_start; t < num_threads; ++t) {
         if (!warp.tmask.test(t))
           continue;
-        vec_unit_->load(instr, wid, t, rs1_data, rs2_data, trace_data->mem_addrs);
+        vec_unit_->load(instr, wid, t, rs1_data, rs2_data, trace_data->mem_addrs.at(t));
       }
     }
   #endif
@@ -743,7 +745,7 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
     auto data_type = (opcode == Opcode::FS) ? RegType::Float : RegType::Integer;
     trace->src_regs[0] = {RegType::Integer, rsrc0};
     trace->src_regs[1] = {data_type, rsrc1};
-    auto trace_data = std::make_shared<LsuTraceData>();
+    auto trace_data = std::make_shared<LsuTraceData>(num_threads);
     trace->data = trace_data;
     if ((opcode == Opcode::S)
      || (opcode == Opcode::FS && funct3 == 2)
@@ -754,7 +756,7 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
           continue;
         uint64_t mem_addr = rs1_data[t].i + immsrc;
         uint64_t write_data = rs2_data[t].u64;
-        trace_data->mem_addrs.push_back({mem_addr, data_bytes});
+        trace_data->mem_addrs.at(t).push_back({mem_addr, data_bytes});
         switch (funct3) {
         case 0:
         case 1:
@@ -772,7 +774,7 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
       for (uint32_t t = thread_start; t < num_threads; ++t) {
         if (!warp.tmask.test(t))
           continue;
-        vec_unit_->store(instr, wid, t, rs1_data, rs2_data, trace_data->mem_addrs);
+        vec_unit_->store(instr, wid, t, rs1_data, rs2_data, trace_data->mem_addrs.at(t));
       }
     }
   #endif
@@ -792,7 +794,7 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
       if (!warp.tmask.test(t))
         continue;
       uint64_t mem_addr = rs1_data[t].u;
-      trace_data->mem_addrs.push_back({mem_addr, data_bytes});
+      trace_data->mem_addrs.at(t).push_back({mem_addr, data_bytes});
       if (amo_type == 0x02) { // LR
         uint64_t read_data = 0;
         this->dcache_read(&read_data, mem_addr, data_bytes);

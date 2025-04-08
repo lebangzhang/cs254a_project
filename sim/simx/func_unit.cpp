@@ -128,7 +128,7 @@ void LsuUnit::tick() {
 		assert(entry.count != 0);
 		entry.count -= lsu_rsp.mask.count(); // track remaining
 		if (entry.count == 0) {
-			// full response bach received
+			// full response batch received
 			state.pending_rd_reqs.release(lsu_rsp.tag);
 			// is last batch?
 			if (entry.eop) {
@@ -184,17 +184,25 @@ void LsuUnit::tick() {
 
 		auto trace_data = std::dynamic_pointer_cast<LsuTraceData>(trace->data);
 		if (remain_addrs_ == 0) {
-			remain_addrs_ = trace_data->mem_addrs.size();
+			pending_addrs_.clear();
+			for (uint32_t t = 0; t < trace_data->mem_addrs.size(); ++t) {
+				if (!trace->tmask.test(t))
+					continue;
+				for (auto addr : trace_data->mem_addrs.at(t)) {
+					pending_addrs_.push_back(addr);
+				}
+			}
+			remain_addrs_ = pending_addrs_.size();
 		}
 
 		if (remain_addrs_ != 0) {
-			// build memory request
+			// setup memory request
 			LsuReq lsu_req(NUM_LSU_LANES);
 			lsu_req.write = is_write;
-			uint32_t t0 = trace_data->mem_addrs.size() - remain_addrs_;
+			uint32_t t0 = pending_addrs_.size() - remain_addrs_;
 			for (uint32_t i = 0; i < NUM_LSU_LANES; ++i) {
 				lsu_req.mask.set(i);
-				lsu_req.addrs.at(i) = trace_data->mem_addrs.at(t0 + i).addr;
+				lsu_req.addrs.at(i) = pending_addrs_.at(t0 + i).addr;
 				--remain_addrs_;
 				if (remain_addrs_ == 0)
 					break;

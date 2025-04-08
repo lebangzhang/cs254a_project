@@ -418,7 +418,7 @@ bool Core::running() const {
     for (auto& trace : pending_instrs_) {
       DT(4, "pipeline-pending: " << *trace);
     }
-    return false;
+    return true;
   }
 #endif
   return emulator_.running() || !pending_instrs_.empty();

@@ -69,16 +69,16 @@ public:
 		if (trace->wb) {
 			assert(trace->dst_reg.type != RegType::None);
 			if (in_use_regs_.at(trace->wid).at((int)trace->dst_reg.type).test(trace->dst_reg.idx)) {
-				uint32_t tag = (trace->dst_reg.idx << 16) | (trace->wid << 4) | (int)trace->dst_reg.type;
-				auto owner = owners_.at(tag);
+				uint32_t reg_id = get_reg_id(trace->dst_reg, trace->wid);
+				auto owner = owners_.at(reg_id);
 				out.push_back({trace->dst_reg.type, trace->dst_reg.idx, owner->fu_type, owner->sfu_type, owner->uuid});
 			}
 		}
 		for (uint32_t i = 0; i < trace->src_regs.size(); ++i) {
 			if (trace->src_regs[i].type != RegType::None) {
 				if (in_use_regs_.at(trace->wid).at((int)trace->src_regs[i].type).test(trace->src_regs[i].idx)) {
-					uint32_t tag = (trace->src_regs[i].idx << 16) | (trace->wid << 4) | (int)trace->src_regs[i].type;
-					auto owner = owners_.at(tag);
+					uint32_t reg_id = get_reg_id(trace->src_regs[i], trace->wid);
+					auto owner = owners_.at(reg_id);
 					out.push_back({trace->src_regs[i].type, trace->src_regs[i].idx, owner->fu_type, owner->sfu_type, owner->uuid});
 				}
 			}
@@ -87,22 +87,27 @@ public:
 	}
 
 	void reserve(instr_trace_t* trace) {
+		uint32_t reg_id = get_reg_id(trace->dst_reg, trace->wid);
 		assert(trace->wb);
 		in_use_regs_.at(trace->wid).at((int)trace->dst_reg.type).set(trace->dst_reg.idx);
-		uint32_t tag = (trace->dst_reg.idx << 16) | (trace->wid << 4) | (int)trace->dst_reg.type;
-		assert(owners_.count(tag) == 0);
-		owners_[tag] = trace;
+		assert(owners_.count(reg_id) == 0);
+		owners_[reg_id] = trace;
 	}
 
 	void release(instr_trace_t* trace) {
+		uint32_t reg_id = get_reg_id(trace->dst_reg, trace->wid);
 		assert(trace->wb);
+		assert(in_use_regs_.at(trace->wid).at((int)trace->dst_reg.type).test(trace->dst_reg.idx));
 		in_use_regs_.at(trace->wid).at((int)trace->dst_reg.type).reset(trace->dst_reg.idx);
-		uint32_t tag = (trace->dst_reg.idx << 16) | (trace->wid << 4) | (int)trace->dst_reg.type;
-		assert(owners_.count(tag) != 0);
-		owners_.erase(tag);
+		assert(owners_.count(reg_id) != 0);
+		owners_.erase(reg_id);
 	}
 
 private:
+
+  constexpr size_t get_reg_id(const instr_trace_t::reg_t& reg, uint32_t wid) const {
+    return (wid << (log2ceil((int)RegType::Count) + LOG_NUM_REGS)) | ((int)reg.type << LOG_NUM_REGS) | reg.idx;
+  }
 
 	std::vector<std::vector<RegMask>> in_use_regs_;
 	std::unordered_map<uint32_t, instr_trace_t*> owners_;

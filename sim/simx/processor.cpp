@@ -183,7 +183,14 @@ void Processor::attach_ram(RAM* mem) {
 }
 
 int Processor::run() {
-  return impl_->run();
+  try {
+    return impl_->run();
+  } catch (const std::exception& e) {
+    std::cerr << "Exception caught: " << e.what() << std::endl;
+  } catch (...) {
+    std::cerr << "Unknown exception caught." << std::endl;
+  }
+  return -1;
 }
 
 void Processor::dcr_write(uint32_t addr, uint32_t value) {
