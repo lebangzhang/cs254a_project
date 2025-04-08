@@ -660,11 +660,11 @@ public:
 
   struct RspType {
     Type     data;
-    uint32_t index;
+    uint32_t input;
 
-    RspType(const Type& _data, uint32_t _index = 0)
+    RspType(const Type& _data, uint32_t _input = 0)
       : data(_data)
-      , index(_index)
+      , input(_input)
     {}
 
     operator Type() const {
@@ -731,7 +731,7 @@ public:
         uint32_t i = o * R + g;
         auto& req_in = Inputs.at(i);
         auto& req = req_in.front();
-        DT(4, this->name() << "-req" << o << ": " << req);
+        DT(4, this->name() << "-req" << i << "_" << o << ": " << req);
         Outputs.at(o).push(RspType(req, i), delay_);
         req_in.pop();
       }
@@ -754,11 +754,11 @@ public:
 
   struct RspType {
     Type     data;
-    uint32_t index;
+    uint32_t input;
 
-    RspType(const Type& _data, uint32_t _index = 0)
+    RspType(const Type& _data, uint32_t _input= 0)
       : data(_data)
-      , index(_index)
+      , input(_input)
     {}
 
     operator Type() const {
@@ -833,7 +833,7 @@ public:
       if (input_idx != -1) {
         auto& req_in = Inputs.at(input_idx);
         auto& req = req_in.front();
-        DT(4, this->name() << "-req" << o << ": " << req);
+        DT(4, this->name() << "-req" << input_idx << "_" << o << ": " << req);
         Outputs.at(o).push(RspType(req, input_idx), delay_);
         req_in.pop();
         collisions_ += has_collision;
@@ -896,7 +896,8 @@ public:
           [lg2_num_reqs = lg2_num_reqs_](const typename ReqArb::RspType& arb_rsp) {
             Req req(arb_rsp.data);
             if (lg2_num_reqs != 0) {
-              req.tag = (req.tag << lg2_num_reqs) | arb_rsp.index;
+              uint32_t r = arb_rsp.input & ((1 << lg2_num_reqs) - 1);
+              req.tag = (req.tag << lg2_num_reqs) | r;
             }
             return req;
           });
@@ -926,14 +927,14 @@ public:
       auto& rsp_out = RspOut.at(o);
       if (!rsp_out.empty()) {
         auto& rsp = rsp_out.front();
-        uint32_t g = 0;
+        uint32_t r = 0;
         Rsp in_rsp(rsp);
         if (lg2_num_reqs_ != 0) {
-          g = rsp.tag & (R-1);
+          r = rsp.tag & (R-1);
           in_rsp.tag = rsp.tag >> lg2_num_reqs_;
         }
-        uint32_t i = o * R + g;
-        DT(4, this->name() << "-rsp" << i << ": " << in_rsp);
+        uint32_t i = o * R + r;
+        DT(4, this->name() << "-rsp" << o << "_" << i << ": " << in_rsp);
         RspIn.at(i).push(in_rsp, 1);
         rsp_out.pop();
       }
@@ -991,7 +992,7 @@ public:
           [lg2_inputs = lg2_inputs_](const typename ReqXbar::RspType& xbar_rsp) {
             Req req(xbar_rsp.data);
             if (lg2_inputs != 0) {
-              req.tag = (req.tag << lg2_inputs) | xbar_rsp.index;
+              req.tag = (req.tag << lg2_inputs) | xbar_rsp.input;
             }
             return req;
           });
@@ -1039,7 +1040,7 @@ public:
         if (lg2_inputs_ != 0) {
           in_rsp.tag = rsp.tag >> lg2_inputs_;
         }
-        DT(4, this->name() << "-rsp" << i << ": " << in_rsp);
+        DT(4, this->name() << "-rsp" << g << "_" << i << ": " << in_rsp);
         RspIn.at(i).push(in_rsp, 1);
         rsp_out.pop();
       }
