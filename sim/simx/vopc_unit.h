@@ -18,7 +18,7 @@
 
 namespace vortex {
 
-class OpcUnit : public SimObject<OpcUnit> {
+class VOpcUnit : public SimObject<VOpcUnit> {
 public:
   SimPort<instr_trace_t *> Input;
   SimPort<instr_trace_t *> Output;
@@ -26,16 +26,21 @@ public:
   std::array<SimPort<GprReq>, NUM_SRC_REGS> gpr_req_ports;
   std::array<SimPort<GprRsp>, NUM_SRC_REGS> gpr_rsp_ports;
 
-  OpcUnit(const SimContext &ctx)
-    : SimObject<OpcUnit>(ctx, "opc-unit")
+  std::array<SimPort<GprReq>, NUM_SRC_REGS> vgpr_req_ports;
+  std::array<SimPort<GprRsp>, NUM_SRC_REGS> vgpr_rsp_ports;
+
+  VOpcUnit(const SimContext &ctx)
+    : SimObject<VOpcUnit>(ctx, "vopc-unit")
     , Input(this, 1)
     , Output(this)
     , gpr_req_ports(make_array<SimPort<GprReq>, NUM_SRC_REGS>(this))
-    , gpr_rsp_ports(make_array<SimPort<GprRsp>, NUM_SRC_REGS>(this)) {
+    , gpr_rsp_ports(make_array<SimPort<GprRsp>, NUM_SRC_REGS>(this))
+    , vgpr_req_ports(make_array<SimPort<GprReq>, NUM_SRC_REGS>(this))
+    , vgpr_rsp_ports(make_array<SimPort<GprRsp>, NUM_SRC_REGS>(this)) {
     this->reset();
   }
 
-  virtual ~OpcUnit() {}
+  virtual ~VOpcUnit() {}
 
   virtual void reset() {
     pending_rsps_ = 0;

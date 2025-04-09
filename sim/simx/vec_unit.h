@@ -22,6 +22,11 @@ public:
     }
   };
 
+  struct ExeRet {
+    VpuType vpu_type;
+    bool rd_write;
+  };
+
   struct PerfStats {
     uint64_t reads;
     uint64_t writes;
@@ -44,8 +49,8 @@ public:
     }
   };
 
-  SimPort<instr_trace_t*> Input;
-  SimPort<instr_trace_t*> Output;
+  std::vector<SimPort<instr_trace_t*>> Inputs;
+  std::vector<SimPort<instr_trace_t*>> Outputs;
 
   VecUnit(const SimContext& ctx,
           const char* name,
@@ -66,7 +71,7 @@ public:
 
   void store(const Instr &instr, uint32_t wid, uint32_t tid, const std::vector<reg_data_t>& rs1_data, const std::vector<reg_data_t>& rs2_data, std::vector<mem_addr_size_t>& mem_addrs);
 
-  bool execute(const Instr &instr, uint32_t wid, uint32_t tid, const std::vector<reg_data_t>& rs1_data, const std::vector<reg_data_t>& rs2_data, std::vector<reg_data_t>& rd_data, std::shared_ptr<VecTraceData> trace_data);
+  ExeRet execute(const Instr &instr, uint32_t wid, uint32_t tid, const std::vector<reg_data_t>& rs1_data, const std::vector<reg_data_t>& rs2_data, std::vector<reg_data_t>& rd_data, VpuTraceData::data_t& trace_data);
 
   const PerfStats& perf_stats() const;
 

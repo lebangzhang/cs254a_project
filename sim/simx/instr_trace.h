@@ -43,9 +43,13 @@ struct SFUTraceData : public ITraceData {
   SFUTraceData(Word arg1, Word arg2) : arg1(arg1), arg2(arg2) {}
 };
 
-struct VecTraceData : public ITraceData {
-  using Ptr = std::shared_ptr<VecTraceData>;
-  VecTraceData(uint32_t /*num_thraeds*/) {}
+struct VpuTraceData : public ITraceData {
+  using Ptr = std::shared_ptr<VpuTraceData>;
+  struct data_t {
+    uint32_t reserved;
+  };
+  std::vector<data_t> data;
+  VpuTraceData(uint32_t num_threads) : data(num_threads) {}
 };
 
 struct instr_trace_t {

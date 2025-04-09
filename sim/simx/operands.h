@@ -25,7 +25,7 @@ public:
   SimPort<instr_trace_t*> Output;
 
   Operands(const SimContext &ctx)
-      : SimObject<Operands>(ctx, "Operands")
+      : SimObject<Operands>(ctx, "operands")
       , Input(this)
       , Output(this)
       , opc_units_(NUM_OPCS)

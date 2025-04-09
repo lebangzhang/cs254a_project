@@ -729,6 +729,7 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
     }
   #ifdef EXT_V_ENABLE
     else {
+      trace->lsu_type = LsuType::VLOAD;
       for (uint32_t t = thread_start; t < num_threads; ++t) {
         if (!warp.tmask.test(t))
           continue;
@@ -771,6 +772,7 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
     }
   #ifdef EXT_V_ENABLE
     else {
+      trace->lsu_type = LsuType::VSTORE;
       for (uint32_t t = thread_start; t < num_threads; ++t) {
         if (!warp.tmask.test(t))
           continue;
@@ -1337,12 +1339,15 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
   }
 #ifdef EXT_V_ENABLE
   case Opcode::VSET: {
-    auto trace_data = std::make_shared<VecTraceData>(num_threads);
+    auto trace_data = std::make_shared<VpuTraceData>(num_threads);
+    trace->fu_type = FUType::VPU;
     trace->data = trace_data;
     for (uint32_t t = thread_start; t < num_threads; ++t) {
       if (!warp.tmask.test(t))
         continue;
-      rd_write |= vec_unit_->execute(instr, wid, t, rs1_data, rs2_data, rd_data, trace_data);
+      auto ret = vec_unit_->execute(instr, wid, t, rs1_data, rs2_data, rd_data, trace_data->data.at(t));
+      trace->vpu_type = ret.vpu_type;
+      rd_write = ret.rd_write;
     }
     break;
   }

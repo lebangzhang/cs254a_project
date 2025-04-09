@@ -170,7 +170,11 @@ void LsuUnit::tick() {
 			continue;
 		}
 
-		bool is_write = (trace->lsu_type == LsuType::STORE);
+		bool is_write = (trace->lsu_type == LsuType::STORE)
+		#ifdef EXT_V_ENABLE
+	               || (trace->lsu_type == LsuType::VSTORE)
+		#endif
+		;
 
 		// check pending queue capacity
 		if (!is_write && state.pending_rd_reqs.full()) {
@@ -234,7 +238,7 @@ void LsuUnit::tick() {
 
 		if (remain_addrs_ == 0) {
 			// do not wait on writes
-			if (is_write || 0 == trace_data->mem_addrs.size()) {
+			if (is_write || 0 == pending_addrs_.size()) {
 				Outputs.at(iw).push(trace, 1);
 			}
 			// remove input
@@ -300,48 +304,18 @@ void SfuUnit::tick() {
 ///////////////////////////////////////////////////////////////////////////////
 
 #ifdef EXT_V_ENABLE
+
 VpuUnit::VpuUnit(const SimContext& ctx, Core* core)
 	: FuncUnit(ctx, core, "vpu-unit")
-{}
+{
+	// bind vector unit
+	for (uint32_t iw = 0; iw < ISSUE_WIDTH; ++iw) {
+		this->Inputs.at(iw).bind(&core_->vec_unit()->Inputs.at(iw));
+		core_->vec_unit()->Outputs.at(iw).bind(&this->Outputs.at(iw));
+	}
+}
 
 void VpuUnit::tick() {
-  for (uint32_t iw = 0; iw < ISSUE_WIDTH; ++iw) {
-		auto& input = Inputs.at(iw);
-		if (input.empty())
-			continue;
-		//auto& output = Outputs.at(iw);
-		auto trace = input.front();
-		//int delay = 2;
-		switch (trace->vpu_type) {
-		case VpuType::VSET:
-		case VpuType::VL:
-		case VpuType::VS:
-		case VpuType::ARITHVV:
-		case VpuType::MULVV:
-		case VpuType::DIVVV:
-		case VpuType::ARITHVX:
-		case VpuType::MULVX:
-		case VpuType::DIVVX:
-		case VpuType::ARITHVI:
-		case VpuType::MULVI:
-		case VpuType::DIVVI:
-		case VpuType::ARITHFVV:
-		case VpuType::MULFVV:
-		case VpuType::DIVFVV:
-		case VpuType::ARITHFVX:
-		case VpuType::MULFVX:
-		case VpuType::DIVFVX:
-		case VpuType::ARITHFVI:
-		case VpuType::MULFVI:
-		case VpuType::DIVFVI:
-		default:
-			std::abort();
-		}
-		DT(3, this->name() << ": op=" << trace->vpu_type << ", " << *trace);
-		if (trace->eop && trace->fetch_stall) {
-			core_->resume(trace->wid);
-		}
-		input.pop();
-	}
+	// use vec_unit
 }
 #endif

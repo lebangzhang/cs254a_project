@@ -348,10 +348,16 @@
 `ifndef NUM_OPCS
 `define NUM_OPCS        4
 `endif
+`ifndef NUM_VOPCS
+`define NUM_VOPCS       1
+`endif
 
 // Register File Banks
 `ifndef NUM_GPR_BANKS
 `define NUM_GPR_BANKS   `MIN(`NUM_OPCS, 16)
+`endif
+`ifndef NUM_VGPR_BANKS
+`define NUM_VGPR_BANKS  `MIN(`NUM_VOPCS, 16)
 `endif
 
 // Number of ALU units
@@ -383,6 +389,14 @@
 `define NUM_SFU_LANES   `SIMD_WIDTH
 `endif
 `define NUM_SFU_BLOCKS  1
+
+// Number of VPU units
+`ifndef NUM_VPU_LANES
+`define NUM_VPU_LANES   `SIMD_WIDTH
+`endif
+`ifndef NUM_VPU_BLOCKS
+`define NUM_VPU_BLOCKS  `ISSUE_WIDTH
+`endif
 
 // Size of Instruction Buffer
 `ifndef IBUF_SIZE

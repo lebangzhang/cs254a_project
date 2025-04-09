@@ -17,7 +17,7 @@
 using namespace vortex;
 
 Dispatcher::Dispatcher(const SimContext& ctx, Core* core, uint32_t buf_size, uint32_t block_size, uint32_t num_lanes)
-  : SimObject<Dispatcher>(ctx, "Dispatcher")
+  : SimObject<Dispatcher>(ctx, "dispatcher")
   , Outputs(ISSUE_WIDTH, this)
   , Inputs(ISSUE_WIDTH, this)
   , arch_(core->arch())

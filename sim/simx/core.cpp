@@ -56,8 +56,8 @@ Core::Core(const SimContext& ctx,
 {
   char sname[100];
 
-  for (uint32_t isw = 0; isw < ISSUE_WIDTH; ++isw) {
-    operands_.at(isw) = Operands::Create();
+  for (uint32_t iw = 0; iw < ISSUE_WIDTH; ++iw) {
+    operands_.at(iw) = Operands::Create();
   }
 
   // create the memory coalescer
@@ -136,21 +136,27 @@ Core::Core(const SimContext& ctx,
   dispatchers_.at((int)FUType::FPU) = SimPlatform::instance().create_object<Dispatcher>(this, 2, NUM_FPU_BLOCKS, NUM_FPU_LANES);
   dispatchers_.at((int)FUType::LSU) = SimPlatform::instance().create_object<Dispatcher>(this, 2, NUM_LSU_BLOCKS, NUM_LSU_LANES);
   dispatchers_.at((int)FUType::SFU) = SimPlatform::instance().create_object<Dispatcher>(this, 2, NUM_SFU_BLOCKS, NUM_SFU_LANES);
+#ifdef EXT_V_ENABLE
+  dispatchers_.at((int)FUType::VPU) = SimPlatform::instance().create_object<Dispatcher>(this, 2, NUM_VPU_BLOCKS, NUM_VPU_LANES);
+#endif
 
   // initialize execute units
   func_units_.at((int)FUType::ALU) = SimPlatform::instance().create_object<AluUnit>(this);
   func_units_.at((int)FUType::FPU) = SimPlatform::instance().create_object<FpuUnit>(this);
   func_units_.at((int)FUType::LSU) = SimPlatform::instance().create_object<LsuUnit>(this);
   func_units_.at((int)FUType::SFU) = SimPlatform::instance().create_object<SfuUnit>(this);
+#ifdef EXT_V_ENABLE
+  func_units_.at((int)FUType::VPU) = SimPlatform::instance().create_object<VpuUnit>(this);
+#endif
 
   // bind commit arbiters
-  for (uint32_t isw = 0; isw < ISSUE_WIDTH; ++isw) {
-    snprintf(sname, 100, "%s-commit-arb%d", this->name().c_str(), isw);
+  for (uint32_t iw = 0; iw < ISSUE_WIDTH; ++iw) {
+    snprintf(sname, 100, "%s-commit-arb%d", this->name().c_str(), iw);
     auto arbiter = TraceArbiter::Create(sname, ArbiterType::RoundRobin, (uint32_t)FUType::Count, 1);
     for (uint32_t fu = 0; fu < (uint32_t)FUType::Count; ++fu) {
-      func_units_.at(fu)->Outputs.at(isw).bind(&arbiter->Inputs.at(fu));
+      func_units_.at(fu)->Outputs.at(iw).bind(&arbiter->Inputs.at(fu));
     }
-    commit_arbs_.at(isw) = arbiter;
+    commit_arbs_.at(iw) = arbiter;
   }
 
   this->reset();
@@ -281,21 +287,21 @@ void Core::decode() {
 
 void Core::issue() {
   // dispatch operands
-  for (uint32_t isw = 0; isw < ISSUE_WIDTH; ++isw) {
-    auto& operand = operands_.at(isw);
+  for (uint32_t iw = 0; iw < ISSUE_WIDTH; ++iw) {
+    auto& operand = operands_.at(iw);
     if (operand->Output.empty())
       continue;
     auto trace = operand->Output.front();
-    dispatchers_.at((int)trace->fu_type)->Inputs.at(isw).push(trace);
+    dispatchers_.at((int)trace->fu_type)->Inputs.at(iw).push(trace);
     operand->Output.pop();
   }
 
   // issue ibuffer instructions
-  for (uint32_t isw = 0; isw < ISSUE_WIDTH; ++isw) {
+  for (uint32_t iw = 0; iw < ISSUE_WIDTH; ++iw) {
     bool has_instrs = false;
     BitVector<> ready_set(PER_ISSUE_WARPS);
     for (uint32_t w = 0; w < PER_ISSUE_WARPS; ++w) {
-      uint32_t ii = isw  * PER_ISSUE_WARPS + w;
+      uint32_t ii = iw  * PER_ISSUE_WARPS + w;
       auto& ibuffer = ibuffers_.at(ii);
       if (ibuffer.empty())
         continue;
@@ -335,6 +341,9 @@ void Core::issue() {
             default: assert(false);
             }
           } break;
+        #ifdef EXT_V_ENABLE
+          case FUType::VPU: ++perf_stats_.scrb_vpu; break;
+        #endif
           default: assert(false);
           }
         }
@@ -346,8 +355,8 @@ void Core::issue() {
 
     if (ready_set.any()) {
       // select one instruction from ready set
-      auto g = ibuffer_arbs_.at(isw).grant(ready_set);
-      uint32_t ii = isw * PER_ISSUE_WARPS + g;
+      auto g = ibuffer_arbs_.at(iw).grant(ready_set);
+      uint32_t ii = iw * PER_ISSUE_WARPS + g;
       auto& ibuffer = ibuffers_.at(ii);
       auto trace = ibuffer.top();
       // update scoreboard
@@ -356,7 +365,7 @@ void Core::issue() {
         scoreboard_.reserve(trace);
       }
       // to operand stage
-      operands_.at(isw)->Input.push(trace, 2);
+      operands_.at(iw)->Input.push(trace, 2);
       ibuffer.pop();
     }
 
@@ -370,20 +379,20 @@ void Core::execute() {
   for (uint32_t fu = 0; fu < (uint32_t)FUType::Count; ++fu) {
     auto& dispatch = dispatchers_.at(fu);
     auto& func_unit = func_units_.at(fu);
-    for (uint32_t isw = 0; isw < ISSUE_WIDTH; ++isw) {
-      if (dispatch->Outputs.at(isw).empty())
+    for (uint32_t iw = 0; iw < ISSUE_WIDTH; ++iw) {
+      if (dispatch->Outputs.at(iw).empty())
         continue;
-      auto trace = dispatch->Outputs.at(isw).front();
-      func_unit->Inputs.at(isw).push(trace, 2);
-      dispatch->Outputs.at(isw).pop();
+      auto trace = dispatch->Outputs.at(iw).front();
+      func_unit->Inputs.at(iw).push(trace, 2);
+      dispatch->Outputs.at(iw).pop();
     }
   }
 }
 
 void Core::commit() {
   // process completed instructions
-  for (uint32_t isw = 0; isw < ISSUE_WIDTH; ++isw) {
-    auto& commit_arb = commit_arbs_.at(isw);
+  for (uint32_t iw = 0; iw < ISSUE_WIDTH; ++iw) {
+    auto& commit_arb = commit_arbs_.at(iw);
     if (commit_arb->Outputs.at(0).empty())
       continue;
     auto trace = commit_arb->Outputs.at(0).front().data;
@@ -442,8 +451,8 @@ void Core::attach_ram(RAM* ram) {
 
 const Core::PerfStats& Core::perf_stats() const {
   perf_stats_.opds_stalls = 0;
-  for (uint32_t isw = 0; isw < ISSUE_WIDTH; ++isw) {
-    perf_stats_.opds_stalls += operands_.at(isw)->total_stalls();
+  for (uint32_t iw = 0; iw < ISSUE_WIDTH; ++iw) {
+    perf_stats_.opds_stalls += operands_.at(iw)->total_stalls();
   }
   return perf_stats_;
 }

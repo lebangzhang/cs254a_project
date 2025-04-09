@@ -27,10 +27,15 @@
 #include "operands_old.h"
 #else
 #ifdef EXT_V_ENABLE
+#ifdef RVV_FUSED
 #include "voperands.h"
 #else
 #include "operands.h"
 #endif
+#else
+#include "operands.h"
+#endif
+
 #endif
 
 #include "dispatcher.h"

@@ -118,6 +118,9 @@ enum class FUType {
   LSU,
   FPU,
   SFU,
+#ifdef EXT_V_ENABLE
+  VPU,
+#endif
   Count
 };
 
@@ -127,6 +130,9 @@ inline std::ostream &operator<<(std::ostream &os, const FUType& type) {
   case FUType::LSU: os << "LSU"; break;
   case FUType::FPU: os << "FPU"; break;
   case FUType::SFU: os << "SFU"; break;
+#ifdef EXT_V_ENABLE
+  case FUType::VPU: os << "VPU"; break;
+#endif
   default: assert(false);
   }
   return os;
@@ -159,6 +165,10 @@ inline std::ostream &operator<<(std::ostream &os, const AluType& type) {
 enum class LsuType {
   LOAD,
   STORE,
+#ifdef EXT_V_ENABLE
+  VLOAD,
+  VSTORE,
+#endif
   FENCE
 };
 
@@ -166,6 +176,10 @@ inline std::ostream &operator<<(std::ostream &os, const LsuType& type) {
   switch (type) {
   case LsuType::LOAD:  os << "LOAD"; break;
   case LsuType::STORE: os << "STORE"; break;
+#ifdef EXT_V_ENABLE
+  case LsuType::VLOAD: os << "VLOAD"; break;
+  case LsuType::VSTORE:os << "VSTORE"; break;
+#endif
   case LsuType::FENCE: os << "FENCE"; break;
   default: assert(false);
   }
@@ -264,40 +278,38 @@ inline std::ostream &operator<<(std::ostream &os, const SfuType& type) {
 ///////////////////////////////////////////////////////////////////////////////
 
 enum class VpuType {
-  VSET,     // Set vector length
-  VL,       // Vector load
-  VS,       // Vector store
+  VSET    = 0,
 
-  // ALU OPERATIONS
-  ARITHVV,  // Vector-vector
-  MULVV,
-  DIVVV,
+  ARITH   = 1,
+  IMUL    = 2,
+  IDIV    = 3,
 
-  ARITHVX,  // Vector-scalar
-  MULVX,
-  DIVVX,
+  FMA     = 4,
+  FDIV    = 5,
+  FSQRT   = 6,
+  FCVT    = 7,
+  FNCP    = 8,
 
-  ARITHVI,  // Vector-immediate
-  MULVI,
-  DIVVI,
-
-  // FPU OPERATIONS
-  ARITHFVV,  // Vector-vector
-  MULFVV,
-  DIVFVV,
-
-  ARITHFVX,  // Vector-scalar
-  MULFVX,
-  DIVFVX,
-
-  ARITHFVI,  // Vector-immediate
-  MULFVI,
-  DIVFVI
+  // reduction
+  ARITH_R = 9,
+  FMA_R   = 10,
+  FNCP_R  = 11
 };
 
 inline std::ostream &operator<<(std::ostream &os, const VpuType& type) {
   switch (type) {
   case VpuType::VSET:   os << "VSET"; break;
+  case VpuType::ARITH:  os << "ARITH"; break;
+  case VpuType::IMUL:   os << "IMUL"; break;
+  case VpuType::IDIV:   os << "IDIV"; break;
+  case VpuType::FMA:    os << "FMA"; break;
+  case VpuType::FDIV:   os << "FDIV"; break;
+  case VpuType::FSQRT:  os << "FSQRT"; break;
+  case VpuType::FCVT:   os << "FCVT"; break;
+  case VpuType::FNCP:   os << "FNCP"; break;
+  case VpuType::ARITH_R:os << "ARITH_R"; break;
+  case VpuType::FMA_R:  os << "FMA_R"; break;
+  case VpuType::FNCP_R: os << "FNCP_R"; break;
   default: assert(false);
   }
   return os;
