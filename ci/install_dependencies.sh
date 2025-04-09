@@ -33,6 +33,9 @@ apt-get update -y
 # install system dependencies
 apt-get install -y build-essential valgrind libstdc++6 binutils python3 uuid-dev ccache cmake
 
+# install yosys synthesis tool
+apt-get install -y yosys
+
 # Check and install GCC 11 if necessary
 if check_gcc_version; then
     echo "GCC version is less than 11. Installing GCC 11..."
