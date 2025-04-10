@@ -2,6 +2,7 @@ import argparse
 import matplotlib.pyplot as plt
 import re
 import numpy as np
+import pandas as pd
 
 def main():
 	parser = argparse.ArgumentParser(description="Plot data from log files with x/y labels.")
@@ -11,10 +12,10 @@ def main():
 	parser.add_argument('--counters', nargs='+', required=True, help='Key to performance counter')
 	parser.add_argument('--titles', nargs='+', required=True, help='Title for each graph')
 	parser.add_argument('--xlabel', required=True, help='X-axis label')
+	parser.add_argument('--output', required=True, help="Output file path of Excel table")
 	
 	args = parser.parse_args()
 
-	print(args.categories)
 	values = np.empty((len(args.counters), len(args.logfiles)))
 	
 	for i in range(len(args.logfiles)):
@@ -28,6 +29,7 @@ def main():
 				values[j][i] = float(match[-1])
 				
 	
+	spreadsheet_output = {"Benchmarks": args.categories}
 	for i in range(len(args.counters)):
 		plt.figure(i)
 		plt.xlabel(args.xlabel)
@@ -35,6 +37,11 @@ def main():
 		plt.title(args.titles[i])
 		plt.bar(args.categories, values[i])
 		
+		spreadsheet_output[args.ylabels[i]] = values[i]
+		
+	df = pd.DataFrame(spreadsheet_output)
+	df.to_excel(args.output, index=False, engine='openpyxl')
+	
 	plt.show()
 if __name__ == "__main__":
 	main()
