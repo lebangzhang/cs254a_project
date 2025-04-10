@@ -13,6 +13,7 @@ def main():
 	parser.add_argument('--titles', nargs='+', required=True, help='Title for each graph')
 	parser.add_argument('--xlabel', required=True, help='X-axis label')
 	parser.add_argument('--output', required=True, help="Output file path of Excel table")
+	parser.add_argument('--plot', nargs='+', required=True, help="Output file path of Figures")
 	
 	args = parser.parse_args()
 
@@ -37,6 +38,7 @@ def main():
 		plt.title(args.titles[i])
 		plt.bar(args.categories, values[i])
 		
+		plt.savefig(args.plot[i])
 		spreadsheet_output[args.ylabels[i]] = values[i]
 		
 	df = pd.DataFrame(spreadsheet_output)
