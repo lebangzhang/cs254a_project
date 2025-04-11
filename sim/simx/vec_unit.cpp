@@ -60,6 +60,7 @@ public:
       int delay = 0;
       switch (trace->vpu_type) {
       case VpuType::VSET:
+        break;
       case VpuType::ARITH:
       case VpuType::ARITH_R:
         delay = 1;

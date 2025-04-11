@@ -84,7 +84,6 @@ void VOpcUnit::tick() {
       // Convert to Nop
       trace->fu_type = FUType::ALU;
       trace->alu_type = AluType::ARITH;
-      trace->wb = false;
       this->Output.push(trace);
       Input.pop();
       return;
@@ -204,7 +203,7 @@ bool VOpcUnit::schedule(instr_trace_t* trace) {
     // issue a cloned instruction trace
     auto trace_alloc = core_->trace_pool().allocate(1);
     auto new_trace = new (trace_alloc) instr_trace_t(*trace);
-    new_trace->wb = false; // disable scoreboard update
+    new_trace->wb = false; // disable scoreboard release
     this->lsu_flush(new_trace);
     DT(4, "*** VOPC next group: vlmul=" << vlmul_counter_ << ", " << *new_trace);
     this->Output.push(new_trace);
@@ -256,7 +255,7 @@ bool VOpcUnit::fused_schedule(instr_trace_t* trace) {
     // issue a cloned instruction trace
     auto trace_alloc = core_->trace_pool().allocate(1);
     auto new_trace = new (trace_alloc) instr_trace_t(*trace);
-    new_trace->wb = false; // disable scoreboard update
+    new_trace->wb = false; // disable scoreboard release
     this->decode(new_trace);
     DT(4, "*** VOPC next group: vlmul=" << vlmul_counter_ << ", " << *new_trace);
     this->Output.push(new_trace);
@@ -294,7 +293,7 @@ bool VOpcUnit::fused_schedule(instr_trace_t* trace) {
     // issue a cloned instruction trace
     auto trace_alloc = core_->trace_pool().allocate(1);
     auto new_trace = new (trace_alloc) instr_trace_t(*trace);
-    new_trace->wb = false; // disable scoreboard update
+    new_trace->wb = false; // disable scoreboard release
     this->decode(new_trace);
     DT(4, "*** VOPC next lane: vl=" << vl_counter_ << ", vlmul=" << vlmul_counter_ << ", " << *new_trace);
     this->Output.push(new_trace);

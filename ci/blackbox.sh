@@ -111,10 +111,10 @@ build_driver() {
     [ -n "$CONFIGS" ] && cmd_opts=$(add_option "$cmd_opts" "CONFIGS=\"$CONFIGS\"")
 
     if [ -n "$cmd_opts" ]; then
-        echo "Running: $cmd_opts make -C $DRIVER_PATH > /dev/null"
+        echo "Running: $cmd_opts make -j4 -C $DRIVER_PATH > /dev/null"
         eval "$cmd_opts make -j4 -C $DRIVER_PATH > /dev/null"
     else
-        echo "Running: make -C $DRIVER_PATH > /dev/null"
+        echo "Running: make -j4 -C $DRIVER_PATH > /dev/null"
         make -j4 -C $DRIVER_PATH > /dev/null
     fi
 }
