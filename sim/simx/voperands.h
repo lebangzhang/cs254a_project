@@ -20,114 +20,35 @@
 
 namespace vortex {
 
+class Core;
+
 class Operands : public SimObject<Operands> {
 public:
   SimPort<instr_trace_t*> Input;
   SimPort<instr_trace_t*> Output;
 
-  Operands(const SimContext &ctx)
-      : SimObject<Operands>(ctx, "operands")
-      , Input(this)
-      , Output(this)
-      , opc_units_(NUM_OPCS)
-      , gpr_unit_(GPR::Create())
-      , out_arb_(ArbiterType::RoundRobin, NUM_OPCS) {
-    // create OPC units
-    for (uint32_t i = 0; i < NUM_OPCS; i++) {
-      opc_units_.at(i) = OpcUnit::Create();
-    }
+  Operands(const SimContext &ctx, Core* core);
 
-    // create VOPC units
-    for (uint32_t i = 0; i < NUM_VOPCS; i++) {
-      vopc_units_.at(i) = VOpcUnit::Create();
-    }
+  virtual ~Operands();
 
-    // connect OPC to GPR
-    for (uint32_t i = 0; i < NUM_OPCS; i++) {
-      for (uint32_t j = 0; j < NUM_SRC_REGS; j++) {
-        opc_units_.at(i)->gpr_req_ports.at(j).bind(&gpr_unit_->ReqIn.at(i * NUM_SRC_REGS + j));
-        gpr_unit_->RspOut.at(i * NUM_SRC_REGS + j).bind(&opc_units_.at(i)->gpr_rsp_ports.at(j));
-      }
-    }
+  virtual void reset();
 
-    // connect VOPC to GPR and VGPR
-    uint32_t gpr_offset = NUM_OPCS * NUM_SRC_REGS;
-    for (uint32_t i = 0; i < NUM_VOPCS; i++) {
-      for (uint32_t j = 0; j < NUM_SRC_REGS; j++) {
-        vopc_units_.at(i)->gpr_req_ports.at(j).bind(&gpr_unit_->ReqIn.at(gpr_offset + i * NUM_SRC_REGS + j));
-        gpr_unit_->RspOut.at(gpr_offset + i * NUM_SRC_REGS + j).bind(&vopc_units_.at(i)->gpr_rsp_ports.at(j));
+  virtual void tick();
 
-        vopc_units_.at(i)->vgpr_req_ports.at(j).bind(&vgpr_unit_->ReqIn.at(i * NUM_SRC_REGS + j));
-        vgpr_unit_->RspOut.at(i * NUM_SRC_REGS + j).bind(&vopc_units_.at(i)->vgpr_rsp_ports.at(j));
-      }
-    }
-
-    // initialize
-    this->reset();
-  }
-
-  virtual ~Operands() {}
-
-  virtual void reset() {
-    out_arb_.reset();
-    total_stalls_ = 0;
-  }
-
-  virtual void tick() {
-    // process outgoing instructions
-    {
-      BitVector<> valid_set(NUM_OPCS);
-      for (uint32_t i = 0; i < NUM_OPCS; i++) {
-        valid_set.set(i, !opc_units_.at(i)->Output.empty());
-      }
-      if (valid_set.any()) {
-        uint32_t g = out_arb_.grant(valid_set);
-        auto trace = opc_units_.at(g)->Output.front();
-        this->Output.push(trace, 1);
-        opc_units_.at(g)->Output.pop();
-        DT(3, "pipeline-operands: " << *trace);
-      }
-    }
-
-    // process incoming instructions
-    if (Input.empty())
-      return;
-    auto trace = this->Input.front();
-    if (trace->fu_type == FUType::VPU) {
-      // VOPC
-      for (uint32_t i = 0; i < NUM_VOPCS; i++) {
-        // skip is busy
-        if (vopc_units_.at(i)->Input.full())
-          continue;
-        // assign instruction
-        vopc_units_.at(i)->Input.push(trace);
-        Input.pop();
-        break;
-      }
-      return;
-    }
-    for (uint32_t i = 0; i < NUM_OPCS; i++) {
-      // skip is busy
-      if (opc_units_.at(i)->Input.full())
-        continue;
-      // assign instruction
-      opc_units_.at(i)->Input.push(trace);
-      Input.pop();
-      break;
-    }
-  }
+  void writeback(instr_trace_t* trace);
 
   uint32_t total_stalls() const {
     return total_stalls_;
   }
 
 private:
-  std::vector<OpcUnit::Ptr> opc_units_;
+  std::vector<OpcUnit::Ptr> sopc_units_;
   std::vector<VOpcUnit::Ptr> vopc_units_;
-  GPR::Ptr  gpr_unit_;
+  GPR::Ptr  sgpr_unit_;
   VGPR::Ptr vgpr_unit_;
   uint32_t  total_stalls_ = 0;
   Arbiter   out_arb_;
+  Core*     core_;
 };
 
 } // namespace vortex

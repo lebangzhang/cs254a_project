@@ -108,7 +108,7 @@ public:
             uint32_t tid,
             const std::vector<reg_data_t>& rs1_data,
             const std::vector<reg_data_t>& rs2_data,
-            std::vector<mem_addr_size_t>& mem_addrs) {
+            MemTraceData* trace_data) {
     auto& states = vpu_states_.at(wid);
     uint32_t vmask = instr.getVmask();
     uint32_t vd = instr.getRDest();
@@ -117,6 +117,10 @@ public:
     auto& vreg_file = states.vreg_file.at(tid);
     uint64_t base_addr = rs1_data.at(tid).i;
     base_addr &= 0xFFFFFFFC; // TODO: riscv-tests fix
+
+    // udpate trace data
+    trace_data->vl = states.vl;
+    trace_data->vnf = instr.getVnf() + 1;
 
     switch (mop) {
     case 0b00: { // unit-stride
@@ -142,7 +146,6 @@ public:
         uint32_t emul = (states.vtype.vlmul >> 2) ? 1 : (1 << (states.vtype.vlmul & 0b11));
         assert(nfields * emul <= 8);
 
-
         for (uint32_t i = 0; i < states.vl; i++) {
           if (isMasked(vreg_file, 0, i, vmask))
             continue;
@@ -150,7 +153,7 @@ public:
             uint64_t mem_addr = base_addr + (i * nfields + f) * vsewb;
             uint64_t mem_data = 0;
             core_->dcache_read(&mem_data, mem_addr, vsewb);
-            mem_addrs.push_back({mem_addr, vsewb});
+            trace_data->mem_addrs.at(tid).push_back({mem_addr, vsewb});
             setVregData(states.vtype.vsew, vreg_file, vd + f * emul, i, mem_data);
           }
         }
@@ -167,13 +170,16 @@ public:
         uint32_t stride = 1 << eew;
         uint32_t vl = nreg * (VLENB / vsewb);
 
+        trace_data->vl = vl;
+        trace_data->vnf = 1;
+
         for (uint32_t i = 0; i < vl; i++) {
           if (isMasked(vreg_file, 0, i, vmask))
             continue;
           uint64_t mem_addr = base_addr + i * stride;
           uint64_t mem_data = 0;
           core_->dcache_read(&mem_data, mem_addr, vsewb);
-          mem_addrs.push_back({mem_addr, vsewb});
+          trace_data->mem_addrs.at(tid).push_back({mem_addr, vsewb});
           setVregData(states.vtype.vsew, vreg_file, vd, i, mem_data);
         }
         break;
@@ -187,13 +193,16 @@ public:
         uint32_t vl = (states.vl + 7) / 8;
         uint32_t stride = vsewb;
 
+        trace_data->vl = vl;
+        trace_data->vnf = 1;
+
         for (uint32_t i = 0; i < vl; i++) {
           if (isMasked(vreg_file, 0, i, 1))
             continue;
           uint64_t mem_addr = base_addr + i * stride;
           uint64_t mem_data = 0;
           core_->dcache_read(&mem_data, mem_addr, vsewb);
-          mem_addrs.push_back({mem_addr, vsewb});
+          trace_data->mem_addrs.at(tid).push_back({mem_addr, vsewb});
           setVregData(states.vtype.vsew, vreg_file, vd, i, mem_data);
         }
         break;
@@ -225,7 +234,7 @@ public:
           uint64_t mem_addr = base_addr + i * stride + f * vsewb;
           uint64_t mem_data = 0;
           core_->dcache_read(&mem_data, mem_addr, vsewb);
-          mem_addrs.push_back({mem_addr, vsewb});
+          trace_data->mem_addrs.at(tid).push_back({mem_addr, vsewb});
           setVregData(states.vtype.vsew, vreg_file, vd + f * emul, i, mem_data);
         }
       }
@@ -248,6 +257,8 @@ public:
                 // vloxseg7e8.v, vloxseg7e16.v, vloxseg7e32.v, vloxseg7e64.v
                 // vloxseg8e8.v, vloxseg8e16.v, vloxseg8e32.v, vloxseg8e64.v
       uint32_t vs2 = instr.getRSrc(1);
+      trace_data->vs2_opd = 1;
+
       uint32_t nfields = instr.getVnf() + 1;
       uint32_t eew = instr.getVlsWidth() & 0x3;
 
@@ -257,12 +268,12 @@ public:
       for (uint32_t i = 0; i < states.vl; i++) {
         if (isMasked(vreg_file, 0, i, vmask))
           continue;
+        uint64_t offset = getVregData(eew, vreg_file, vs2, i);
         for (uint32_t f = 0; f < nfields; f++) {
-          uint64_t offset = getVregData(eew, vreg_file, vs2, i);
           uint64_t mem_addr = base_addr + offset + f * vsewb;
           uint64_t mem_data = 0;
           core_->dcache_read(&mem_data, mem_addr, vsewb);
-          mem_addrs.push_back({mem_addr, vsewb});
+          trace_data->mem_addrs.at(tid).push_back({mem_addr, vsewb});
           setVregData(states.vtype.vsew, vreg_file, vd + f * emul, i, mem_data);
         }
       }
@@ -279,7 +290,7 @@ public:
              uint32_t tid,
              const std::vector<reg_data_t>& rs1_data,
              const std::vector<reg_data_t>& rs2_data,
-             std::vector<mem_addr_size_t>& mem_addrs) {
+             MemTraceData* trace_data) {
     auto& states = vpu_states_.at(wid);
     uint32_t vmask = instr.getVmask();
     uint32_t mop = instr.getVmop();
@@ -287,6 +298,10 @@ public:
     auto& vreg_file = states.vreg_file.at(tid);
     uint64_t base_addr = rs1_data.at(tid).i;
     base_addr &= 0xFFFFFFFC; // TODO: riscv-tests fix
+
+    // udpate trace data
+    trace_data->vl = states.vl;
+    trace_data->vnf = instr.getVnf() + 1;
 
     switch (mop) {
     case 0b00: { // unit-stride
@@ -305,7 +320,7 @@ public:
             uint64_t mem_addr = base_addr + (i * nfields + f) * vsewb;
             uint64_t value = getVregData(states.vtype.vsew, vreg_file, vs3 + f * emul, i);
             core_->dcache_write(&value, mem_addr, vsewb);
-            mem_addrs.push_back({mem_addr, vsewb});
+            trace_data->mem_addrs.at(tid).push_back({mem_addr, vsewb});
           }
         }
         break;
@@ -319,15 +334,17 @@ public:
         uint32_t vs3 = instr.getRSrc(1);
         uint32_t stride = vsewb;
         uint32_t vl = nreg * (VLENB / vsewb);
+
+        trace_data->vl = vl;
+        trace_data->vnf = 1;
+
         for (uint32_t i = 0; i < vl; i++) {
           if (isMasked(vreg_file, 0, i, vmask))
             continue;
-          for (uint32_t f = 0; f < nreg; f++) {
-            uint64_t mem_addr = base_addr + i * stride;
-            uint64_t value = getVregData(states.vtype.vsew, vreg_file, vs3, i);
-            core_->dcache_write(&value, mem_addr, vsewb);
-            mem_addrs.push_back({mem_addr, vsewb});
-          }
+          uint64_t value = getVregData(states.vtype.vsew, vreg_file, vs3, i);
+          uint64_t mem_addr = base_addr + i * stride;
+          core_->dcache_write(&value, mem_addr, vsewb);
+          trace_data->mem_addrs.at(tid).push_back({mem_addr, vsewb});
         }
         break;
       }
@@ -341,13 +358,16 @@ public:
         uint32_t vl = (states.vl + 7) / 8;
         uint32_t stride = vsewb;
 
+        trace_data->vl = vl;
+        trace_data->vnf = 1;
+
         for (uint32_t i = 0; i < vl; i++) {
           if (isMasked(vreg_file, 0, i, 1))
             continue;
           uint64_t mem_addr = base_addr + i * stride;
           uint64_t value = getVregData(states.vtype.vsew, vreg_file, vs3, i);
           core_->dcache_write(&value, mem_addr, vsewb);
-          mem_addrs.push_back({mem_addr, vsewb});
+          trace_data->mem_addrs.at(tid).push_back({mem_addr, vsewb});
         }
         break;
       }
@@ -379,7 +399,7 @@ public:
           uint64_t mem_addr = base_addr + i * stride + f * vsewb;
           uint64_t value = getVregData(states.vtype.vsew, vreg_file, vs3 + f * emul, i);
           core_->dcache_write(&value, mem_addr, vsewb);
-          mem_addrs.push_back({mem_addr, vsewb});
+          trace_data->mem_addrs.at(tid).push_back({mem_addr, vsewb});
         }
       }
       break;
@@ -401,6 +421,8 @@ public:
                 // vsoxseg7ei8.v, vsoxseg7ei16.v, vsoxseg7ei32.v, vsoxseg7ei64.v
                 // vsoxseg8ei8.v, vsoxseg8ei16.v, vsoxseg8ei32.v, vsoxseg8ei64.v
       uint32_t vs2 = instr.getRSrc(1);
+      trace_data->vs2_opd = 1;
+
       uint32_t vs3 = instr.getRSrc(2);
       uint32_t nfields = instr.getVnf() + 1;
       uint32_t eew = instr.getVlsWidth() & 0x3;
@@ -411,12 +433,12 @@ public:
       for (uint32_t i = 0; i < states.vl; i++) {
         if (isMasked(vreg_file, 0, i, vmask))
           continue;
+        uint64_t offset = getVregData(eew, vreg_file, vs2, i);
         for (uint32_t f = 0; f < nfields; f++) {
-          uint64_t offset = getVregData(eew, vreg_file, vs2, i);
           uint64_t mem_addr = base_addr + offset + f * vsewb;
           uint64_t value = getVregData(states.vtype.vsew, vreg_file, vs3 + f * emul, i);
           core_->dcache_write(&value, mem_addr, vsewb);
-          mem_addrs.push_back({mem_addr, vsewb});
+          trace_data->mem_addrs.at(tid).push_back({mem_addr, vsewb});
         }
       }
       break;
@@ -433,8 +455,7 @@ public:
                  const std::vector<reg_data_t>& rs1_data,
                  const std::vector<reg_data_t>& rs2_data,
                  std::vector<reg_data_t>& rd_data,
-                 VpuTraceData::data_t& trace_data) {
-    __unused (trace_data);
+                 ExeTraceData* trace_data) {
     auto& states = vpu_states_.at(wid);
     uint32_t funct3 = instr.getFunct3();
     uint32_t funct6 = instr.getFunct6();
@@ -448,10 +469,12 @@ public:
 
     auto& vreg_file = states.vreg_file.at(tid);
 
-    bool rd_write = false;
-    if ((funct3 == 0x7) || (funct3 == 0x2 && funct6 == 16) || (funct3 == 0x1 && funct6 == 16)) {
-      rd_write = true;
-    }
+    bool rd_write = true; // all execute instructions writeback
+
+    // udpate trace data
+    trace_data->vl = states.vl;
+    trace_data->vlmul = 1;
+    // TODO: states.vlmul is not used?
 
     VpuType vpu_type;
 
@@ -1052,6 +1075,7 @@ public:
           std::abort();
         }
         uint32_t vl = (nreg * VLENB) >> states.vtype.vsew;
+        trace_data->vl = vl;
         vector_op_vv<Mv, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, vl, vmask);
       } break;
       case 40: { // vsrl.vi
@@ -1273,7 +1297,9 @@ public:
           std::cout << "For vfmv.s.f vs2 must contain v0." << std::endl;
           std::abort();
         }
-        vector_op_vix<Mv, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, std::min(states.vl, (uint32_t)1), vmask);
+        uint32_t vl = std::min(states.vl, (uint32_t)1);
+        trace_data->vl = vl;
+        vector_op_vix<Mv, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, vl, vmask);
       } break;
       case 24: { // vmfeq.vf
         vpu_type = VpuType::FNCP;
@@ -1433,7 +1459,9 @@ public:
           std::cout << "For vmv.s.x vs2 must contain v0." << std::endl;
           std::abort();
         }
-        vector_op_vix<Mv, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, std::min(states.vl, (uint32_t)1), vmask);
+        uint32_t vl = std::min(states.vl, (uint32_t)1);
+        trace_data->vl = vl;
+        vector_op_vix<Mv, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, vl, vmask);
       } break;
       case 32: { // vdivu.vx
         vpu_type = VpuType::IDIV;
@@ -1602,6 +1630,8 @@ public:
       std::abort();
     }
 
+    //printf("*** trace_data: vl=%d, vlmul=%d\n", trace_data->vl, trace_data->vlmul);
+
     return ExeRet{vpu_type, rd_write};
   }
 
@@ -1759,15 +1789,15 @@ bool VecUnit::set_csr(uint32_t addr, uint32_t wid, uint32_t tid, Word value) {
   return impl_->set_csr(addr, wid, tid, value);
 }
 
-void VecUnit::load(const Instr &instr, uint32_t wid, uint32_t tid, const std::vector<reg_data_t>& rs1_data, const std::vector<reg_data_t>& rs2_data, std::vector<mem_addr_size_t>& mem_addrs) {
-  return impl_->load(instr, wid, tid, rs1_data, rs2_data, mem_addrs);
+void VecUnit::load(const Instr &instr, uint32_t wid, uint32_t tid, const std::vector<reg_data_t>& rs1_data, const std::vector<reg_data_t>& rs2_data, MemTraceData* trace_data) {
+  return impl_->load(instr, wid, tid, rs1_data, rs2_data, trace_data);
 }
 
-void VecUnit::store(const Instr &instr, uint32_t wid, uint32_t tid, const std::vector<reg_data_t>& rs1_data, const std::vector<reg_data_t>& rs2_data, std::vector<mem_addr_size_t>& mem_addrs) {
-  return impl_->store(instr, wid, tid, rs1_data, rs2_data, mem_addrs);
+void VecUnit::store(const Instr &instr, uint32_t wid, uint32_t tid, const std::vector<reg_data_t>& rs1_data, const std::vector<reg_data_t>& rs2_data, MemTraceData* trace_data) {
+  return impl_->store(instr, wid, tid, rs1_data, rs2_data, trace_data);
 }
 
-VecUnit::ExeRet VecUnit::execute(const Instr &instr, uint32_t wid, uint32_t tid, const std::vector<reg_data_t>& rs1_data, const std::vector<reg_data_t>& rs2_data, std::vector<reg_data_t>& rd_data, VpuTraceData::data_t& trace_data) {
+VecUnit::ExeRet VecUnit::execute(const Instr &instr, uint32_t wid, uint32_t tid, const std::vector<reg_data_t>& rs1_data, const std::vector<reg_data_t>& rs2_data, std::vector<reg_data_t>& rd_data, ExeTraceData* trace_data) {
   return impl_->execute(instr, wid, tid, rs1_data, rs2_data, rd_data, trace_data);
 }
 

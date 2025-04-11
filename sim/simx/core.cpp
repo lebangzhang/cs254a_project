@@ -57,7 +57,7 @@ Core::Core(const SimContext& ctx,
   char sname[100];
 
   for (uint32_t iw = 0; iw < ISSUE_WIDTH; ++iw) {
-    operands_.at(iw) = Operands::Create();
+    operands_.at(iw) = Operands::Create(this);
   }
 
   // create the memory coalescer
@@ -403,6 +403,7 @@ void Core::commit() {
 
     // update scoreboard
     if (trace->eop) {
+      operands_.at(iw)->writeback(trace);
       if (trace->wb) {
         scoreboard_.release(trace);
       }

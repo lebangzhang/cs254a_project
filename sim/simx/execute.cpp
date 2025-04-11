@@ -686,11 +686,11 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
     trace->fu_type = FUType::LSU;
     trace->lsu_type = LsuType::LOAD;
     trace->src_regs[0] = {RegType::Integer, rsrc0};
-    auto trace_data = std::make_shared<LsuTraceData>(num_threads);
-    trace->data = trace_data;
     if ((opcode == Opcode::L )
      || (opcode == Opcode::FL && funct3 == 2)
      || (opcode == Opcode::FL && funct3 == 3)) {
+      auto trace_data = std::make_shared<LsuTraceData>(num_threads);
+      trace->data = trace_data;
       uint32_t data_bytes = 1 << (funct3 & 0x3);
       uint32_t data_width = 8 * data_bytes;
       for (uint32_t t = thread_start; t < num_threads; ++t) {
@@ -699,7 +699,7 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
         uint64_t mem_addr = rs1_data[t].i + immsrc;
         uint64_t read_data = 0;
         this->dcache_read(&read_data, mem_addr, data_bytes);
-        trace_data->mem_addrs.at(t).push_back({mem_addr, data_bytes});
+        trace_data->mem_addrs.at(t) = {mem_addr, data_bytes};
         switch (funct3) {
         case 0: // RV32I: LB
         case 1: // RV32I: LH
@@ -729,12 +729,15 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
     }
   #ifdef EXT_V_ENABLE
     else {
+      auto trace_data = std::make_shared<VecUnit::MemTraceData>(num_threads);
+      trace->data = trace_data;
       trace->lsu_type = LsuType::VLOAD;
       for (uint32_t t = thread_start; t < num_threads; ++t) {
         if (!warp.tmask.test(t))
           continue;
-        vec_unit_->load(instr, wid, t, rs1_data, rs2_data, trace_data->mem_addrs.at(t));
+        vec_unit_->load(instr, wid, t, rs1_data, rs2_data, trace_data.get());
       }
+      rd_write = true;
     }
   #endif
     break;
@@ -746,18 +749,18 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
     auto data_type = (opcode == Opcode::FS) ? RegType::Float : RegType::Integer;
     trace->src_regs[0] = {RegType::Integer, rsrc0};
     trace->src_regs[1] = {data_type, rsrc1};
-    auto trace_data = std::make_shared<LsuTraceData>(num_threads);
-    trace->data = trace_data;
     if ((opcode == Opcode::S)
      || (opcode == Opcode::FS && funct3 == 2)
      || (opcode == Opcode::FS && funct3 == 3)) {
+      auto trace_data = std::make_shared<LsuTraceData>(num_threads);
+      trace->data = trace_data;
       uint32_t data_bytes = 1 << (funct3 & 0x3);
       for (uint32_t t = thread_start; t < num_threads; ++t) {
         if (!warp.tmask.test(t))
           continue;
         uint64_t mem_addr = rs1_data[t].i + immsrc;
         uint64_t write_data = rs2_data[t].u64;
-        trace_data->mem_addrs.at(t).push_back({mem_addr, data_bytes});
+        trace_data->mem_addrs.at(t) = {mem_addr, data_bytes};
         switch (funct3) {
         case 0:
         case 1:
@@ -772,11 +775,13 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
     }
   #ifdef EXT_V_ENABLE
     else {
+      auto trace_data = std::make_shared<VecUnit::MemTraceData>(num_threads);
+      trace->data = trace_data;
       trace->lsu_type = LsuType::VSTORE;
       for (uint32_t t = thread_start; t < num_threads; ++t) {
         if (!warp.tmask.test(t))
           continue;
-        vec_unit_->store(instr, wid, t, rs1_data, rs2_data, trace_data->mem_addrs.at(t));
+        vec_unit_->store(instr, wid, t, rs1_data, rs2_data, trace_data.get());
       }
     }
   #endif
@@ -796,7 +801,7 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
       if (!warp.tmask.test(t))
         continue;
       uint64_t mem_addr = rs1_data[t].u;
-      trace_data->mem_addrs.at(t).push_back({mem_addr, data_bytes});
+      trace_data->mem_addrs.at(t) = {mem_addr, data_bytes};
       if (amo_type == 0x02) { // LR
         uint64_t read_data = 0;
         this->dcache_read(&read_data, mem_addr, data_bytes);
@@ -1339,13 +1344,13 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
   }
 #ifdef EXT_V_ENABLE
   case Opcode::VSET: {
-    auto trace_data = std::make_shared<VpuTraceData>(num_threads);
+    auto trace_data = std::make_shared<VecUnit::ExeTraceData>();
     trace->fu_type = FUType::VPU;
     trace->data = trace_data;
     for (uint32_t t = thread_start; t < num_threads; ++t) {
       if (!warp.tmask.test(t))
         continue;
-      auto ret = vec_unit_->execute(instr, wid, t, rs1_data, rs2_data, rd_data, trace_data->data.at(t));
+      auto ret = vec_unit_->execute(instr, wid, t, rs1_data, rs2_data, rd_data, trace_data.get());
       trace->vpu_type = ret.vpu_type;
       rd_write = ret.rd_write;
     }
@@ -1374,7 +1379,7 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
         trace->src_regs[0] = {RegType::Integer, rsrc0};
         trace->src_regs[1] = {RegType::Integer, rsrc1};
         trace->fetch_stall = true;
-        trace->data = std::make_shared<SFUTraceData>(rs1_data.at(thread_last).u, rs2_data.at(thread_last).u);
+        trace->data = std::make_shared<SfuTraceData>(rs1_data.at(thread_last).u, rs2_data.at(thread_last).u);
       } break;
       case 2: {
         // SPLIT
@@ -1445,7 +1450,7 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
         trace->src_regs[0] = {RegType::Integer, rsrc0};
         trace->src_regs[1] = {RegType::Integer, rsrc1};
         trace->fetch_stall = true;
-        trace->data = std::make_shared<SFUTraceData>(rs1_data[thread_last].i, rs2_data[thread_last].i);
+        trace->data = std::make_shared<SfuTraceData>(rs1_data[thread_last].i, rs2_data[thread_last].i);
       } break;
       case 5: {
         // PRED
@@ -1522,6 +1527,11 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
       DPN(2, "}" << std::endl);
       trace->dst_reg = {type, rdest};
       break;
+  #ifdef EXT_V_ENABLE
+    case RegType::Vector:
+      // VRF is updated in the vector unit
+      break;
+  #endif
     default:
       std::cout << "Unrecognized register write back type: " << type << std::endl;
       std::abort();

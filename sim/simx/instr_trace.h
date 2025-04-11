@@ -32,24 +32,15 @@ public:
 
 struct LsuTraceData : public ITraceData {
   using Ptr = std::shared_ptr<LsuTraceData>;
-  std::vector<std::vector<mem_addr_size_t>> mem_addrs;
+  std::vector<mem_addr_size_t> mem_addrs;
   LsuTraceData(uint32_t num_threads = 0) : mem_addrs(num_threads) {}
 };
 
-struct SFUTraceData : public ITraceData {
-  using Ptr = std::shared_ptr<SFUTraceData>;
+struct SfuTraceData : public ITraceData {
+  using Ptr = std::shared_ptr<SfuTraceData>;
   Word arg1;
   Word arg2;
-  SFUTraceData(Word arg1, Word arg2) : arg1(arg1), arg2(arg2) {}
-};
-
-struct VpuTraceData : public ITraceData {
-  using Ptr = std::shared_ptr<VpuTraceData>;
-  struct data_t {
-    uint32_t reserved;
-  };
-  std::vector<data_t> data;
-  VpuTraceData(uint32_t num_threads) : data(num_threads) {}
+  SfuTraceData(Word arg1, Word arg2) : arg1(arg1), arg2(arg2) {}
 };
 
 struct instr_trace_t {
@@ -57,6 +48,13 @@ public:
   struct reg_t {
     RegType  type;
     uint32_t idx;
+
+    // unique register id embedding the type
+    uint32_t id() const {
+      if (type == RegType::None)
+        return 0;
+      return (((int)(type)-1) << LOG_NUM_REGS) | idx;
+    }
   };
 
   //--
@@ -69,6 +67,9 @@ public:
   ThreadMask  tmask;
   Word        PC;
   bool        wb;
+
+  //--
+  int32_t    vopc;
 
   //--
   reg_t       dst_reg;
@@ -107,6 +108,7 @@ public:
     , tmask(0)
     , PC(0)
     , wb(false)
+    , vopc(-1)
     , dst_reg({RegType::None, 0})
     , src_regs(NUM_SRC_REGS, {RegType::None, 0})
     , fu_type(FUType::ALU)
@@ -127,6 +129,7 @@ public:
     , tmask(rhs.tmask)
     , PC(rhs.PC)
     , wb(rhs.wb)
+    , vopc(rhs.vopc)
     , dst_reg(rhs.dst_reg)
     , src_regs(rhs.src_regs)
     , fu_type(rhs.fu_type)

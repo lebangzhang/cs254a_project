@@ -19,70 +19,22 @@
 
 namespace vortex {
 
+class Core;
+
 class Operands : public SimObject<Operands> {
 public:
   SimPort<instr_trace_t*> Input;
   SimPort<instr_trace_t*> Output;
 
-  Operands(const SimContext &ctx)
-      : SimObject<Operands>(ctx, "operands")
-      , Input(this)
-      , Output(this)
-      , opc_units_(NUM_OPCS)
-      , gpr_unit_(GPR::Create())
-      , out_arb_(ArbiterType::RoundRobin, NUM_OPCS) {
-    // create OPC units
-    for (uint32_t i = 0; i < NUM_OPCS; i++) {
-      opc_units_.at(i) = OpcUnit::Create();
-    }
-    // connect OPC to GPR
-    for (uint32_t i = 0; i < NUM_OPCS; i++) {
-      for (uint32_t j = 0; j < NUM_SRC_REGS; j++) {
-        opc_units_.at(i)->gpr_req_ports.at(j).bind(&gpr_unit_->ReqIn.at(i * NUM_SRC_REGS + j));
-        gpr_unit_->RspOut.at(i * NUM_SRC_REGS + j).bind(&opc_units_.at(i)->gpr_rsp_ports.at(j));
-      }
-    }
-    // initialize
-    this->reset();
-  }
+  Operands(const SimContext &ctx, Core* core);
 
-  virtual ~Operands() {}
+  virtual ~Operands();
 
-  virtual void reset() {
-    out_arb_.reset();
-    total_stalls_ = 0;
-  }
+  virtual void reset();
 
-  virtual void tick() {
-    // process outgoing instructions
-    {
-      BitVector<> valid_set(NUM_OPCS);
-      for (uint32_t i = 0; i < NUM_OPCS; i++) {
-        valid_set.set(i, !opc_units_.at(i)->Output.empty());
-      }
-      if (valid_set.any()) {
-        uint32_t g = out_arb_.grant(valid_set);
-        auto trace = opc_units_.at(g)->Output.front();
-        this->Output.push(trace, 1);
-        opc_units_.at(g)->Output.pop();
-        DT(3, "pipeline-operands: " << *trace);
-      }
-    }
+  virtual void tick();
 
-    // process incoming instructions
-    if (Input.empty())
-      return;
-    auto trace = this->Input.front();
-    for (uint32_t i = 0; i < NUM_OPCS; i++) {
-      // skip is busy
-      if (opc_units_.at(i)->Input.full())
-        continue;
-      // assign instruction
-      opc_units_.at(i)->Input.push(trace);
-      Input.pop();
-      break;
-    }
-  }
+  void writeback(instr_trace_t* trace);
 
   uint32_t total_stalls() const {
     return total_stalls_;
@@ -92,7 +44,8 @@ private:
   std::vector<OpcUnit::Ptr> opc_units_;
   GPR::Ptr gpr_unit_;
   uint32_t total_stalls_ = 0;
-  Arbiter out_arb_;
+  Arbiter  out_arb_;
+  Core*    core_;
 };
 
 } // namespace vortex

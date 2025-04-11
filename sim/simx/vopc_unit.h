@@ -18,6 +18,8 @@
 
 namespace vortex {
 
+class Core;
+
 class VOpcUnit : public SimObject<VOpcUnit> {
 public:
   SimPort<instr_trace_t *> Input;
@@ -29,88 +31,39 @@ public:
   std::array<SimPort<GprReq>, NUM_SRC_REGS> vgpr_req_ports;
   std::array<SimPort<GprRsp>, NUM_SRC_REGS> vgpr_rsp_ports;
 
-  VOpcUnit(const SimContext &ctx)
-    : SimObject<VOpcUnit>(ctx, "vopc-unit")
-    , Input(this, 1)
-    , Output(this)
-    , gpr_req_ports(make_array<SimPort<GprReq>, NUM_SRC_REGS>(this))
-    , gpr_rsp_ports(make_array<SimPort<GprRsp>, NUM_SRC_REGS>(this))
-    , vgpr_req_ports(make_array<SimPort<GprReq>, NUM_SRC_REGS>(this))
-    , vgpr_rsp_ports(make_array<SimPort<GprRsp>, NUM_SRC_REGS>(this)) {
-    this->reset();
-  }
+  VOpcUnit(const SimContext &ctx, Core* core);
 
-  virtual ~VOpcUnit() {}
+  virtual ~VOpcUnit();
 
-  virtual void reset() {
-    pending_rsps_ = 0;
-    total_stalls_ = 0;
-  }
+  virtual void reset();
 
-  virtual void tick() {
-    // process incoming instructions
-    if (Input.empty())
-      return;
-    auto trace = Input.front();
+  virtual void tick();
 
-    if (0 == pending_rsps_) {
-      // calculate operands to fetch
-      std::bitset<NUM_SRC_REGS> opd_to_fetch;
-      for (uint32_t i = 0; i < NUM_SRC_REGS; i++) {
-        if ((trace->src_regs[i].type != RegType::None)
-         && !(trace->src_regs[i].idx == 0 && trace->src_regs[i].type == RegType::Integer)) {
-          // skip duplicates
-          bool is_dup = false;
-          for (uint32_t j = 0; j < i; j++) {
-            if (trace->src_regs[i].idx == trace->src_regs[j].idx) {
-              is_dup = true;
-              break;
-            }
-          }
-          if (!is_dup) {
-            opd_to_fetch.set(i);
-            ++pending_rsps_;
-          }
-        }
-      }
-
-      // Send GPR requests
-      for (uint32_t i = 0; i < NUM_SRC_REGS; i++) {
-        if (opd_to_fetch.test(i)) {
-          GprReq gpr_req;
-          gpr_req.rid = trace->src_regs[i].idx;
-          gpr_req.wid = trace->wid;
-          gpr_req.opd = i;
-          gpr_req_ports.at(i).push(gpr_req);
-        }
-      }
-    }
-
-    // process incoming GPR responses
-    for (uint32_t i = 0; i < NUM_SRC_REGS; i++) {
-      if (gpr_rsp_ports.at(i).empty())
-        continue;
-      assert(pending_rsps_ != 0);
-      --pending_rsps_;
-      auto rsp = gpr_rsp_ports.at(i).front();
-      __unused(rsp);
-      gpr_rsp_ports.at(i).pop();
-    }
-
-    // process outgoing instructions
-    if (0 == pending_rsps_) {
-      auto trace = Input.front();
-      this->Output.push(trace);
-      Input.pop();
-    }
-  }
+  void writeback(instr_trace_t* trace);
 
   uint32_t total_stalls() const {
     return total_stalls_;
   }
 
 private:
-  uint32_t pending_rsps_ = 0;
+
+  bool schedule(instr_trace_t* trace);
+
+  bool fused_schedule(instr_trace_t* trace);
+
+  void decode(instr_trace_t* trace);
+
+  Core* core_;
+  std::bitset<NUM_SRC_REGS> vopd_to_fetch_ = 0;
+  uint32_t pending_s_rsps_ = 0;
+  uint32_t pending_v_rsps_ = 0;
+  uint32_t vl_counter_ = 0;
+  uint32_t vlmul_counter_ = 0;
+  uint32_t vs2_opd_ = -1;
+  Word     active_PC_;
+  bool     wb_lock_ = false;
+  bool     instr_pending_ = false;
+  bool     is_reduction_ = false;
   uint32_t total_stalls_ = 0;
 };
 

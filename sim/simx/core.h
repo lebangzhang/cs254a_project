@@ -23,28 +23,21 @@
 #include "ibuffer.h"
 #include "scoreboard.h"
 
+#ifdef EXT_V_ENABLE
+#include "voperands.h"
+#include "vec_unit.h"
+#else
 #ifdef DISABLE_OPC
 #include "operands_old.h"
 #else
-#ifdef EXT_V_ENABLE
-#ifdef RVV_FUSED
-#include "voperands.h"
-#else
 #include "operands.h"
 #endif
-#else
-#include "operands.h"
-#endif
-
 #endif
 
 #include "dispatcher.h"
 #include "func_unit.h"
 #include "mem_coalescer.h"
 #include "VX_config.h"
-#ifdef EXT_V_ENABLE
-#include "vec_unit.h"
-#endif
 
 namespace vortex {
 
