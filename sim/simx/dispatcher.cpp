@@ -90,8 +90,8 @@ void Dispatcher::tick() {
       }
       new_trace->tmask = tmask;
       new_trace->pid = start;
-      new_trace->sop = (0 == block_pid);
-      new_trace->eop = (start == end);
+      new_trace->sop = trace->sop && (0 == block_pid);
+      new_trace->eop = trace->eop && (start == end);
     } else {
       // issue the trace
       input.pop();

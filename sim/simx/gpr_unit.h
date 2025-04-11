@@ -54,8 +54,8 @@ public:
 		snprintf(sname, 100, "%s-xbar", this->name().c_str());
     crossbar_ = ReqXbar::Create(sname, NUM_REQS, NUM_BANKS,
 		 [](const GprReq& req)->uint32_t {
-      uint32_t bank_id = ((req.wid & BANKID_WIS_MASK) << BANKID_REG_BITS) | (req.rid & BANKID_REG_MASK);
-			return bank_id;
+      //uint32_t bank_id = ((req.wid & BANKID_WIS_MASK) << BANKID_REG_BITS) | (req.rid & BANKID_REG_MASK);
+			return req.rid % NUM_BANKS;
 		});
     for (uint32_t i = 0; i < NUM_REQS; ++i) {
 			ReqIn.at(i).bind(&crossbar_->Inputs.at(i));

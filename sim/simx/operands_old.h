@@ -48,14 +48,16 @@ public:
 			uint32_t stalls = 0;
 
 			for (int i = 0; i < NUM_SRC_REGS; ++i) {
+				uint32_t x_rid = trace->src_regs[i].id();
+				if (x_rid == 0)
+					continue; // skip x0 or empty
 				for (int j = i + 1; j < NUM_SRC_REGS; ++j) {
-					int bank_i = trace->src_regs[i].idx % NUM_BANKS;
-					int bank_j = trace->src_regs[j].idx % NUM_BANKS;
-					if ((trace->src_regs[i].type != RegType::None)
-					 && (trace->src_regs[j].type != RegType::None)
-					 && (trace->src_regs[i].idx != 0)
-					 && (trace->src_regs[j].idx != 0)
-					 && bank_i == bank_j) {
+					uint32_t y_rid = trace->src_regs[j].id();
+					if (y_rid == 0)
+						continue; // skip x0 or empty
+					int bank_x = x_rid % NUM_BANKS;
+					int bank_y = y_rid % NUM_BANKS;
+					if (bank_x == bank_y) {
 						++stalls;
 					}
 				}
@@ -69,6 +71,11 @@ public:
 
 			Input.pop();
     };
+
+		bool writeback(instr_trace_t* trace) {
+			__unused(trace);
+			return true;
+		}
 
 		uint32_t total_stalls() const {
 			return total_stalls_;

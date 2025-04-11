@@ -354,10 +354,10 @@
 
 // Register File Banks
 `ifndef NUM_GPR_BANKS
-`define NUM_GPR_BANKS   `MIN(`NUM_OPCS, 16)
+`define NUM_GPR_BANKS   (NUM_OPCS * 3)
 `endif
 `ifndef NUM_VGPR_BANKS
-`define NUM_VGPR_BANKS  `MIN(`NUM_VOPCS, 16)
+`define NUM_VGPR_BANKS  (NUM_VOPCS * 3)
 `endif
 
 // Number of ALU units

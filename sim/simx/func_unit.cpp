@@ -186,17 +186,31 @@ void LsuUnit::tick() {
 			trace->log_once(false);
 		}
 
-		auto trace_data = std::dynamic_pointer_cast<LsuTraceData>(trace->data);
 		if (remain_addrs_ == 0) {
 			pending_addrs_.clear();
-			for (uint32_t t = 0; t < trace_data->mem_addrs.size(); ++t) {
-				if (!trace->tmask.test(t))
-					continue;
-				for (auto addr : trace_data->mem_addrs.at(t)) {
-					pending_addrs_.push_back(addr);
+			if (trace->data) {
+			#ifdef EXT_V_ENABLE
+				if (trace->lsu_type == LsuType::VLOAD || trace->lsu_type == LsuType::VSTORE) {
+					auto trace_data = std::dynamic_pointer_cast<VecUnit::MemTraceData>(trace->data);
+					for (uint32_t t = 0; t < trace_data->mem_addrs.size(); ++t) {
+						if (!trace->tmask.test(t))
+							continue;
+						for (auto addr : trace_data->mem_addrs.at(t)) {
+							pending_addrs_.push_back(addr);
+						}
+					}
+				} else
+			#endif
+				{
+					auto trace_data = std::dynamic_pointer_cast<LsuTraceData>(trace->data);
+					for (uint32_t t = 0; t < trace_data->mem_addrs.size(); ++t) {
+						if (!trace->tmask.test(t))
+							continue;
+						pending_addrs_.push_back(trace_data->mem_addrs.at(t));
+					}
 				}
+				remain_addrs_ = pending_addrs_.size();
 			}
-			remain_addrs_ = pending_addrs_.size();
 		}
 
 		if (remain_addrs_ != 0) {
@@ -268,7 +282,7 @@ void SfuUnit::tick() {
 		case SfuType::WSPAWN:
 			output.push(trace, 2+delay);
 			if (trace->eop) {
-				auto trace_data = std::dynamic_pointer_cast<SFUTraceData>(trace->data);
+				auto trace_data = std::dynamic_pointer_cast<SfuTraceData>(trace->data);
 				release_warp = core_->wspawn(trace_data->arg1, trace_data->arg2);
 			}
 			break;
@@ -284,7 +298,7 @@ void SfuUnit::tick() {
 		case SfuType::BAR: {
 			output.push(trace, 2+delay);
 			if (trace->eop) {
-				auto trace_data = std::dynamic_pointer_cast<SFUTraceData>(trace->data);
+				auto trace_data = std::dynamic_pointer_cast<SfuTraceData>(trace->data);
 				release_warp = core_->barrier(trace_data->arg1, trace_data->arg2, trace->wid);
 			}
 		} break;

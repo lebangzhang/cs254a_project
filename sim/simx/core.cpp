@@ -57,7 +57,7 @@ Core::Core(const SimContext& ctx,
   char sname[100];
 
   for (uint32_t iw = 0; iw < ISSUE_WIDTH; ++iw) {
-    operands_.at(iw) = Operands::Create();
+    operands_.at(iw) = Operands::Create(this);
   }
 
   // create the memory coalescer
@@ -369,6 +369,7 @@ void Core::issue() {
       ibuffer.pop();
     }
 
+    // track scoreboard stalls
     if (has_instrs && !ready_set.any()) {
       ++perf_stats_.scrb_stalls;
     }
@@ -398,11 +399,19 @@ void Core::commit() {
     auto trace = commit_arb->Outputs.at(0).front().data;
 
     // advance to commit stage
-    DT(3, "pipeline-commit: " << *trace);
+    auto latency = SimPlatform::instance().cycles() - trace->issue_time;
+    static uint32_t max_latency = 0;
+    if (latency > max_latency) {
+      DT(3, "pipeline-commit: latency=" << latency <<  " (max), " << *trace);
+      max_latency = latency;
+    } else {
+      DT(3, "pipeline-commit: latency=" << latency << ", " << *trace);
+    }
     assert(trace->cid == core_id_);
 
     // update scoreboard
     if (trace->eop) {
+      operands_.at(iw)->writeback(trace);
       if (trace->wb) {
         scoreboard_.release(trace);
       }
