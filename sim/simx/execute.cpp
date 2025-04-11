@@ -737,6 +737,9 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
           continue;
         vec_unit_->load(instr, wid, t, rs1_data, rs2_data, trace_data.get());
       }
+      if (trace_data->vs2_opd != -1) {
+        trace->src_regs[trace_data->vs2_opd] = {instr.getRSType(trace_data->vs2_opd), instr.getRSrc(trace_data->vs2_opd)};
+      }
       rd_write = true;
     }
   #endif
@@ -782,6 +785,9 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
         if (!warp.tmask.test(t))
           continue;
         vec_unit_->store(instr, wid, t, rs1_data, rs2_data, trace_data.get());
+      }
+      if (trace_data->vs2_opd != -1) {
+        trace->src_regs[trace_data->vs2_opd] = {instr.getRSType(trace_data->vs2_opd), instr.getRSrc(trace_data->vs2_opd)};
       }
     }
   #endif
@@ -1352,8 +1358,11 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
         continue;
       auto ret = vec_unit_->execute(instr, wid, t, rs1_data, rs2_data, rd_data, trace_data.get());
       trace->vpu_type = ret.vpu_type;
-      rd_write = ret.rd_write;
     }
+    for (uint32_t i = 0; i < instr.getNRSrc(); ++i) {
+      trace->src_regs[i] = {instr.getRSType(i), instr.getRSrc(i)};
+    }
+    rd_write = true;
     break;
   }
 #endif
@@ -1529,7 +1538,8 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
       break;
   #ifdef EXT_V_ENABLE
     case RegType::Vector:
-      // VRF is updated in the vector unit
+      DPH(2, "Dest Reg: " << type << rdest << "={}" << std::endl);
+      trace->dst_reg = {type, rdest};
       break;
   #endif
     default:

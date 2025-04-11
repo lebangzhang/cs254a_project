@@ -100,6 +100,8 @@ public:
 
   bool fetch_stall;
 
+  uint64_t issue_time ;
+
   instr_trace_t(uint64_t uuid, const Arch& arch)
     : uuid(uuid)
     , arch(arch)
@@ -118,6 +120,7 @@ public:
     , sop(true)
     , eop(true)
     , fetch_stall(false)
+    , issue_time(SimPlatform::instance().cycles())
     , log_once_(false)
   {}
 
@@ -139,6 +142,7 @@ public:
     , sop(rhs.sop)
     , eop(rhs.eop)
     , fetch_stall(rhs.fetch_stall)
+    , issue_time(rhs.issue_time)
     , log_once_(false)
   {}
 

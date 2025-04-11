@@ -35,9 +35,11 @@ void VOpcUnit::reset() {
   pending_v_rsps_ = 0;
   vl_counter_ = 0;
   vlmul_counter_ = 0;
+  red_counter_ = 0;
+  wb_counter_ = 0;
   instr_pending_ = false;
-  wb_lock_ = false;
   is_reduction_ = false;
+  lsu_flush_ = false;
   total_stalls_ = 0;
 }
 
@@ -56,7 +58,6 @@ void VOpcUnit::tick() {
     // capture SIMD counters
     if (trace->fu_type == FUType::VPU) {
       auto trace_data = std::dynamic_pointer_cast<VecUnit::ExeTraceData>(trace->data);
-      is_reduction_ = (trace->vpu_type >= VpuType::ARITH_R);
       active_PC_ = trace->PC;
       if (trace->vpu_type != VpuType::VSET) {
         vl_counter_ = trace_data->vl;
@@ -64,6 +65,11 @@ void VOpcUnit::tick() {
       } else {
         vl_counter_ = 1;
         vlmul_counter_ = 1;
+      }
+      is_reduction_ = (trace->vpu_type >= VpuType::ARITH_R);
+      if (is_reduction_) {
+        red_counter_ = (vlmul_counter_ * vl_counter_) - 1;
+        wb_counter_ = (red_counter_ > 1) ? (red_counter_ - 1) : 0;
       }
     } else {
       assert(trace->fu_type == FUType::LSU);
@@ -172,7 +178,9 @@ void VOpcUnit::tick() {
       // reset states
       instr_pending_ = false;
       is_reduction_ = false;
-      wb_lock_ = false;
+      lsu_flush_ = false;
+      red_counter_ = 0;
+      wb_counter_ = 0;
     }
   }
 }
@@ -197,11 +205,14 @@ bool VOpcUnit::schedule(instr_trace_t* trace) {
     auto trace_alloc = core_->trace_pool().allocate(1);
     auto new_trace = new (trace_alloc) instr_trace_t(*trace);
     new_trace->wb = false; // disable scoreboard update
+    this->lsu_flush(new_trace);
     DT(4, "*** VOPC next group: vlmul=" << vlmul_counter_ << ", " << *new_trace);
+
     this->Output.push(new_trace);
     return false;
   }
   // we are done with all iterations, issue the original instruction
+  this->lsu_flush(trace);
   DT(4, "*** VOPC done: " << *trace);
   this->Output.push(trace);
   return true;
@@ -210,9 +221,18 @@ bool VOpcUnit::schedule(instr_trace_t* trace) {
 bool VOpcUnit::fused_schedule(instr_trace_t* trace) {
   // reduction instructions are serialized via writeback
   if (is_reduction_) {
-    if (wb_lock_)
-      return false;
-    wb_lock_ = true; // lock for writeback
+    if (red_counter_ == 0) {
+      // wait on writeback
+      if (wb_counter_ != 0)
+        return false;
+      // we are done with all iterations, issue the original instruction
+      this->decode(trace);
+      DT(4, "*** VOPC done: " << *trace);
+      this->Output.push(trace);
+      return true;
+    } else {
+      --red_counter_;
+    }
   }
 
   // we need to run the instruction again for vlmul
@@ -230,6 +250,10 @@ bool VOpcUnit::fused_schedule(instr_trace_t* trace) {
         ++pending_v_rsps_;
       }
     }
+
+    if (is_reduction_ && red_counter_ == 0)
+      return false; // we will issue the last trace next
+
     // issue a cloned instruction trace
     auto trace_alloc = core_->trace_pool().allocate(1);
     auto new_trace = new (trace_alloc) instr_trace_t(*trace);
@@ -264,6 +288,10 @@ bool VOpcUnit::fused_schedule(instr_trace_t* trace) {
       auto trace_data = std::dynamic_pointer_cast<VecUnit::MemTraceData>(trace->data);
       vlmul_counter_ = trace_data->vnf;
     }
+
+    if (is_reduction_ && red_counter_ == 0)
+      return false; // we will issue the last trace next
+
     // issue a cloned instruction trace
     auto trace_alloc = core_->trace_pool().allocate(1);
     auto new_trace = new (trace_alloc) instr_trace_t(*trace);
@@ -285,7 +313,7 @@ void VOpcUnit::decode(instr_trace_t* trace) {
   // translate to scalar pipeline
   switch (trace->fu_type) {
   case FUType::LSU:
-    // no convertion
+    // no conversion
     break;
   case FUType::VPU:
     // decode VPU instructions
@@ -335,11 +363,23 @@ void VOpcUnit::decode(instr_trace_t* trace) {
   default:
     assert(false);
   }
+
+  this->lsu_flush(trace);
 }
 
 void VOpcUnit::writeback(instr_trace_t* trace) {
   // only notify writeback for the currently active reduction instructions
-  if (instr_pending_ && is_reduction_ && trace->PC == active_PC_) {
-    wb_lock_ = false;
+  if (instr_pending_ && wb_counter_ > 0 && trace->PC == active_PC_) {
+    --wb_counter_;
   }
+}
+
+void VOpcUnit::lsu_flush(instr_trace_t* trace) {
+  if (trace->fu_type != FUType::LSU)
+    return;
+  if (lsu_flush_) {
+    trace->data = nullptr;
+    return;
+  }
+  lsu_flush_ = true;
 }

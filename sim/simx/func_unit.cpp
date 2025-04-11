@@ -188,27 +188,29 @@ void LsuUnit::tick() {
 
 		if (remain_addrs_ == 0) {
 			pending_addrs_.clear();
-		#ifdef EXT_V_ENABLE
-			if (trace->lsu_type == LsuType::VLOAD || trace->lsu_type == LsuType::VSTORE) {
-				auto trace_data = std::dynamic_pointer_cast<VecUnit::MemTraceData>(trace->data);
-				for (uint32_t t = 0; t < trace_data->mem_addrs.size(); ++t) {
-					if (!trace->tmask.test(t))
-						continue;
-					for (auto addr : trace_data->mem_addrs.at(t)) {
-						pending_addrs_.push_back(addr);
+			if (trace->data) {
+			#ifdef EXT_V_ENABLE
+				if (trace->lsu_type == LsuType::VLOAD || trace->lsu_type == LsuType::VSTORE) {
+					auto trace_data = std::dynamic_pointer_cast<VecUnit::MemTraceData>(trace->data);
+					for (uint32_t t = 0; t < trace_data->mem_addrs.size(); ++t) {
+						if (!trace->tmask.test(t))
+							continue;
+						for (auto addr : trace_data->mem_addrs.at(t)) {
+							pending_addrs_.push_back(addr);
+						}
+					}
+				} else
+			#endif
+				{
+					auto trace_data = std::dynamic_pointer_cast<LsuTraceData>(trace->data);
+					for (uint32_t t = 0; t < trace_data->mem_addrs.size(); ++t) {
+						if (!trace->tmask.test(t))
+							continue;
+						pending_addrs_.push_back(trace_data->mem_addrs.at(t));
 					}
 				}
-			} else
-		#endif
-			{
-				auto trace_data = std::dynamic_pointer_cast<LsuTraceData>(trace->data);
-				for (uint32_t t = 0; t < trace_data->mem_addrs.size(); ++t) {
-					if (!trace->tmask.test(t))
-						continue;
-					pending_addrs_.push_back(trace_data->mem_addrs.at(t));
-				}
+				remain_addrs_ = pending_addrs_.size();
 			}
-			remain_addrs_ = pending_addrs_.size();
 		}
 
 		if (remain_addrs_ != 0) {

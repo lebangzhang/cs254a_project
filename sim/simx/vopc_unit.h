@@ -53,17 +53,21 @@ private:
 
   void decode(instr_trace_t* trace);
 
+  void lsu_flush(instr_trace_t* trace);
+
   Core* core_;
   std::bitset<NUM_SRC_REGS> vopd_to_fetch_ = 0;
   uint32_t pending_s_rsps_ = 0;
   uint32_t pending_v_rsps_ = 0;
   uint32_t vl_counter_ = 0;
   uint32_t vlmul_counter_ = 0;
+  uint32_t red_counter_ = 0;
+  uint32_t wb_counter_ = 0;
   uint32_t vs2_opd_ = -1;
   Word     active_PC_;
-  bool     wb_lock_ = false;
   bool     instr_pending_ = false;
   bool     is_reduction_ = false;
+  bool     lsu_flush_ = false;
   uint32_t total_stalls_ = 0;
 };
 

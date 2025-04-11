@@ -112,10 +112,10 @@ build_driver() {
 
     if [ -n "$cmd_opts" ]; then
         echo "Running: $cmd_opts make -C $DRIVER_PATH > /dev/null"
-        eval "$cmd_opts make -C $DRIVER_PATH > /dev/null"
+        eval "$cmd_opts make -j4 -C $DRIVER_PATH > /dev/null"
     else
         echo "Running: make -C $DRIVER_PATH > /dev/null"
-        make -C $DRIVER_PATH > /dev/null
+        make -j4 -C $DRIVER_PATH > /dev/null
     fi
 }
 
@@ -166,7 +166,7 @@ main() {
         LAST_CONFIGS=$(cat "$BLACKBOX_CACHE" 2>/dev/null || echo "")
 
         if [ $REBUILD -eq 1 ] || [ "$CONFIGS+$DEBUG+$SCOPE" != "$LAST_CONFIGS" ]; then
-            make -C $DRIVER_PATH clean-driver > /dev/null
+            make -j4 -C $DRIVER_PATH clean-driver > /dev/null
             echo "$CONFIGS+$DEBUG+$SCOPE" > "$BLACKBOX_CACHE"
         fi
     fi
