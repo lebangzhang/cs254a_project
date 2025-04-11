@@ -207,7 +207,6 @@ bool VOpcUnit::schedule(instr_trace_t* trace) {
     new_trace->wb = false; // disable scoreboard update
     this->lsu_flush(new_trace);
     DT(4, "*** VOPC next group: vlmul=" << vlmul_counter_ << ", " << *new_trace);
-
     this->Output.push(new_trace);
     return false;
   }
@@ -270,7 +269,7 @@ bool VOpcUnit::fused_schedule(instr_trace_t* trace) {
   if (vl_counter_ != 0) {
     // fetch the vector operands again (skip vs2 operand for LD/ST)
     for (uint32_t i = 0; i < NUM_SRC_REGS; i++) {
-      if (vopd_to_fetch_.test(i) && vs2_opd_ != i) {
+      if (vopd_to_fetch_.test(i)) {
         GprReq gpr_req;
         gpr_req.rid = trace->src_regs[i].id();
         gpr_req.wid = trace->wid;

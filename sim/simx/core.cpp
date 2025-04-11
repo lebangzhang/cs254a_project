@@ -369,6 +369,7 @@ void Core::issue() {
       ibuffer.pop();
     }
 
+    // track scoreboard stalls
     if (has_instrs && !ready_set.any()) {
       ++perf_stats_.scrb_stalls;
     }
