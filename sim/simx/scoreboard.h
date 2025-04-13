@@ -35,10 +35,10 @@ public:
 		for (auto& in_use_reg : in_use_regs_) {
 			in_use_reg.resize((int)RegType::Count);
 		}
-		this->clear();
+		this->reset();
 	}
 
-	void clear() {
+	void reset() {
 		for (auto& in_use_reg : in_use_regs_) {
 			for (auto& mask : in_use_reg) {
 				mask.reset();

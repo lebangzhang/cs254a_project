@@ -357,7 +357,7 @@ public:
   }
 
   void finalize() {
-    instance().clear();
+    instance().cleanup();
   }
 
   template <typename Impl, typename... Args>
@@ -425,10 +425,10 @@ private:
   SimPlatform() : cycles_(0) {}
 
   virtual ~SimPlatform() {
-    this->clear();
+    this->cleanup();
   }
 
-  void clear() {
+  void cleanup() {
     objects_.clear();
     events_.clear();
   }

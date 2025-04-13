@@ -86,7 +86,7 @@ private:
 
 		lsu_state_t() : pending_rd_reqs(LSUQ_IN_SIZE) {}
 
-		void clear() {
+		void reset() {
 			this->pending_rd_reqs.clear();
 			this->fence_trace = nullptr;
 			this->fence_lock = false;

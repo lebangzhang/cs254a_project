@@ -84,7 +84,7 @@ void Dispatcher::tick() {
         input.pop();
         ++block_sent;
       }
-      ThreadMask tmask;
+      ThreadMask tmask(arch_.num_threads());
       for (int j = start * num_lanes_, n = j + num_lanes_; j < n; ++j) {
         tmask[j] = trace->tmask[j];
       }

@@ -20,6 +20,31 @@ namespace vortex {
 template <typename T = uint32_t>
 class BitVector {
 private:
+
+  class BitProxy {
+  public:
+    BitProxy(BitVector& bv, size_t pos) : bv_(bv), pos_(pos) {}
+
+    operator bool() const {
+      return bv_.test(pos_);
+    }
+
+    BitProxy& operator=(bool value) {
+      bv_.set(pos_, value);
+      return *this;
+    }
+
+    BitProxy& operator=(const BitProxy& other) {
+      bool value = other.bv_.test(other.pos_);
+      bv_.set(pos_, value);
+      return *this;
+    }
+
+  private:
+    BitVector& bv_;
+    size_t pos_;
+  };
+
   static constexpr size_t BITS_PER_WORD = sizeof(T) * 8;
   std::vector<T> words_;
   T single_word_;
@@ -164,6 +189,10 @@ public:
 
   bool operator[](size_t pos) const {
     return test(pos);
+  }
+
+  BitProxy operator[](size_t pos) {
+    return BitProxy(*this, pos);
   }
 
   BitVector& operator&=(const BitVector& other) {

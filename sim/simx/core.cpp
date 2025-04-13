@@ -168,19 +168,19 @@ Core::~Core() {
 
 void Core::reset() {
 
-  emulator_.clear();
+  emulator_.reset();
 
   for (auto& commit_arb : commit_arbs_) {
     commit_arb->reset();
   }
 
   for (auto& ibuf : ibuffers_) {
-    ibuf.clear();
+    ibuf.reset();
   }
 
-  scoreboard_.clear();
-  fetch_latch_.clear();
-  decode_latch_.clear();
+  scoreboard_.reset();
+  fetch_latch_.reset();
+  decode_latch_.reset();
   pending_icache_.clear();
 
   for (auto& arb : ibuffer_arbs_) {

@@ -110,7 +110,7 @@ struct line_t {
 	bool     valid;
 	bool     dirty;
 
-	void clear() {
+	void reset() {
 		valid = false;
 		dirty = false;
 	}
@@ -123,9 +123,9 @@ struct set_t {
 		: lines(num_ways)
 	{}
 
-	void clear() {
+	void reset() {
 		for (auto& line : lines) {
-			line.clear();
+			line.reset();
 		}
 	}
 };
@@ -135,7 +135,7 @@ struct bank_req_port_t {
 	uint64_t req_tag;
 	bool     valid;
 
-	void clear() {
+	void reset() {
 		valid = false;
 	}
 };
@@ -161,9 +161,9 @@ struct bank_req_t {
 		: ports(num_ports)
 	{}
 
-	void clear() {
+	void reset() {
 		for (auto& port : ports) {
-			port.clear();
+			port.reset();
 		}
 		type = ReqType::None;
 	}
@@ -196,8 +196,8 @@ struct mshr_entry_t {
 		: bank_req(num_ports)
 	{}
 
-	void clear() {
-		bank_req.clear();
+	void reset() {
+		bank_req.reset();
 	}
 };
 
@@ -271,9 +271,9 @@ public:
 		return false;
 	}
 
-	void clear() {
+	void reset() {
 		for (auto& entry : entries_) {
-			entry.clear();
+			entry.reset();
 		}
 		size_ = 0;
 	}
@@ -289,11 +289,11 @@ struct bank_t {
 		, mshr(config.mshr_size, config.ports_per_bank)
 	{}
 
-	void clear() {
+	void reset() {
 		for (auto& set : sets) {
-			set.clear();
+			set.reset();
 		}
-		mshr.clear();
+		mshr.reset();
 	}
 };
 
@@ -378,7 +378,7 @@ public:
 			return;
 
 		for (auto& bank : banks_) {
-			bank.clear();
+			bank.reset();
 		}
 		perf_stats_ = PerfStats();
 		pending_read_reqs_  = 0;
@@ -408,7 +408,7 @@ public:
 
 		// initialize pipeline request
 		for (auto& pipeline_req : pipeline_reqs_) {
-			pipeline_req.clear();
+			pipeline_req.reset();
 		}
 
 		// first: schedule MSHR replay (flush MSHR queue)

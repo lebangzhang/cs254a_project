@@ -47,7 +47,7 @@ typedef __int128_t DWordI;
 
 typedef std::bitset<MAX_NUM_CORES>   CoreMask;
 typedef std::bitset<MAX_NUM_REGS>    RegMask;
-typedef std::bitset<MAX_NUM_THREADS> ThreadMask;
+typedef BitVector<Word>              ThreadMask;
 typedef std::bitset<MAX_NUM_WARPS>   WarpMask;
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -63,27 +63,6 @@ union reg_data_t {
   uint64_t u64;
   int32_t  i32;
   int64_t  i64;
-};
-
-///////////////////////////////////////////////////////////////////////////////
-
-class ThreadMaskOS {
-public:
-  ThreadMaskOS(const ThreadMask& mask, int size)
-    : mask_(mask)
-    , size_(size)
-  {}
-
-  friend std::ostream& operator<<(std::ostream& os, const ThreadMaskOS& wrapper) {
-    for (int i = 0; i < wrapper.size_; ++i) {
-      os << wrapper.mask_[i];
-    }
-    return os;
-  }
-
-private:
-  const ThreadMask& mask_;
-  int size_;
 };
 
 ///////////////////////////////////////////////////////////////////////////////

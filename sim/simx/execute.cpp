@@ -48,7 +48,7 @@ inline int64_t check_boxing(int64_t a) {
 
 inline void read_register(std::vector<reg_data_t>& out, uint32_t src_index, const RegOpd& reg, const warp_t& warp) {
   __unused(src_index);
-  uint32_t num_threads = warp.num_threads;
+  uint32_t num_threads = warp.tmask.size();
   uint32_t group_size = reg.group_size();
   out.resize(num_threads * group_size);
   switch (reg.type) {
@@ -116,7 +116,7 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
   auto rsrc0  = instr.getSrcReg(0);
   auto rsrc1  = instr.getSrcReg(1);
   auto rsrc2  = instr.getSrcReg(2);
-  auto immsrc = instr.getImm();
+  auto immsrc = sext<Word>(instr.getImm(), 32);
 
   auto num_threads = arch_.num_threads();
 
@@ -1331,7 +1331,8 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
 
         auto stack_size = warp.ipdom_stack.size();
 
-        ThreadMask then_tmask, else_tmask;
+        ThreadMask then_tmask(num_threads);
+        ThreadMask else_tmask(num_threads);
         auto not_pred = (rsrc1.idx != 0);
         for (uint32_t t = 0; t < num_threads; ++t) {
           auto cond = (rs1_data.at(t).i & 0x1) ^ not_pred;
@@ -1395,7 +1396,7 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
         trace->fu_type = FUType::SFU;
         trace->sfu_type = SfuType::PRED;
         trace->fetch_stall = true;
-        ThreadMask pred;
+        ThreadMask pred(num_threads);
         auto not_pred = rdest.idx & 0x1;
         for (uint32_t t = 0; t < num_threads; ++t) {
           auto cond = (rs1_data.at(t).i & 0x1) ^ not_pred;
@@ -1479,7 +1480,7 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
   }
 
   if (warp.tmask != next_tmask) {
-    DP(3, "*** New Tmask=" << ThreadMaskOS(next_tmask, num_threads));
+    DP(3, "*** New Tmask=" << next_tmask);
     warp.tmask = next_tmask;
     if (!next_tmask.any()) {
       active_warps_.reset(wid);

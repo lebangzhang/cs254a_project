@@ -39,12 +39,12 @@ public:
       , num_lanes_(arch.num_warps())
       , pending_reqs_(arch.num_warps())
   {
-    this->clear();
+    this->reset();
   }
 
   ~Impl() {}
 
-  void clear() {
+  void reset() {
     pending_reqs_.clear();
     perf_stats_ = PerfStats();
   }
@@ -1731,7 +1731,7 @@ private:
       , vlmax(0)
     {}
 
-    void clear() {
+    void reset() {
       for (auto& reg_file : this->vreg_file) {
         for (auto& reg : reg_file) {
           for (auto& elm : reg) {
@@ -1771,7 +1771,7 @@ VecUnit::~VecUnit() {
 }
 
 void VecUnit::reset() {
-  impl_->clear();
+  impl_->reset();
 }
 
 void VecUnit::tick() {

@@ -169,7 +169,7 @@ public:
   RegOpd   getDestReg() const { return rdest_; }
 
   bool     hasImm() const { return has_imm_; }
-  Word     getImm() const { return imm_; }
+  uint32_t getImm() const { return imm_; }
 
   uint32_t getFunct2() const { return funct2_; }
   uint32_t getFunct3() const { return funct3_; }

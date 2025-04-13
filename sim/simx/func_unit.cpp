@@ -106,7 +106,7 @@ LsuUnit::~LsuUnit()
 
 void LsuUnit::reset() {
 	for (auto& state : states_) {
-		state.clear();
+		state.reset();
 	}
 	pending_loads_ = 0;
 	remain_addrs_ = 0;

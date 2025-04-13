@@ -33,13 +33,14 @@ using namespace vortex;
 warp_t::warp_t(uint32_t num_threads)
   : ireg_file(MAX_NUM_REGS, std::vector<Word>(num_threads))
   , freg_file(MAX_NUM_REGS, std::vector<uint64_t>(num_threads))
-  , num_threads(num_threads)
+  , tmask(num_threads)
+  , PC(0)
   , uuid(0)
 {}
 
-void warp_t::clear(uint64_t startup_addr) {
-  this->PC = startup_addr;
+void warp_t::reset(uint64_t startup_addr) {
   this->tmask.reset();
+  this->PC = startup_addr;
   this->uuid = 0;
   this->fcsr = 0;
 
@@ -83,14 +84,14 @@ Emulator::Emulator(const Arch &arch, const DCRS &dcrs, Core* core)
   #endif
 {
   std::srand(50);
-  this->clear();
+  this->reset();
 }
 
 Emulator::~Emulator() {
   this->cout_flush();
 }
 
-void Emulator::clear() {
+void Emulator::reset() {
   uint64_t startup_addr = dcrs_.base_dcrs.read(VX_DCR_BASE_STARTUP_ADDR0);
 #if (XLEN == 64)
   startup_addr |= (uint64_t(dcrs_.base_dcrs.read(VX_DCR_BASE_STARTUP_ADDR1)) << 32);
@@ -102,7 +103,7 @@ void Emulator::clear() {
 #endif
 
   for (auto& warp : warps_) {
-    warp.clear(startup_addr);
+    warp.reset(startup_addr);
   }
 
   for (auto& barrier : barriers_) {
@@ -174,7 +175,7 @@ instr_trace_t* Emulator::step() {
   uint64_t uuid = 0;
 #endif
 
-  DP(1, "Fetch: cid=" << core_->id() << ", wid=" << scheduled_warp << ", tmask=" << ThreadMaskOS(warp.tmask, arch_.num_threads())
+  DP(1, "Fetch: cid=" << core_->id() << ", wid=" << scheduled_warp << ", tmask=" << warp.tmask
          << ", PC=0x" << std::hex << warp.PC << " (#" << std::dec << uuid << ")");
 
   // Fetch

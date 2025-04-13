@@ -48,17 +48,17 @@ struct ipdom_entry_t {
 ///////////////////////////////////////////////////////////////////////////////
 
 struct warp_t {
-  Word                              PC;
-  ThreadMask                        tmask;
   std::vector<std::vector<Word>>    ireg_file;
   std::vector<std::vector<uint64_t>>freg_file;
   std::stack<ipdom_entry_t>         ipdom_stack;
+  ThreadMask                        tmask;
+  Word                              PC;
   Byte                              fcsr;
-  uint32_t                          num_threads;
   uint32_t                          uuid;
 
   warp_t(uint32_t num_threads);
-  void clear(uint64_t startup_addr);
+
+  void reset(uint64_t startup_addr);
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -77,7 +77,7 @@ public:
 
   ~Emulator();
 
-  void clear();
+  void reset();
 
   void attach_ram(RAM* ram);
 
