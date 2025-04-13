@@ -89,7 +89,7 @@ private:
 
 public:
 
-  BitVector(size_t size = 0)
+  explicit BitVector(size_t size = 0)
     : size_(size)
     , all_zero_(true) {
     if (size <= BITS_PER_WORD) {
@@ -98,6 +98,19 @@ public:
       size_t num_blocks = (size + (BITS_PER_WORD - 1)) / BITS_PER_WORD;
       words_.resize(num_blocks, 0);
     }
+  }
+
+  BitVector(size_t size, T value)
+    : size_(size) {
+    if (size_ <= BITS_PER_WORD) {
+      single_word_ = value;
+    } else {
+      size_t num_blocks = (size_ + BITS_PER_WORD - 1) / BITS_PER_WORD;
+      words_.resize(num_blocks, 0);
+      words_[0] = value;
+    }
+    this->clearUnusedBits();
+    this->updateAllZero();
   }
 
   ~BitVector() {}

@@ -109,14 +109,9 @@ build_driver() {
     [ $SCOPE -eq 1 ] && cmd_opts=$(add_option "$cmd_opts" "SCOPE=1")
     [ $TEMPBUILD -eq 1 ] && cmd_opts=$(add_option "$cmd_opts" "DESTDIR=\"$TEMPDIR\"")
     [ -n "$CONFIGS" ] && cmd_opts=$(add_option "$cmd_opts" "CONFIGS=\"$CONFIGS\"")
-
-    if [ -n "$cmd_opts" ]; then
-        echo "Running: $cmd_opts make -j4 -C $DRIVER_PATH > /dev/null"
-        eval "$cmd_opts make -j4 -C $DRIVER_PATH > /dev/null"
-    else
-        echo "Running: make -j4 -C $DRIVER_PATH > /dev/null"
-        make -j4 -C $DRIVER_PATH > /dev/null
-    fi
+    cmd_opts=$(add_option "$cmd_opts" "make -j4 -C $DRIVER_PATH > /dev/null")
+    echo "Running: $cmd_opts"
+    eval "$cmd_opts"
 }
 
 run_app() {
@@ -124,24 +119,10 @@ run_app() {
     [ $DEBUG -eq 1 ] && cmd_opts=$(add_option "$cmd_opts" "DEBUG=1")
     [ $TEMPBUILD -eq 1 ] && cmd_opts=$(add_option "$cmd_opts" "VORTEX_RT_PATH=\"$TEMPDIR\"")
     [ $HAS_ARGS -eq 1 ] && cmd_opts=$(add_option "$cmd_opts" "OPTS=\"$ARGS\"")
-
-    if [ $DEBUG -ne 0 ]; then
-        if [ -n "$cmd_opts" ]; then
-            echo "Running: $cmd_opts make -C $APP_PATH run-$DRIVER > $LOGFILE 2>&1"
-            eval "$cmd_opts make -C $APP_PATH run-$DRIVER > $LOGFILE 2>&1"
-        else
-            echo "Running: make -C $APP_PATH run-$DRIVER > $LOGFILE 2>&1"
-            make -C $APP_PATH run-$DRIVER > $LOGFILE 2>&1
-        fi
-    else
-        if [ -n "$cmd_opts" ]; then
-            echo "Running: $cmd_opts make -C $APP_PATH run-$DRIVER"
-            eval "$cmd_opts make -C $APP_PATH run-$DRIVER"
-        else
-            echo "Running: make -C $APP_PATH run-$DRIVER"
-            make -C $APP_PATH run-$DRIVER
-        fi
-    fi
+    cmd_opts=$(add_option "$cmd_opts" "make -C \"$APP_PATH\" run-$DRIVER")
+    [ $DEBUG -ne 0 ] && cmd_opts=$(add_option "$cmd_opts" "> $LOGFILE 2>&1")
+    echo "Running: $cmd_opts"
+    eval "$cmd_opts"
     status=$?
     return $status
 }
@@ -181,7 +162,7 @@ main() {
         TEMPDIR=$(mktemp -d)
         mkdir -p "$TEMPDIR"
         # build stub driver
-        echo "running: DESTDIR=$TEMPDIR make -C $ROOT_DIR/runtime/stub"
+        echo "Running: DESTDIR=$TEMPDIR make -C $ROOT_DIR/runtime/stub"
         DESTDIR="$TEMPDIR" make -C $ROOT_DIR/runtime/stub > /dev/null
         # register tempdir cleanup on exit
         trap "rm -rf $TEMPDIR" EXIT

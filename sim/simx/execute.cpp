@@ -1405,7 +1405,7 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
         if (pred.any()) {
           next_tmask &= pred;
         } else {
-          next_tmask = rs2_data.at(thread_last).u;
+          next_tmask = ThreadMask(num_threads, rs2_data.at(thread_last).u);
         }
       } break;
       default:
