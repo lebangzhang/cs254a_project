@@ -45,21 +45,9 @@ struct SfuTraceData : public ITraceData {
 
 struct instr_trace_t {
 public:
-  struct reg_t {
-    RegType  type;
-    uint32_t idx;
-
-    // unique register id embedding the type
-    uint32_t id() const {
-      if (type == RegType::None)
-        return 0;
-      return (((int)(type)-1) << LOG_NUM_REGS) | idx;
-    }
-  };
-
   //--
   const uint64_t uuid;
-  const Arch&    arch;
+  const Arch& arch;
 
   //--
   uint32_t    cid;
@@ -69,13 +57,13 @@ public:
   bool        wb;
 
   //--
-  int32_t    vopc;
+  int32_t     vopc;
 
   //--
-  reg_t       dst_reg;
+  RegOpd      dst_reg;
 
   //--
-  std::vector<reg_t> src_regs;
+  std::vector<RegOpd> src_regs;
 
   //-
   FUType     fu_type;
@@ -159,16 +147,16 @@ public:
     os << ", wid=" << trace.wid;
     os << ", tmask=";
     for (uint32_t i = 0, n = trace.arch.num_threads(); i < n; ++i) {
-        os << trace.tmask.test(i);
+      os << trace.tmask.test(i);
     }
     os << ", PC=0x" << std::hex << trace.PC << std::dec;
     os << ", wb=" << trace.wb;
     if (trace.dst_reg.type != RegType::None) {
-      os << ", rd=" << trace.dst_reg.type << trace.dst_reg.idx;
+      os << ", rd=" << trace.dst_reg;
     }
     for (uint32_t i = 0; i < trace.src_regs.size(); ++i) {
       if (trace.src_regs[i].type != RegType::None) {
-        os << ", rs" << i << "=" << trace.src_regs[i].type << trace.src_regs[i].idx;
+        os << ", rs" << i << "=" << trace.src_regs[i];
       }
     }
     os << ", ex=" << trace.fu_type;

@@ -59,8 +59,8 @@ static const char* op_string(const Instr &instr) {
   auto funct2 = instr.getFunct2();
   auto funct3 = instr.getFunct3();
   auto funct7 = instr.getFunct7();
-  auto rd     = instr.getRDest();
-  auto rs1    = instr.getRSrc(1);
+  auto rd     = instr.getDestReg();
+  auto rs1    = instr.getSrcReg(1);
   auto imm    = instr.getImm();
 
   switch (opcode) {
@@ -326,7 +326,7 @@ static const char* op_string(const Instr &instr) {
         std::abort();
       }
     case 0x60:
-      switch (rs1) {
+      switch (rs1.idx) {
       case 0: return "FCVT.W.S";
       case 1: return "FCVT.WU.S";
       case 2: return "FCVT.L.S";
@@ -335,7 +335,7 @@ static const char* op_string(const Instr &instr) {
         std::abort();
       }
     case 0x61:
-      switch (rs1) {
+      switch (rs1.idx) {
       case 0: return "FCVT.W.D";
       case 1: return "FCVT.WU.D";
       case 2: return "FCVT.L.D";
@@ -344,7 +344,7 @@ static const char* op_string(const Instr &instr) {
         std::abort();
       }
     case 0x68:
-      switch (rs1) {
+      switch (rs1.idx) {
       case 0: return "FCVT.S.W";
       case 1: return "FCVT.S.WU";
       case 2: return "FCVT.S.L";
@@ -353,7 +353,7 @@ static const char* op_string(const Instr &instr) {
         std::abort();
       }
     case 0x69:
-      switch (rs1) {
+      switch (rs1.idx) {
       case 0: return "FCVT.D.W";
       case 1: return "FCVT.D.WU";
       case 2: return "FCVT.D.L";
@@ -379,10 +379,10 @@ static const char* op_string(const Instr &instr) {
       switch (funct3) {
       case 0: return "TMC";
       case 1: return "WSPAWN";
-      case 2: return rs1 ? "SPLIT.N" : "SPLIT";
+      case 2: return rs1.idx ? "SPLIT.N" : "SPLIT";
       case 3: return "JOIN";
       case 4: return "BAR";
-      case 5: return rd ? "PRED.N" : "PRED";
+      case 5: return rd.idx ? "PRED.N" : "PRED";
       default:
         std::abort();
       }
@@ -437,16 +437,16 @@ namespace vortex {
 std::ostream &operator<<(std::ostream &os, const Instr &instr) {
   os << op_string(instr);
   int sep = 0;
-  if (instr.getRDType() != RegType::None) {
+  auto rd = instr.getDestReg();
+  if (rd.type != RegType::None) {
     if (sep++ != 0) { os << ", "; } else { os << " "; }
-    os << instr.getRDType() << instr.getRDest();
+    os << rd;
   }
-  for (uint32_t i = 0; i < instr.getNRSrc(); ++i) {
-    if (sep++ != 0) { os << ", "; } else { os << " "; }
-    if (instr.getRSType(i) != RegType::None) {
-      os << instr.getRSType(i) << instr.getRSrc(i);
-    } else {
-      os << "0x" << std::hex << instr.getRSrc(0) << std::dec;
+  for (uint32_t i = 0; i < instr.getNumSrcRegs(); ++i) {
+    auto rs = instr.getSrcReg(i);
+    if (rs.type != RegType::None) {
+      if (sep++ != 0) { os << ", "; } else { os << " "; }
+      os << rs;
     }
   }
   if (instr.hasImm()) {
@@ -456,7 +456,7 @@ std::ostream &operator<<(std::ostream &os, const Instr &instr) {
   if (instr.getOpcode() == Opcode::SYS && instr.getFunct3() >= 5) {
     // CSRs with immediate values
     if (sep++ != 0) { os << ", "; } else { os << " "; }
-    os << "0x" << std::hex << instr.getRSrc(0);
+    os << "0x" << std::hex << instr.getSrcReg(0).idx;
   }
 #ifdef EXT_V_ENABLE
   // Log vector-specific attributes

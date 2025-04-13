@@ -54,6 +54,7 @@ struct warp_t {
   std::vector<std::vector<uint64_t>>freg_file;
   std::stack<ipdom_entry_t>         ipdom_stack;
   Byte                              fcsr;
+  uint32_t                          num_threads;
   uint32_t                          uuid;
 
   warp_t(uint32_t num_threads);

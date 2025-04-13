@@ -112,7 +112,7 @@ public:
             MemTraceData* trace_data) {
     auto& states = vpu_states_.at(wid);
     uint32_t vmask = instr.getVmask();
-    uint32_t vd = instr.getRDest();
+    uint32_t vd = instr.getDestReg().idx;
     uint32_t mop = instr.getVmop();
     uint32_t vsewb = 1 << states.vtype.vsew;
     auto& vreg_file = states.vreg_file.at(tid);
@@ -232,7 +232,8 @@ public:
         if (isMasked(vreg_file, 0, i, vmask))
           continue;
         for (uint32_t f = 0; f < nfields; f++) {
-          uint64_t mem_addr = base_addr + i * stride + f * vsewb;
+          WordI offset = i * stride + f * vsewb;
+          uint64_t mem_addr = base_addr + offset;
           uint64_t mem_data = 0;
           core_->dcache_read(&mem_data, mem_addr, vsewb);
           trace_data->mem_addrs.at(tid).push_back({mem_addr, vsewb});
@@ -257,9 +258,7 @@ public:
                 // vloxseg6e8.v, vloxseg6e16.v, vloxseg6e32.v, vloxseg6e64.v
                 // vloxseg7e8.v, vloxseg7e16.v, vloxseg7e32.v, vloxseg7e64.v
                 // vloxseg8e8.v, vloxseg8e16.v, vloxseg8e32.v, vloxseg8e64.v
-      uint32_t vs2 = instr.getRSrc(1);
-      trace_data->vs2_opd = 1;
-
+      uint32_t vs2 = instr.getSrcReg(1).idx;
       uint32_t nfields = instr.getVnf() + 1;
       uint32_t eew = instr.getVlsWidth() & 0x3;
 
@@ -309,7 +308,7 @@ public:
       uint32_t sumop = instr.getVumop();
       switch (sumop) {
       case 0b00000: { // vse8.v, vse16.v, vse32.v, vse64.v
-        uint32_t vs3 = instr.getRSrc(1);
+        uint32_t vs3 = instr.getSrcReg(1).idx;
         uint32_t nfields = instr.getVnf() + 1;
         uint32_t emul = states.vtype.vlmul >> 2 ? 1 : 1 << (states.vtype.vlmul & 0b11);
         assert(nfields * emul <= 8);
@@ -332,7 +331,7 @@ public:
           std::cout << "Whole vector register store - reserved value for nreg: " << nreg << std::endl;
           std::abort();
         }
-        uint32_t vs3 = instr.getRSrc(1);
+        uint32_t vs3 = instr.getSrcReg(1).idx;
         uint32_t stride = vsewb;
         uint32_t vl = nreg * (VLENB / vsewb);
 
@@ -355,7 +354,7 @@ public:
           std::abort();
         }
 
-        uint32_t vs3 = instr.getRSrc(1);
+        uint32_t vs3 = instr.getSrcReg(1).idx;
         uint32_t vl = (states.vl + 7) / 8;
         uint32_t stride = vsewb;
 
@@ -387,7 +386,7 @@ public:
                 // vssseg7e8.v, vssseg7e16.v, vssseg7e32.v, vssseg7e64.v
                 // vssseg8e8.v, vssseg8e16.v, vssseg8e32.v, vssseg8e64.v
       WordI stride = rs2_data.at(tid).i;
-      uint32_t vs3 = instr.getRSrc(2);
+      uint32_t vs3 = instr.getSrcReg(2).idx;
       uint32_t nfields = instr.getVnf() + 1;
 
       uint32_t emul = states.vtype.vlmul >> 2 ? 1 : 1 << (states.vtype.vlmul & 0b11);
@@ -397,7 +396,8 @@ public:
         if (isMasked(vreg_file, 0, i, vmask))
           continue;
         for (uint32_t f = 0; f < nfields; f++) {
-          uint64_t mem_addr = base_addr + i * stride + f * vsewb;
+          WordI offset = i * stride + f * vsewb;
+          uint64_t mem_addr = base_addr + offset;
           uint64_t value = getVregData(states.vtype.vsew, vreg_file, vs3 + f * emul, i);
           core_->dcache_write(&value, mem_addr, vsewb);
           trace_data->mem_addrs.at(tid).push_back({mem_addr, vsewb});
@@ -421,10 +421,8 @@ public:
                 // vsoxseg6ei8.v, vsoxseg6ei16.v, vsoxseg6ei32.v, vsoxseg6ei64.v
                 // vsoxseg7ei8.v, vsoxseg7ei16.v, vsoxseg7ei32.v, vsoxseg7ei64.v
                 // vsoxseg8ei8.v, vsoxseg8ei16.v, vsoxseg8ei32.v, vsoxseg8ei64.v
-      uint32_t vs2 = instr.getRSrc(1);
-      trace_data->vs2_opd = 1;
-
-      uint32_t vs3 = instr.getRSrc(2);
+      uint32_t vs2 = instr.getSrcReg(1).idx;
+      uint32_t vs3 = instr.getSrcReg(2).idx;
       uint32_t nfields = instr.getVnf() + 1;
       uint32_t eew = instr.getVlsWidth() & 0x3;
 
@@ -461,9 +459,9 @@ public:
     uint32_t funct3 = instr.getFunct3();
     uint32_t funct6 = instr.getFunct6();
 
-    uint32_t rdest = instr.getRDest();
-    uint32_t rsrc0 = instr.getRSrc(0);
-    uint32_t rsrc1 = instr.getRSrc(1);
+    uint32_t rdest = instr.getDestReg().idx;
+    uint32_t rsrc0 = instr.getSrcReg(0).idx;
+    uint32_t rsrc1 = instr.getSrcReg(1).idx;
     uint32_t vmask = instr.getVmask();
     Word immsrc = sext<Word>(instr.getImm(), width_reg);
     Word uimmsrc = (Word)instr.getImm();
@@ -1630,8 +1628,6 @@ public:
       std::cout << "Unrecognised vector instruction funct3: " << funct3 << " funct6: " << funct6 << std::endl;
       std::abort();
     }
-
-    //printf("*** trace_data: vl=%d, vlmul=%d\n", trace_data->vl, trace_data->vlmul);
 
     return ExeRet{vpu_type, rd_write};
   }

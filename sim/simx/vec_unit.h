@@ -17,7 +17,6 @@ public:
     std::vector<std::vector<mem_addr_size_t>> mem_addrs;
     uint32_t vl = 0;
     uint32_t vnf = 0;
-    int32_t vs2_opd = -1; // index operand position
     MemTraceData(uint32_t num_threads = 0) : mem_addrs(num_threads) {}
   };
 

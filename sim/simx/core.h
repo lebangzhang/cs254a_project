@@ -64,6 +64,7 @@ public:
     uint64_t scrb_csrs;
     uint64_t scrb_wctl;
   #ifdef EXT_V_ENABLE
+    uint64_t vinstrs;
     uint64_t scrb_vpu;
   #endif
     uint64_t ifetches;
@@ -87,6 +88,7 @@ public:
       , scrb_csrs(0)
       , scrb_wctl(0)
     #ifdef EXT_V_ENABLE
+      , vinstrs(0)
       , scrb_vpu(0)
     #endif
       , ifetches(0)

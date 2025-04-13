@@ -105,8 +105,8 @@ public:
 
 private:
 
-  constexpr size_t get_reg_id(const instr_trace_t::reg_t& reg, uint32_t wid) const {
-    return (wid << (log2ceil((int)RegType::Count) + LOG_NUM_REGS)) | ((int)reg.type << LOG_NUM_REGS) | reg.idx;
+  static uint32_t get_reg_id(const RegOpd& reg, uint32_t wid) {
+    return (wid << RegOpd::ID_BITS) | reg.id();
   }
 
 	std::vector<std::vector<RegMask>> in_use_regs_;

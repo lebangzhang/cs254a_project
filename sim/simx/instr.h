@@ -129,46 +129,28 @@ public:
     : opcode_(Opcode::NONE)
     , num_rsrcs_(0)
     , has_imm_(false)
-    , rdest_type_(RegType::None)
     , imm_(0)
-    , rdest_(0)
     , funct2_(0)
     , funct3_(0)
     , funct6_(0)
     , funct7_(0)
-    , vmask_(0)
-    , vlsWidth_(0)
-    , vmop_(0)
-    , vumop_(0)
-    , vnf_(0)
-    , vs3_(0)
-    , zimm_(0)
-    , vediv_(0)
-    , vattr_mask_(0) {
-    for (uint32_t i = 0; i < MAX_REG_SOURCES; ++i) {
-       rsrc_type_[i] = RegType::None;
-       rsrc_[i] = 0;
-    }
-  }
+  {}
 
   void setOpcode(Opcode opcode) {
     opcode_ = opcode;
   }
 
   void setDestReg(uint32_t destReg, RegType type) {
-    rdest_type_ = type;
-    rdest_ = destReg;
+    rdest_ = {type, destReg };
   }
 
   void addSrcReg(uint32_t srcReg, RegType type) {
-    rsrc_type_[num_rsrcs_] = type;
-    rsrc_[num_rsrcs_] = srcReg;
+    rsrc_[num_rsrcs_] = {type, srcReg};
     ++num_rsrcs_;
   }
 
   void setSrcReg(uint32_t index, uint32_t srcReg, RegType type) {
-    rsrc_type_[index] = type;
-    rsrc_[index] = srcReg;
+    rsrc_[index] = { type, srcReg};
     num_rsrcs_ = std::max<uint32_t>(num_rsrcs_, index+1);
   }
 
@@ -179,6 +161,22 @@ public:
   void setfunct6(uint32_t funct6) { funct6_ = funct6; }
   void setfunct7(uint32_t funct7) { funct7_ = funct7; }
 
+  Opcode   getOpcode() const { return opcode_; }
+
+  uint32_t getNumSrcRegs() const { return num_rsrcs_; }
+  RegOpd   getSrcReg(uint32_t i) const { return rsrc_[i]; }
+
+  RegOpd   getDestReg() const { return rdest_; }
+
+  bool     hasImm() const { return has_imm_; }
+  Word     getImm() const { return imm_; }
+
+  uint32_t getFunct2() const { return funct2_; }
+  uint32_t getFunct3() const { return funct3_; }
+  uint32_t getFunct6() const { return funct6_; }
+  uint32_t getFunct7() const { return funct7_; }
+
+#ifdef EXT_V_ENABLE
   // Attributes for Vector instructions
   void setVlsWidth(uint32_t width) { vlsWidth_ = width; vattr_mask_ |= vattr_vlswidth; }
   void setVmop(uint32_t mop) { vmop_ = mop; vattr_mask_ |= vattr_vmop; }
@@ -189,24 +187,6 @@ public:
   void setZimm(uint32_t zimm) { zimm_ = zimm; vattr_mask_ |= vattr_zimm; }
   void setVediv(uint32_t ediv) { vediv_ = 1 << ediv; vattr_mask_ |= vattr_vediv; }
 
-  Opcode   getOpcode() const { return opcode_; }
-
-  uint32_t getNRSrc() const { return num_rsrcs_; }
-  uint32_t getRSrc(uint32_t i) const { return rsrc_[i]; }
-  RegType  getRSType(uint32_t i) const { return rsrc_type_[i]; }
-
-  uint32_t getRDest() const { return rdest_; }
-  RegType  getRDType() const { return rdest_type_; }
-
-  bool     hasImm() const { return has_imm_; }
-  uint32_t getImm() const { return imm_; }
-
-  uint32_t getFunct2() const { return funct2_; }
-  uint32_t getFunct3() const { return funct3_; }
-  uint32_t getFunct6() const { return funct6_; }
-  uint32_t getFunct7() const { return funct7_; }
-
-  // Attributes for Vector instructions
   uint32_t getVlsWidth() const { return vlsWidth_; }
   uint32_t getVmop() const { return vmop_; }
   uint32_t getVumop() const { return vumop_; }
@@ -217,6 +197,7 @@ public:
   uint32_t getVediv() const { return vediv_; }
   uint32_t getVattrMask() const { return vattr_mask_; }
   bool     hasVattrMask(VectorAttrMask mask) const { return vattr_mask_ & mask; }
+#endif
 
 private:
 
@@ -224,29 +205,29 @@ private:
     MAX_REG_SOURCES = 3
   };
 
-  Opcode opcode_;
+  Opcode   opcode_;
   uint32_t num_rsrcs_;
-  bool has_imm_;
-  RegType rdest_type_;
+  bool     has_imm_;
+  RegOpd   rsrc_[MAX_REG_SOURCES];
+  RegOpd   rdest_;
   uint32_t imm_;
-  RegType rsrc_type_[MAX_REG_SOURCES];
-  uint32_t rsrc_[MAX_REG_SOURCES];
-  uint32_t rdest_;
   uint32_t funct2_;
   uint32_t funct3_;
   uint32_t funct6_;
   uint32_t funct7_;
 
+#ifdef EXT_V_ENABLE
   // Vector
-  uint32_t vmask_;
-  uint32_t vlsWidth_;
-  uint32_t vmop_;
-  uint32_t vumop_;
-  uint32_t vnf_;
-  uint32_t vs3_;
-  uint32_t zimm_;
-  uint32_t vediv_;
-  uint32_t vattr_mask_;
+  uint32_t vmask_ = 0;
+  uint32_t vlsWidth_ = 0;
+  uint32_t vmop_ = 0;
+  uint32_t vumop_ = 0;
+  uint32_t vnf_ = 0;
+  uint32_t vs3_ = 0;
+  uint32_t zimm_ = 0;
+  uint32_t vediv_ = 0;
+  uint32_t vattr_mask_ = 0;
+#endif
 
   friend std::ostream &operator<<(std::ostream &, const Instr&);
 };

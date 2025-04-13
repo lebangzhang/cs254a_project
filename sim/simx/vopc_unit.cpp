@@ -74,7 +74,7 @@ void VOpcUnit::tick() {
     } else {
       assert(trace->fu_type == FUType::LSU);
       auto trace_data = std::dynamic_pointer_cast<VecUnit::MemTraceData>(trace->data);
-      vs2_opd_ = trace_data->vs2_opd;
+      vs2_opd_ = (trace->src_regs[1].type != RegType::None) ? 1 : -0;
       vl_counter_ = trace_data->vl;
       vlmul_counter_ = trace_data->vnf;
     }

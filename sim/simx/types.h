@@ -113,6 +113,36 @@ inline std::ostream &operator<<(std::ostream &os, const RegType& type) {
 
 ///////////////////////////////////////////////////////////////////////////////
 
+struct RegOpd {
+  RegType type = RegType::None;
+  uint32_t idx = 0;
+  uint32_t ext = 0; // register group extend
+
+  uint32_t id() const {
+    if (type == RegType::None)
+      return 0;
+    // unique register id embedding the type
+    return (((int)(type)-1) << LOG_NUM_REGS) | idx;
+  }
+
+  uint32_t group_size() const {
+    return (1 << ext);
+  }
+
+  friend std::ostream &operator<<(std::ostream &os, const RegOpd& reg) {
+    if (reg.ext != 0) {
+      os << reg.type << reg.idx << "..." << (reg.idx + ((1 << reg.ext)-1));
+    } else {
+      os << reg.type << reg.idx;
+    }
+    return os;
+  }
+
+  constexpr static uint32_t ID_BITS = log2ceil((int)RegType::Count) + LOG_NUM_REGS;
+};
+
+///////////////////////////////////////////////////////////////////////////////
+
 enum class FUType {
   ALU,
   LSU,

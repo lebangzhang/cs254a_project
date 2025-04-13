@@ -415,8 +415,17 @@ void Core::commit() {
       if (trace->wb) {
         scoreboard_.release(trace);
       }
+      auto orig_size = pending_instrs_.size();
       pending_instrs_.remove(trace);
-      perf_stats_.instrs += trace->tmask.count();
+      if (pending_instrs_.size() != orig_size) {
+        perf_stats_.instrs += trace->tmask.count();
+      #ifdef EXT_V_ENABLE
+        if (trace->fu_type == FUType::VPU
+         || (trace->fu_type == FUType::LSU && (trace->lsu_type == LsuType::VLOAD || trace->lsu_type == LsuType::VSTORE))) {
+          perf_stats_.vinstrs += trace->tmask.count();
+        }
+      #endif
+      }
     }
 
     // delete the trace
@@ -431,15 +440,15 @@ int Core::get_exitcode() const {
 }
 
 bool Core::running() const {
-#ifndef NDEBUG
-  if (!emulator_.running() && !pending_instrs_.empty()) {
+  if (emulator_.running() || !pending_instrs_.empty()) {
+  #ifndef NDEBUG
     for (auto& trace : pending_instrs_) {
       DT(4, "pipeline-pending: " << *trace);
     }
+  #endif
     return true;
   }
-#endif
-  return emulator_.running() || !pending_instrs_.empty();
+  return false;
 }
 
 void Core::resume(uint32_t wid) {

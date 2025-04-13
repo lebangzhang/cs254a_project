@@ -33,6 +33,7 @@ using namespace vortex;
 warp_t::warp_t(uint32_t num_threads)
   : ireg_file(MAX_NUM_REGS, std::vector<Word>(num_threads))
   , freg_file(MAX_NUM_REGS, std::vector<uint64_t>(num_threads))
+  , num_threads(num_threads)
   , uuid(0)
 {}
 
