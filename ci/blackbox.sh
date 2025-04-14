@@ -93,7 +93,9 @@ set_driver_path() {
 }
 
 set_app_path() {
-    if [ -d "$ROOT_DIR/tests/opencl/$APP" ]; then
+    if [ -d "$ROOT_DIR/tests/$APP" ]; then
+        APP_PATH="$ROOT_DIR/tests/$APP"
+    elif [ -d "$ROOT_DIR/tests/opencl/$APP" ]; then
         APP_PATH="$ROOT_DIR/tests/opencl/$APP"
     elif [ -d "$ROOT_DIR/tests/regression/$APP" ]; then
         APP_PATH="$ROOT_DIR/tests/regression/$APP"
