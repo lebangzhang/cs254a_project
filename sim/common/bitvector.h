@@ -46,9 +46,9 @@ private:
   };
 
   static constexpr size_t BITS_PER_WORD = sizeof(T) * 8;
-  std::vector<T> words_;
-  T single_word_;
   size_t size_;
+  T single_word_;
+  std::vector<T> words_;
   bool all_zero_;
 
   constexpr size_t wordIndex(size_t pos) const {
@@ -111,6 +111,23 @@ public:
     }
     this->clearUnusedBits();
     this->updateAllZero();
+  }
+
+  BitVector(const BitVector& other)
+    : size_(other.size_)
+    , single_word_(other.single_word_)
+    , words_(other.words_)
+    , all_zero_(other.all_zero_)
+  {}
+
+  BitVector(BitVector&& other) noexcept
+    : size_(other.size_)
+    , single_word_(other.single_word_)
+    , words_(std::move(other.words_))
+    , all_zero_(other.all_zero_) {
+    other.size_ = 0;
+    other.single_word_ = 0;
+    other.all_zero_ = true;
   }
 
   ~BitVector() {}
@@ -184,6 +201,29 @@ public:
     size_ = new_size;
     this->clearUnusedBits();
     this->updateAllZero();
+  }
+
+  BitVector& operator=(const BitVector& other) {
+    if (this != &other) {
+      size_ = other.size_;
+      single_word_ = other.single_word_;
+      words_ = other.words_;
+      all_zero_ = other.all_zero_;
+    }
+    return *this;
+  }
+
+  BitVector& operator=(BitVector&& other) noexcept {
+    if (this != &other) {
+      size_ = other.size_;
+      single_word_ = other.single_word_;
+      words_ = std::move(other.words_);
+      all_zero_ = other.all_zero_;
+      other.size_ = 0;
+      other.single_word_ = 0;
+      other.all_zero_ = true;
+    }
+    return *this;
   }
 
   bool operator==(const BitVector& other) const {
