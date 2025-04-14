@@ -25,8 +25,8 @@ public:
   SimPort<instr_trace_t *> Input;
   SimPort<instr_trace_t *> Output;
 
-  std::array<SimPort<GprReq>, NUM_SRC_REGS> gpr_req_ports;
-  std::array<SimPort<GprRsp>, NUM_SRC_REGS> gpr_rsp_ports;
+  SimPort<GprReq> gpr_req_ports;
+  SimPort<GprRsp> gpr_rsp_ports;
 
   OpcUnit(const SimContext &ctx, Core* core);
 

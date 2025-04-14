@@ -30,10 +30,8 @@ Operands::Operands(const SimContext &ctx, Core* core)
   }
   // connect OPC to GPR
   for (uint32_t i = 0; i < NUM_OPCS; i++) {
-    for (uint32_t j = 0; j < NUM_SRC_REGS; j++) {
-      opc_units_.at(i)->gpr_req_ports.at(j).bind(&gpr_unit_->ReqIn.at(i * NUM_SRC_REGS + j));
-      gpr_unit_->RspOut.at(i * NUM_SRC_REGS + j).bind(&opc_units_.at(i)->gpr_rsp_ports.at(j));
-    }
+    opc_units_.at(i)->gpr_req_ports.bind(&gpr_unit_->ReqIn.at(i));
+    gpr_unit_->RspOut.at(i).bind(&opc_units_.at(i)->gpr_rsp_ports);
   }
   // initialize
   this->reset();

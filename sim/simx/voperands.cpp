@@ -37,22 +37,16 @@ Operands::Operands(const SimContext &ctx, Core* core)
 
   // connect OPC to GPR
   for (uint32_t i = 0; i < NUM_OPCS; i++) {
-    for (uint32_t j = 0; j < NUM_SRC_REGS; j++) {
-      sopc_units_.at(i)->gpr_req_ports.at(j).bind(&sgpr_unit_->ReqIn.at(i * NUM_SRC_REGS + j));
-      sgpr_unit_->RspOut.at(i * NUM_SRC_REGS + j).bind(&sopc_units_.at(i)->gpr_rsp_ports.at(j));
-    }
+    sopc_units_.at(i)->gpr_req_ports.bind(&sgpr_unit_->ReqIn.at(i));
+    sgpr_unit_->RspOut.at(i).bind(&sopc_units_.at(i)->gpr_rsp_ports);
   }
 
   // connect VOPC to GPR and VGPR
-  uint32_t gpr_offset = NUM_OPCS * NUM_SRC_REGS;
   for (uint32_t i = 0; i < NUM_VOPCS; i++) {
-    for (uint32_t j = 0; j < NUM_SRC_REGS; j++) {
-      vopc_units_.at(i)->gpr_req_ports.at(j).bind(&sgpr_unit_->ReqIn.at(gpr_offset + i * NUM_SRC_REGS + j));
-      sgpr_unit_->RspOut.at(gpr_offset + i * NUM_SRC_REGS + j).bind(&vopc_units_.at(i)->gpr_rsp_ports.at(j));
-
-      vopc_units_.at(i)->vgpr_req_ports.at(j).bind(&vgpr_unit_->ReqIn.at(i * NUM_SRC_REGS + j));
-      vgpr_unit_->RspOut.at(i * NUM_SRC_REGS + j).bind(&vopc_units_.at(i)->vgpr_rsp_ports.at(j));
-    }
+    vopc_units_.at(i)->gpr_req_ports.bind(&sgpr_unit_->ReqIn.at(NUM_OPCS + i));
+    sgpr_unit_->RspOut.at(NUM_OPCS + i).bind(&vopc_units_.at(i)->gpr_rsp_ports);
+    vopc_units_.at(i)->vgpr_req_ports.bind(&vgpr_unit_->ReqIn.at(i));
+    vgpr_unit_->RspOut.at(i).bind(&vopc_units_.at(i)->vgpr_rsp_ports);
   }
 
   // initialize

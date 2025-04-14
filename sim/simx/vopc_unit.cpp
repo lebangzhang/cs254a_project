@@ -20,10 +20,10 @@ VOpcUnit::VOpcUnit(const SimContext &ctx, Core* core)
   : SimObject<VOpcUnit>(ctx, "vopc-unit")
   , Input(this, 1)
   , Output(this)
-  , gpr_req_ports(make_array<SimPort<GprReq>, NUM_SRC_REGS>(this))
-  , gpr_rsp_ports(make_array<SimPort<GprRsp>, NUM_SRC_REGS>(this))
-  , vgpr_req_ports(make_array<SimPort<GprReq>, NUM_SRC_REGS>(this))
-  , vgpr_rsp_ports(make_array<SimPort<GprRsp>, NUM_SRC_REGS>(this))
+  , gpr_req_ports(this)
+  , gpr_rsp_ports(this)
+  , vgpr_req_ports(this)
+  , vgpr_rsp_ports(this)
   , core_(core) {
   this->reset();
 }
@@ -119,7 +119,7 @@ void VOpcUnit::tick() {
         gpr_req.rid = trace->src_regs[i].id();
         gpr_req.wid = trace->wid;
         gpr_req.opd = i;
-        gpr_req_ports.at(i).push(gpr_req);
+        gpr_req_ports.push(gpr_req);
         ++pending_s_rsps_;
       }
     }
@@ -131,7 +131,7 @@ void VOpcUnit::tick() {
         gpr_req.rid = trace->src_regs[i].id();
         gpr_req.wid = trace->wid;
         gpr_req.opd = i;
-        vgpr_req_ports.at(i).push(gpr_req);
+        vgpr_req_ports.push(gpr_req);
         ++pending_v_rsps_;
       }
     }
@@ -141,25 +141,21 @@ void VOpcUnit::tick() {
   }
 
   // process incoming GPR responses
-  for (uint32_t i = 0; i < NUM_SRC_REGS; i++) {
-    if (gpr_rsp_ports.at(i).empty())
-      continue;
+  if (!gpr_rsp_ports.empty()) {
     assert(pending_s_rsps_ != 0);
     --pending_s_rsps_;
-    auto rsp = gpr_rsp_ports.at(i).front();
+    auto rsp = gpr_rsp_ports.front();
     __unused(rsp);
-    gpr_rsp_ports.at(i).pop();
+    gpr_rsp_ports.pop();
   }
 
   // process incoming VGPR responses
-  for (uint32_t i = 0; i < NUM_SRC_REGS; i++) {
-    if (vgpr_rsp_ports.at(i).empty())
-      continue;
+  if (!vgpr_rsp_ports.empty()) {
     assert(pending_v_rsps_ != 0);
     --pending_v_rsps_;
-    auto rsp = vgpr_rsp_ports.at(i).front();
+    auto rsp = vgpr_rsp_ports.front();
     __unused(rsp);
-    vgpr_rsp_ports.at(i).pop();
+    vgpr_rsp_ports.pop();
   }
 
   // process outgoing instructions
@@ -196,7 +192,7 @@ bool VOpcUnit::schedule(instr_trace_t* trace) {
         gpr_req.rid = trace->src_regs[i].id();
         gpr_req.wid = trace->wid;
         gpr_req.opd = i;
-        vgpr_req_ports.at(i).push(gpr_req);
+        vgpr_req_ports.push(gpr_req);
         ++pending_v_rsps_;
       }
     }
@@ -244,7 +240,7 @@ bool VOpcUnit::fused_schedule(instr_trace_t* trace) {
         gpr_req.rid = trace->src_regs[i].id();
         gpr_req.wid = trace->wid;
         gpr_req.opd = i;
-        vgpr_req_ports.at(i).push(gpr_req);
+        vgpr_req_ports.push(gpr_req);
         ++pending_v_rsps_;
       }
     }
@@ -273,7 +269,7 @@ bool VOpcUnit::fused_schedule(instr_trace_t* trace) {
         gpr_req.rid = trace->src_regs[i].id();
         gpr_req.wid = trace->wid;
         gpr_req.opd = i;
-        vgpr_req_ports.at(i).push(gpr_req);
+        vgpr_req_ports.push(gpr_req);
         ++pending_v_rsps_;
       }
     }

@@ -20,8 +20,8 @@ OpcUnit::OpcUnit(const SimContext &ctx, Core* core)
   : SimObject<OpcUnit>(ctx, "opc-unit")
   , Input(this, 1)
   , Output(this)
-  , gpr_req_ports(make_array<SimPort<GprReq>, NUM_SRC_REGS>(this))
-  , gpr_rsp_ports(make_array<SimPort<GprRsp>, NUM_SRC_REGS>(this))
+  , gpr_req_ports(this)
+  , gpr_rsp_ports(this)
   , core_(core) {
   this->reset();
 }
@@ -67,7 +67,7 @@ void OpcUnit::tick() {
         gpr_req.rid = trace->src_regs[i].id();
         gpr_req.wid = trace->wid;
         gpr_req.opd = i;
-        gpr_req_ports.at(i).push(gpr_req);
+        gpr_req_ports.push(gpr_req);
       }
     }
 
@@ -76,14 +76,12 @@ void OpcUnit::tick() {
   }
 
   // process incoming GPR responses
-  for (uint32_t i = 0; i < NUM_SRC_REGS; i++) {
-    if (gpr_rsp_ports.at(i).empty())
-      continue;
+  if (!gpr_rsp_ports.empty()) {
     assert(pending_rsps_ != 0);
     --pending_rsps_;
-    auto rsp = gpr_rsp_ports.at(i).front();
+    auto rsp = gpr_rsp_ports.front();
     __unused(rsp);
-    gpr_rsp_ports.at(i).pop();
+    gpr_rsp_ports.pop();
   }
 
   // process outgoing instructions

@@ -98,10 +98,10 @@ private:
 };
 
 #ifdef EXT_V_ENABLE
-typedef GprUnit<(NUM_OPCS + NUM_VOPCS) * NUM_SRC_REGS, NUM_GPR_BANKS> GPR;
-typedef GprUnit<NUM_OPCS * NUM_SRC_REGS, NUM_VGPR_BANKS> VGPR;
+typedef GprUnit<(NUM_OPCS + NUM_VOPCS), NUM_GPR_BANKS> GPR;
+typedef GprUnit<NUM_OPCS, NUM_VGPR_BANKS> VGPR;
 #else
-typedef GprUnit<NUM_OPCS * NUM_SRC_REGS, NUM_GPR_BANKS> GPR;
+typedef GprUnit<NUM_OPCS, NUM_GPR_BANKS> GPR;
 #endif
 
 } // namespace vortex
