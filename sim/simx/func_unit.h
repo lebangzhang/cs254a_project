@@ -121,4 +121,25 @@ public:
 
 #endif
 
+
+
+
+///////////////////////////////////////////////////////////////////////////////
+
+
+// ara2_note : add ara2 to funcunit
+#ifdef EXT_ARA2_ENABLE 
+
+class AraUnit : public FuncUnit {
+
+public:
+    AraUnit(const SimContext& ctx, Core*);
+
+    void tick() override;
+
+};
+
+#endif
+
+
 }
