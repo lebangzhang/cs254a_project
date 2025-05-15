@@ -176,7 +176,7 @@ public:
   uint32_t getFunct6() const { return funct6_; }
   uint32_t getFunct7() const { return funct7_; }
 
-#ifdef EXT_V_ENABLE
+#if defined(EXT_V_ENABLE) || defined(EXT_ARA2_ENABLE)
   // Attributes for Vector instructions
   void setVlsWidth(uint32_t width) { vlsWidth_ = width; vattr_mask_ |= vattr_vlswidth; }
   void setVmop(uint32_t mop) { vmop_ = mop; vattr_mask_ |= vattr_vmop; }

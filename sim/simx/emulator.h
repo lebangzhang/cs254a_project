@@ -22,6 +22,9 @@
 #ifdef EXT_V_ENABLE
 #include "vec_unit.h"
 #endif
+#ifdef EXT_ARA2_ENABLE
+#include "ara_unit.h"
+#endif
 
 namespace vortex {
 
@@ -148,6 +151,9 @@ private:
 
 #ifdef EXT_V_ENABLE
   VecUnit::Ptr vec_unit_;
+#endif
+#ifdef EXT_ARA2_ENABLE
+  VecUnit::Ptr ara_unit_;
 #endif
 
   PoolAllocator<Instr, 64> instr_pool_;

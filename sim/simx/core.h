@@ -23,6 +23,10 @@
 #include "ibuffer.h"
 #include "scoreboard.h"
 
+
+// TODO need to fix this 
+
+
 #ifdef EXT_V_ENABLE
 #include "voperands.h"
 #include "vec_unit.h"
@@ -67,6 +71,10 @@ public:
     uint64_t vinstrs;
     uint64_t scrb_vpu;
   #endif
+  #ifdef EXT_ARA2_ENABLE
+    uint64_t vinstrs;
+    uint64_t scrb_ara;
+  #endif
     uint64_t ifetches;
     uint64_t loads;
     uint64_t stores;
@@ -90,6 +98,10 @@ public:
     #ifdef EXT_V_ENABLE
       , vinstrs(0)
       , scrb_vpu(0)
+    #endif
+    #ifdef EXT_ARA2_ENABLE
+      , vinstrs(0)
+      , scrb_ara(0)
     #endif
       , ifetches(0)
       , loads(0)
@@ -163,7 +175,13 @@ public:
   VecUnit::Ptr& vec_unit() {
     return vec_unit_;
   }
+#endif 
+#ifdef EXT_ARA2_ENABLE
+  AraUnit::Ptr& ara_unit() {
+    return ara_unit_;
+  }
 #endif
+
 
   auto& trace_pool() {
     return trace_pool_;
@@ -189,7 +207,9 @@ private:
 #ifdef EXT_V_ENABLE
   VecUnit::Ptr vec_unit_;
 #endif
-
+#ifdef EXT_ARA2_ENABLE
+  AraUnit::Ptr ara_unit_;
+#endif
   Emulator emulator_;
 
   std::vector<IBuffer> ibuffers_;

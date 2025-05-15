@@ -42,6 +42,9 @@ Core::Core(const SimContext& ctx,
 #ifdef EXT_V_ENABLE
   , vec_unit_(VecUnit::Create("vpu", arch, this))
 #endif
+#ifdef EXT_ARA2_ENABLE
+  , ara_unit_(AraUnit::Create("ara", arch, this))
+#endif
   , emulator_(arch, dcrs, this)
   , ibuffers_(arch.num_warps(), IBUF_SIZE)
   , scoreboard_(arch_)
@@ -139,6 +142,9 @@ Core::Core(const SimContext& ctx,
 #ifdef EXT_V_ENABLE
   dispatchers_.at((int)FUType::VPU) = SimPlatform::instance().create_object<Dispatcher>(this, 2, NUM_VPU_BLOCKS, NUM_VPU_LANES);
 #endif
+#ifdef EXT_ARA2_ENABLE
+  dispatchers_.at((int)FUType::ARA) = SimPlatform::instance().create_object<Dispatcher>(this, 2, NUM_ARA_BLOCKS, NUM_ARA_LANES);
+#endif
 
   // initialize execute units
   func_units_.at((int)FUType::ALU) = SimPlatform::instance().create_object<AluUnit>(this);
@@ -148,6 +154,10 @@ Core::Core(const SimContext& ctx,
 #ifdef EXT_V_ENABLE
   func_units_.at((int)FUType::VPU) = SimPlatform::instance().create_object<VpuUnit>(this);
 #endif
+#ifdef EXT_ARA2_ENABLE
+  func_units_.at((int)FUType::ARA) = SimPlatform::instance().create_object<AraUnit>(this);
+#endif
+
 
   // bind commit arbiters
   for (uint32_t iw = 0; iw < ISSUE_WIDTH; ++iw) {
@@ -344,6 +354,10 @@ void Core::issue() {
         #ifdef EXT_V_ENABLE
           case FUType::VPU: ++perf_stats_.scrb_vpu; break;
         #endif
+        #ifdef EXT_ARA2_ENABLE
+          case FUType::ARA: ++perf_stats_.scrb_ara; break;
+        #endif
+
           default: assert(false);
           }
         }
@@ -421,6 +435,12 @@ void Core::commit() {
         perf_stats_.instrs += trace->tmask.count();
       #ifdef EXT_V_ENABLE
         if (trace->fu_type == FUType::VPU
+         || (trace->fu_type == FUType::LSU && (trace->lsu_type == LsuType::VLOAD || trace->lsu_type == LsuType::VSTORE))) {
+          perf_stats_.vinstrs += trace->tmask.count();
+        }
+      #endif
+      #ifdef EXT_ARA2_ENABLE
+        if (trace->fu_type == FUType::ARA
          || (trace->fu_type == FUType::LSU && (trace->lsu_type == LsuType::VLOAD || trace->lsu_type == LsuType::VSTORE))) {
           perf_stats_.vinstrs += trace->tmask.count();
         }

@@ -171,7 +171,7 @@ void LsuUnit::tick() {
 		}
 
 		bool is_write = (trace->lsu_type == LsuType::STORE)
-		#ifdef EXT_V_ENABLE
+        #if defined(EXT_V_ENABLE) || defined(EXT_ARA2_ENABLE)
 	               || (trace->lsu_type == LsuType::VSTORE)
 		#endif
 		;
@@ -192,6 +192,18 @@ void LsuUnit::tick() {
 			#ifdef EXT_V_ENABLE
 				if (trace->lsu_type == LsuType::VLOAD || trace->lsu_type == LsuType::VSTORE) {
 					auto trace_data = std::dynamic_pointer_cast<VecUnit::MemTraceData>(trace->data);
+					for (uint32_t t = 0; t < trace_data->mem_addrs.size(); ++t) {
+						if (!trace->tmask.test(t))
+							continue;
+						for (auto addr : trace_data->mem_addrs.at(t)) {
+							pending_addrs_.push_back(addr);
+						}
+					}
+				} else
+			#endif
+			#ifdef EXT_ARA2_ENABLE
+				if (trace->lsu_type == LsuType::VLOAD || trace->lsu_type == LsuType::VSTORE) {
+					auto trace_data = std::dynamic_pointer_cast<AraUnit::MemTraceData>(trace->data);
 					for (uint32_t t = 0; t < trace_data->mem_addrs.size(); ++t) {
 						if (!trace->tmask.test(t))
 							continue;
@@ -333,3 +345,24 @@ void VpuUnit::tick() {
 	// use vec_unit
 }
 #endif
+
+
+
+///////////////////////////////////////////////////////////////////////////////
+#ifdef EXT_ARA2_ENABLE 
+
+VpuUnit::AraUnit(const SimContext& ctx, Core* core)
+	: FuncUnit(ctx, core, "ara-unit")
+{
+	// bind vector unit
+	for (uint32_t iw = 0; iw < ISSUE_WIDTH; ++iw) {
+		this->Inputs.at(iw).bind(&core_->ara_unit()->Inputs.at(iw));
+		core_->ara_unit()->Outputs.at(iw).bind(&this->Outputs.at(iw));
+	}
+}
+
+void VpuUnit::tick() {
+}
+#endif
+
+
