@@ -153,7 +153,7 @@ private:
   VecUnit::Ptr vec_unit_;
 #endif
 #ifdef EXT_ARA2_ENABLE
-  VecUnit::Ptr ara_unit_;
+  AraUnit::Ptr ara_unit_;
 #endif
 
   PoolAllocator<Instr, 64> instr_pool_;

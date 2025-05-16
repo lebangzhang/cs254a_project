@@ -97,11 +97,14 @@ private:
   constexpr static uint32_t BANKID_WIS_MASK  = (1 << BANKID_WIS_BITS) - 1;
 };
 
-#if defined(EXT_V_ENABLE) || defined(EXT_ARA2_ENABLE)
+
+// TODO : Need to fix this 
+
+/*#if defined(EXT_V_ENABLE) || defined(EXT_ARA2_ENABLE)*/
 typedef GprUnit<(NUM_OPCS + NUM_VOPCS), NUM_GPR_BANKS> GPR;
 typedef GprUnit<NUM_OPCS, NUM_VGPR_BANKS> VGPR;
-#else
-typedef GprUnit<NUM_OPCS, NUM_GPR_BANKS> GPR;
-#endif
+/*#else*/
+/*typedef GprUnit<NUM_OPCS, NUM_GPR_BANKS> GPR;*/
+/*#endif*/
 
 } // namespace vortex

@@ -216,7 +216,7 @@ private:
   uint32_t funct6_;
   uint32_t funct7_;
 
-#ifdef EXT_V_ENABLE
+#if defined(EXT_V_ENABLE) || defined(EXT_ARA2_ENABLE)
   // Vector
   uint32_t vmask_ = 0;
   uint32_t vlsWidth_ = 0;

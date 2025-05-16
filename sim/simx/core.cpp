@@ -155,7 +155,7 @@ Core::Core(const SimContext& ctx,
   func_units_.at((int)FUType::VPU) = SimPlatform::instance().create_object<VpuUnit>(this);
 #endif
 #ifdef EXT_ARA2_ENABLE
-  func_units_.at((int)FUType::ARA) = SimPlatform::instance().create_object<AraUnit>(this);
+  func_units_.at((int)FUType::ARA) = SimPlatform::instance().create_object<Ara2PUUnit>(this);
 #endif
 
 
@@ -355,7 +355,7 @@ void Core::issue() {
           case FUType::VPU: ++perf_stats_.scrb_vpu; break;
         #endif
         #ifdef EXT_ARA2_ENABLE
-          case FUType::ARA: ++perf_stats_.scrb_ara; break;
+          case FUType::ARA: ++perf_stats_.scrb_vpu; break;
         #endif
 
           default: assert(false);

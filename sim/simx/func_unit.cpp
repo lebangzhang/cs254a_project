@@ -350,8 +350,7 @@ void VpuUnit::tick() {
 
 ///////////////////////////////////////////////////////////////////////////////
 #ifdef EXT_ARA2_ENABLE 
-
-VpuUnit::AraUnit(const SimContext& ctx, Core* core)
+Ara2PUUnit::Ara2PUUnit(const SimContext& ctx, Core* core)
 	: FuncUnit(ctx, core, "ara-unit")
 {
 	// bind vector unit
@@ -361,7 +360,7 @@ VpuUnit::AraUnit(const SimContext& ctx, Core* core)
 	}
 }
 
-void VpuUnit::tick() {
+void AraUnit::tick() {
 }
 #endif
 

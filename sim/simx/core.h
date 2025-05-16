@@ -24,18 +24,22 @@
 #include "scoreboard.h"
 
 
-// TODO need to fix this 
-
+// TODO This is definitely not correct, we need to fix this 
 
 #ifdef EXT_V_ENABLE
-#include "voperands.h"
-#include "vec_unit.h"
+    #include "voperands.h"
+    #include "vec_unit.h"
 #else
-#ifdef DISABLE_OPC
-#include "operands_old.h"
-#else
-#include "operands.h"
-#endif
+    #ifdef EXT_ARA2_ENABLE
+        #include "voperands.h"
+        #include "ara_unit.h"
+    #else 
+        #ifdef DISABLE_OPC
+            #include "operands_old.h"
+        #else
+            #include "operands.h"
+        #endif
+    #endif
 #endif
 
 #include "dispatcher.h"
@@ -67,13 +71,9 @@ public:
     uint64_t scrb_sfu;
     uint64_t scrb_csrs;
     uint64_t scrb_wctl;
-  #ifdef EXT_V_ENABLE
+  #if defined(EXT_V_ENABLE) || defined(EXT_ARA2_ENABLE)
     uint64_t vinstrs;
     uint64_t scrb_vpu;
-  #endif
-  #ifdef EXT_ARA2_ENABLE
-    uint64_t vinstrs;
-    uint64_t scrb_ara;
   #endif
     uint64_t ifetches;
     uint64_t loads;
@@ -95,13 +95,9 @@ public:
       , scrb_sfu(0)
       , scrb_csrs(0)
       , scrb_wctl(0)
-    #ifdef EXT_V_ENABLE
+    #if defined(EXT_V_ENABLE) || defined(EXT_ARA2_ENABLE)
       , vinstrs(0)
       , scrb_vpu(0)
-    #endif
-    #ifdef EXT_ARA2_ENABLE
-      , vinstrs(0)
-      , scrb_ara(0)
     #endif
       , ifetches(0)
       , loads(0)
