@@ -119,7 +119,7 @@ int main(int argc, char **argv) {
     std::cout << "[VXDRV] START: program=" << program << std::endl;
 #endif
     // run simulation
-  #ifdef EXT_V_ENABLE
+  #if defined(EXT_V_ENABLE) || defined(EXT_ARA2_ENABLE)
     // vector test exitcode is a special case
     if (vector_test) return (processor.run() != 1);
   #endif

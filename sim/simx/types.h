@@ -71,7 +71,7 @@ enum class RegType {
   None,
   Integer,
   Float,
-#ifdef EXT_V_ENABLE
+#if defined(EXT_V_ENABLE) || defined(EXT_ARA2_ENABLE)
   Vector,
 #endif
   Count
@@ -82,7 +82,7 @@ inline std::ostream &operator<<(std::ostream &os, const RegType& type) {
   case RegType::None: break;
   case RegType::Integer: os << "x"; break;
   case RegType::Float:   os << "f"; break;
-#ifdef EXT_V_ENABLE
+#if defined(EXT_V_ENABLE) || defined(EXT_ARA2_ENABLE)
   case RegType::Vector:  os << "v"; break;
 #endif
   default: assert(false);
@@ -130,6 +130,9 @@ enum class FUType {
 #ifdef EXT_V_ENABLE
   VPU,
 #endif
+#ifdef EXT_ARA2_ENABLE
+  ARA,
+#endif
   Count
 };
 
@@ -142,6 +145,10 @@ inline std::ostream &operator<<(std::ostream &os, const FUType& type) {
 #ifdef EXT_V_ENABLE
   case FUType::VPU: os << "VPU"; break;
 #endif
+#ifdef EXT_ARA2_ENABLE
+  case FUType::ARA: os << "VPU"; break;
+#endif
+
   default: assert(false);
   }
   return os;
@@ -174,7 +181,7 @@ inline std::ostream &operator<<(std::ostream &os, const AluType& type) {
 enum class LsuType {
   LOAD,
   STORE,
-#ifdef EXT_V_ENABLE
+#if defined(EXT_V_ENABLE) || defined(EXT_ARA2_ENABLE)
   VLOAD,
   VSTORE,
 #endif
@@ -185,7 +192,7 @@ inline std::ostream &operator<<(std::ostream &os, const LsuType& type) {
   switch (type) {
   case LsuType::LOAD:  os << "LOAD"; break;
   case LsuType::STORE: os << "STORE"; break;
-#ifdef EXT_V_ENABLE
+#if defined(EXT_V_ENABLE) || defined(EXT_ARA2_ENABLE)
   case LsuType::VLOAD: os << "VLOAD"; break;
   case LsuType::VSTORE:os << "VSTORE"; break;
 #endif

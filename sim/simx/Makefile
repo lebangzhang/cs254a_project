@@ -29,6 +29,10 @@ ifneq ($(findstring -DEXT_V_ENABLE, $(CONFIGS)),)
   SRCS += $(SRC_DIR)/voperands.cpp
   SRCS += $(SRC_DIR)/vopc_unit.cpp
   SRCS += $(SRC_DIR)/vec_unit.cpp
+else ifneq ($(findstring -DEXT_ARA2_ENABLE, $(CONFIGS)),)
+  SRCS += $(SRC_DIR)/voperands.cpp
+  SRCS += $(SRC_DIR)/vopc_unit.cpp
+  SRCS += $(SRC_DIR)/ara_unit.cpp
 else
   SRCS += $(SRC_DIR)/operands.cpp
 endif

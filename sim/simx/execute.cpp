@@ -25,7 +25,7 @@
 #include "emulator.h"
 #include "instr.h"
 #include "core.h"
-#ifdef EXT_V_ENABLE
+#if defined(EXT_V_ENABLE) || defined(EXT_ARA2_ENABLE)
 #include "processor_impl.h"
 #endif
 #include "VX_types.h"
@@ -53,7 +53,7 @@ inline void read_register(std::vector<reg_data_t>& out, uint32_t src_index, cons
   out.resize(num_threads * group_size);
   switch (reg.type) {
   case RegType::None:
-#ifdef EXT_V_ENABLE
+#if defined(EXT_V_ENABLE) || defined(EXT_ARA2_ENABLE)
   case RegType::Vector:
 #endif
     break;
@@ -736,6 +736,20 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
       rd_write = true;
     }
   #endif
+  #ifdef EXT_ARA2_ENABLE
+    else {
+      auto trace_data = std::make_shared<AraUnit::MemTraceData>(num_threads);
+      trace->data = trace_data;
+      trace->lsu_type = LsuType::VLOAD;
+      for (uint32_t t = thread_start; t < num_threads; ++t) {
+        if (!warp.tmask.test(t))
+          continue;
+        ara_unit_->load(instr, wid, t, rs1_data, rs2_data, trace_data.get());
+      }
+      rd_write = true;
+    }
+  #endif
+
     break;
   }
   case Opcode::S:
@@ -775,6 +789,18 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
         if (!warp.tmask.test(t))
           continue;
         vec_unit_->store(instr, wid, t, rs1_data, rs2_data, trace_data.get());
+      }
+    }
+  #endif
+  #ifdef EXT_ARA2_ENABLE
+    else {
+      auto trace_data = std::make_shared<AraUnit::MemTraceData>(num_threads);
+      trace->data = trace_data;
+      trace->lsu_type = LsuType::VSTORE;
+      for (uint32_t t = thread_start; t < num_threads; ++t) {
+        if (!warp.tmask.test(t))
+          continue;
+        ara_unit_->store(instr, wid, t, rs1_data, rs2_data, trace_data.get());
       }
     }
   #endif
@@ -1302,6 +1328,22 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
     break;
   }
 #endif
+#ifdef EXT_ARA2_ENABLE
+  case Opcode::VSET: {
+    auto trace_data = std::make_shared<AraUnit::ExeTraceData>();
+    trace->fu_type = FUType::ARA;
+    trace->data = trace_data;
+    for (uint32_t t = thread_start; t < num_threads; ++t) {
+      if (!warp.tmask.test(t))
+        continue;
+      auto ret = ara_unit_->execute(instr, wid, t, rs1_data, rs2_data, rd_data, trace_data.get());
+      trace->vpu_type = ret.vpu_type;
+    }
+    rd_write = true;
+    break;
+  }
+#endif
+
   case Opcode::EXT1: {
     switch (funct7) {
     case 0: {
@@ -1460,7 +1502,7 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
       }
       DPN(2, "}" << std::endl);
       break;
-  #ifdef EXT_V_ENABLE
+  #if defined(EXT_V_ENABLE) || defined(EXT_ARA2_ENABLE)
     case RegType::Vector:
       DPH(2, "Dest Reg: " << rdest << "={}" << std::endl);
       break;

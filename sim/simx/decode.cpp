@@ -411,7 +411,7 @@ static const char* op_string(const Instr &instr) {
   }
 }
 
-#ifdef EXT_V_ENABLE
+#if defined(EXT_V_ENABLE) || defined(EXT_ARA2_ENABLE)
 inline void print_vec_attr(std::ostream &os, const Instr &instr) {
   uint32_t mask = instr.getVattrMask();
   if (mask & vattr_vlswidth)
@@ -458,7 +458,7 @@ std::ostream &operator<<(std::ostream &os, const Instr &instr) {
     if (sep++ != 0) { os << ", "; } else { os << " "; }
     os << "0x" << std::hex << instr.getSrcReg(0).idx;
   }
-#ifdef EXT_V_ENABLE
+#if defined(EXT_V_ENABLE) || defined(EXT_ARA2_ENABLE)
   // Log vector-specific attributes
   if (instr.getVattrMask() != 0) {
     print_vec_attr(os, instr);
@@ -692,7 +692,7 @@ std::shared_ptr<Instr> Emulator::decode(uint32_t code) const {
     instr->setfunct3(funct3);
   } break;
 
-#ifdef EXT_V_ENABLE
+#if defined(EXT_V_ENABLE) || defined(EXT_ARA2_ENABLE)
   case InstType::V:
     switch (op) {
     case Opcode::VSET: {

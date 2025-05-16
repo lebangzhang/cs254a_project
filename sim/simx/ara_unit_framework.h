@@ -10,18 +10,18 @@ namespace vortex {
 
 class Core;
 
-class Ara2Unit : public SimObject<Ara2Unit> {
+class AraUnit : public SimObject<Ara2Unit> {
 public:
 
     SimPort<instr_trace_t*> Inputs;
     SimPort<instr_trace_t*> Outputs;
 
-    Ara2Unit(const SimContext& ctx,
+    AraUnit(const SimContext& ctx,
             const char* name,
             const Arch& arch,
             Core* core);
 
-    ~Ara2Unit();
+    ~AraUnit();
 
     void reset();
 
@@ -36,10 +36,12 @@ private:
     /* TODO : Need a Slide Unit */ 
     SlideUnit::Ptr slide_unit_;
 
+    /* TODO : Need a Mask Unit */ 
+    MaskUnit::Ptr mask_unit_;
+
 
     /* TODO : Load Store Unit (Maybe) */
     /* Future todo : Add arbitration between slide and addrgen */
-
 
     uint32_t total_stalls_ = 0;
 };

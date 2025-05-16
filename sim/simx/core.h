@@ -23,15 +23,23 @@
 #include "ibuffer.h"
 #include "scoreboard.h"
 
+
+// TODO This is definitely not correct, we need to fix this 
+
 #ifdef EXT_V_ENABLE
-#include "voperands.h"
-#include "vec_unit.h"
+    #include "voperands.h"
+    #include "vec_unit.h"
 #else
-#ifdef DISABLE_OPC
-#include "operands_old.h"
-#else
-#include "operands.h"
-#endif
+    #ifdef EXT_ARA2_ENABLE
+        #include "voperands.h"
+        #include "ara_unit.h"
+    #else 
+        #ifdef DISABLE_OPC
+            #include "operands_old.h"
+        #else
+            #include "operands.h"
+        #endif
+    #endif
 #endif
 
 #include "dispatcher.h"
@@ -63,7 +71,7 @@ public:
     uint64_t scrb_sfu;
     uint64_t scrb_csrs;
     uint64_t scrb_wctl;
-  #ifdef EXT_V_ENABLE
+  #if defined(EXT_V_ENABLE) || defined(EXT_ARA2_ENABLE)
     uint64_t vinstrs;
     uint64_t scrb_vpu;
   #endif
@@ -87,7 +95,7 @@ public:
       , scrb_sfu(0)
       , scrb_csrs(0)
       , scrb_wctl(0)
-    #ifdef EXT_V_ENABLE
+    #if defined(EXT_V_ENABLE) || defined(EXT_ARA2_ENABLE)
       , vinstrs(0)
       , scrb_vpu(0)
     #endif
@@ -163,7 +171,13 @@ public:
   VecUnit::Ptr& vec_unit() {
     return vec_unit_;
   }
+#endif 
+#ifdef EXT_ARA2_ENABLE
+  AraUnit::Ptr& ara_unit() {
+    return ara_unit_;
+  }
 #endif
+
 
   auto& trace_pool() {
     return trace_pool_;
@@ -189,7 +203,9 @@ private:
 #ifdef EXT_V_ENABLE
   VecUnit::Ptr vec_unit_;
 #endif
-
+#ifdef EXT_ARA2_ENABLE
+  AraUnit::Ptr ara_unit_;
+#endif
   Emulator emulator_;
 
   std::vector<IBuffer> ibuffers_;

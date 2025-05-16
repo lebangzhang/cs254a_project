@@ -88,6 +88,7 @@
 `endif
 `endif
 
+// TODO : Need to fix this for ARA2 support
 `ifdef EXT_V_ENABLE
 `ifndef VLEN
 `define VLEN (4 * `XLEN)
@@ -397,6 +398,15 @@
 `ifndef NUM_VPU_BLOCKS
 `define NUM_VPU_BLOCKS  `ISSUE_WIDTH
 `endif
+
+// Number of ARA2 units 
+`ifndef NUM_ARA_LANES
+`define NUM_ARA_LANES   `SIMD_WIDTH
+`endif
+`ifndef NUM_ARA_BLOCKS
+`define NUM_ARA_BLOCKS  `ISSUE_WIDTH
+`endif
+
 
 // Size of Instruction Buffer
 `ifndef IBUF_SIZE
