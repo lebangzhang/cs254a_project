@@ -24,7 +24,7 @@
 #include "scoreboard.h"
 
 
-// TODO This is definitely not correct, we need to fix this 
+// TOFIX : This is definitely not correct, we need to fix this 
 
 #ifdef EXT_V_ENABLE
     #include "voperands.h"

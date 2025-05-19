@@ -47,7 +47,7 @@ public:
   std::array<SimPort<VgprRsp>, NUM_REQS> RspOut;
 
   VgprUnit(const SimContext &ctx)
-    : SimObject<VgprUnit<NUM_REQS, NUM_BANKS>>(ctx, "gpr-unit")
+    : SimObject<VgprUnit<NUM_REQS, NUM_BANKS>>(ctx, "vgpr-unit")
     , ReqIn(make_array<SimPort<VgprReq>, NUM_REQS>(this))
     , RspOut(make_array<SimPort<VgprRsp>, NUM_REQS>(this)) {
     char sname[100];
@@ -71,6 +71,8 @@ public:
   virtual void tick() {
     if (ReqIn.empty())
       return;
+
+    // Serving operand requests for each clock cycle
     for (uint32_t b = 0; b < NUM_BANKS; b++) {
       auto& output = crossbar_->Outputs.at(b);
       if (output.empty())
@@ -97,7 +99,7 @@ private:
   constexpr static uint32_t BANKID_WIS_MASK  = (1 << BANKID_WIS_BITS) - 1;
 };
 
-// TODO : Need to fix this 
+// TOFIX : Need to fix this 
 
 /*#if defined(EXT_V_ENABLE) || defined(EXT_ARA2_ENABLE)*/
 typedef VgprUnit<NUM_OPCS, NUM_VGPR_BANKS> VGPR;

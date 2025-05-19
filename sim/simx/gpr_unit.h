@@ -98,7 +98,7 @@ private:
 };
 
 
-// TODO : Need to fix this 
+// TOFIX : Need to fix this 
 
 /*#if defined(EXT_V_ENABLE) || defined(EXT_ARA2_ENABLE)*/
 typedef GprUnit<(NUM_OPCS + NUM_VOPCS), NUM_GPR_BANKS> GPR;

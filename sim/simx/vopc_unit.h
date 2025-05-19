@@ -70,6 +70,10 @@ private:
   bool     is_reduction_ = false;
   bool     lsu_flush_ = false;
   uint32_t total_stalls_ = 0;
+
+
+  // Modification Note : 
+  uint32_t total_vgpr_batch_requests = 0; 
 };
 
 } // namespace vortex

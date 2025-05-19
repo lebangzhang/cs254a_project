@@ -88,7 +88,7 @@
 `endif
 `endif
 
-// TODO : Need to fix this for ARA2 support
+// TOFIX : Need to fix this for ARA2 support
 `ifdef EXT_V_ENABLE
 `ifndef VLEN
 `define VLEN (4 * `XLEN)
