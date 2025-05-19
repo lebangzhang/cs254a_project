@@ -190,7 +190,7 @@ void VOpcUnit::tick() {
   }
 
   // Send the next batch of requests
-  if(total_vgpr_batch_requests != 0){
+  if( (total_vgpr_batch_requests != 0) && (pending_v_rsps_ == 0) ){
     for (uint32_t i = 0; i < NUM_SRC_REGS; i++) {
       if (vopd_to_fetch_.test(i)) {
         VgprReq vgpr_req;
