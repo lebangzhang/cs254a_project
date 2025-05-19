@@ -127,11 +127,11 @@ void VOpcUnit::tick() {
     // send VGPR requests (we do this once)
     for (uint32_t i = 0; i < NUM_SRC_REGS; i++) {
       if (vopd_to_fetch_.test(i)) {
-        GprReq gpr_req;
-        gpr_req.rid = trace->src_regs[i].id();
-        gpr_req.wid = trace->wid;
-        gpr_req.opd = i;
-        vgpr_req_ports.push(gpr_req);
+        VgprReq vgpr_req;
+        vgpr_req.rid = trace->src_regs[i].id();
+        vgpr_req.wid = trace->wid;
+        vgpr_req.opd = i;
+        vgpr_req_ports.push(vgpr_req);
         ++pending_v_rsps_;
       }
     }
@@ -188,11 +188,11 @@ bool VOpcUnit::schedule(instr_trace_t* trace) {
     // fetch the vector operands again (skip vs2 operand for LD/ST)
     for (uint32_t i = 0; i < NUM_SRC_REGS; i++) {
       if (vopd_to_fetch_.test(i) && vs2_opd_ != i) {
-        GprReq gpr_req;
-        gpr_req.rid = trace->src_regs[i].id();
-        gpr_req.wid = trace->wid;
-        gpr_req.opd = i;
-        vgpr_req_ports.push(gpr_req);
+        VgprReq vgpr_req;
+        vgpr_req.rid = trace->src_regs[i].id();
+        vgpr_req.wid = trace->wid;
+        vgpr_req.opd = i;
+        vgpr_req_ports.push(vgpr_req);
         ++pending_v_rsps_;
       }
     }
@@ -236,11 +236,11 @@ bool VOpcUnit::fused_schedule(instr_trace_t* trace) {
     // fetch the vector operands again (skip vs2 operand for LD/ST)
     for (uint32_t i = 0; i < NUM_SRC_REGS; i++) {
       if (vopd_to_fetch_.test(i) && vs2_opd_ != i) {
-        GprReq gpr_req;
-        gpr_req.rid = trace->src_regs[i].id();
-        gpr_req.wid = trace->wid;
-        gpr_req.opd = i;
-        vgpr_req_ports.push(gpr_req);
+        VgprReq vgpr_req;
+        vgpr_req.rid = trace->src_regs[i].id();
+        vgpr_req.wid = trace->wid;
+        vgpr_req.opd = i;
+        vgpr_req_ports.push(vgpr_req);
         ++pending_v_rsps_;
       }
     }
@@ -265,11 +265,11 @@ bool VOpcUnit::fused_schedule(instr_trace_t* trace) {
     // fetch the vector operands again (skip vs2 operand for LD/ST)
     for (uint32_t i = 0; i < NUM_SRC_REGS; i++) {
       if (vopd_to_fetch_.test(i)) {
-        GprReq gpr_req;
-        gpr_req.rid = trace->src_regs[i].id();
-        gpr_req.wid = trace->wid;
-        gpr_req.opd = i;
-        vgpr_req_ports.push(gpr_req);
+        VgprReq vgpr_req;
+        vgpr_req.rid = trace->src_regs[i].id();
+        vgpr_req.wid = trace->wid;
+        vgpr_req.opd = i;
+        vgpr_req_ports.push(vgpr_req);
         ++pending_v_rsps_;
       }
     }

@@ -17,43 +17,43 @@
 
 namespace vortex {
 
-struct GprReq {
+struct VgprReq {
   uint32_t opd;
   uint32_t rid;
   uint32_t wid;
 
-  friend std::ostream& operator<<(std::ostream& os, const GprReq& req) {
+  friend std::ostream& operator<<(std::ostream& os, const VgprReq& req) {
     os << "opd=" << req.opd << ", rid=" << req.rid << ", wid=" << req.wid;
     return os;
   }
 };
 
-struct GprRsp {
+struct VgprRsp {
   uint32_t opd;
 
-  friend std::ostream& operator<<(std::ostream& os, const GprRsp& rsp) {
+  friend std::ostream& operator<<(std::ostream& os, const VgprRsp& rsp) {
     os << "opd=" << rsp.opd;
     return os;
   }
 };
 
 template <uint32_t NUM_REQS, uint32_t NUM_BANKS>
-class GprUnit : public SimObject<GprUnit<NUM_REQS, NUM_BANKS>> {
+class VgprUnit : public SimObject<VgprUnit<NUM_REQS, NUM_BANKS>> {
 public:
 
-  using ReqXbar = TxCrossBar<GprReq>;
+  using ReqXbar = TxCrossBar<VgprReq>;
 
-  std::array<SimPort<GprReq>, NUM_REQS> ReqIn;
-  std::array<SimPort<GprRsp>, NUM_REQS> RspOut;
+  std::array<SimPort<VgprReq>, NUM_REQS> ReqIn;
+  std::array<SimPort<VgprRsp>, NUM_REQS> RspOut;
 
-  GprUnit(const SimContext &ctx)
-    : SimObject<GprUnit<NUM_REQS, NUM_BANKS>>(ctx, "gpr-unit")
-    , ReqIn(make_array<SimPort<GprReq>, NUM_REQS>(this))
-    , RspOut(make_array<SimPort<GprRsp>, NUM_REQS>(this)) {
+  VgprUnit(const SimContext &ctx)
+    : SimObject<VgprUnit<NUM_REQS, NUM_BANKS>>(ctx, "gpr-unit")
+    , ReqIn(make_array<SimPort<VgprReq>, NUM_REQS>(this))
+    , RspOut(make_array<SimPort<VgprRsp>, NUM_REQS>(this)) {
     char sname[100];
 		snprintf(sname, 100, "%s-xbar", this->name().c_str());
     crossbar_ = ReqXbar::Create(sname, NUM_REQS, NUM_BANKS,
-		 [](const GprReq& req)->uint32_t {
+		 [](const VgprReq& req)->uint32_t {
       //uint32_t bank_id = ((req.wid & BANKID_WIS_MASK) << BANKID_REG_BITS) | (req.rid & BANKID_REG_MASK);
 			return req.rid % NUM_BANKS;
 		});
@@ -62,7 +62,7 @@ public:
 		}
   }
 
-  virtual ~GprUnit() {}
+  virtual ~VgprUnit() {}
 
   virtual void reset() {
     //--
@@ -76,7 +76,7 @@ public:
       if (output.empty())
         continue;
       auto& req = output.front();
-      GprRsp rsp;
+      VgprRsp rsp;
       rsp.opd = req.data.opd;
       RspOut.at(req.input).push(rsp);
       output.pop();
@@ -97,14 +97,13 @@ private:
   constexpr static uint32_t BANKID_WIS_MASK  = (1 << BANKID_WIS_BITS) - 1;
 };
 
-
 // TODO : Need to fix this 
 
 /*#if defined(EXT_V_ENABLE) || defined(EXT_ARA2_ENABLE)*/
-typedef GprUnit<(NUM_OPCS + NUM_VOPCS), NUM_GPR_BANKS> GPR;
-/*typedef GprUnit<NUM_OPCS, NUM_VGPR_BANKS> VGPR;*/
+typedef VgprUnit<NUM_OPCS, NUM_VGPR_BANKS> VGPR;
 /*#else*/
 /*typedef GprUnit<NUM_OPCS, NUM_GPR_BANKS> GPR;*/
 /*#endif*/
 
-} // namespace vortex
+
+}

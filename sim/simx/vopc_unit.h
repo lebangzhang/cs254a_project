@@ -15,6 +15,7 @@
 
 #include "instr_trace.h"
 #include "gpr_unit.h"
+#include "vgpr_unit.h"
 
 namespace vortex {
 
@@ -28,8 +29,8 @@ public:
   SimPort<GprReq> gpr_req_ports;
   SimPort<GprRsp> gpr_rsp_ports;
 
-  SimPort<GprReq> vgpr_req_ports;
-  SimPort<GprRsp> vgpr_rsp_ports;
+  SimPort<VgprReq> vgpr_req_ports;
+  SimPort<VgprRsp> vgpr_rsp_ports;
 
   VOpcUnit(const SimContext &ctx, Core* core);
 
