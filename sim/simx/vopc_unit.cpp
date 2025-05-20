@@ -139,6 +139,8 @@ void VOpcUnit::tick() {
     // Case 1 : SIMD_WIDTH > VL_count
     uint32_t max_threads_per_req = 0;
     uint32_t iterations_per_thread = 0;
+
+    // Assuming SIMD_WIDTH, VL_count are powers of 2
     if(SIMD_WIDTH > VL_count) {
       max_threads_per_req = SIMD_WIDTH / VL_count;
       iterations_per_thread = 1;
@@ -149,9 +151,17 @@ void VOpcUnit::tick() {
       iterations_per_thread = VL_count / SIMD_WIDTH;
     }
 
+    // Assuming NUM_THREADS is power of 2
     // Calculate overall number of requests being needed (under assumption all threads active)
     // TOFIX : Include the concept of a Non zero iterator
-    total_vgpr_batch_requests = max_threads_per_req * iterations_per_thread; 
+
+    if(SIMD_WIDTH == NUM_THREADS){
+        total_vgpr_batch_requests = (max_threads_per_req * iterations_per_thread); 
+    } else {
+        // Imply SIMD_WIDTH < NUM_THREADS
+        int temp = NUM_THREADS / SIMD_WIDTH;
+        total_vgpr_batch_requests = temp * (max_threads_per_req)
+    }
 
 
     // send VGPR requests (we do this once)
