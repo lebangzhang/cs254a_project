@@ -73,7 +73,7 @@ private:
 
 
   // Modification Note : 
-  uint32_t total_vgpr_batch_requests = 0; 
+  uint32_t total_vgpr_requests = 0; 
 };
 
 } // namespace vortex

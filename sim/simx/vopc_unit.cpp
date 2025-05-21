@@ -41,7 +41,7 @@ void VOpcUnit::reset() {
   is_reduction_ = false;
   lsu_flush_ = false;
   total_stalls_ = 0;
-  total_vgpr_batch_requests = 0;
+  total_vgpr_requests = 0;
 }
 
 void VOpcUnit::tick() {
@@ -126,42 +126,44 @@ void VOpcUnit::tick() {
     }
 
 
-    // Modification Note 
-    // Due to new organization of RF, we don't directly request SIMD_WIDTH number of threads
-    // i.e   : The number of requests are now lane-first instead of thread-first
-    //
-    // We have 2 cases, when SIMD_WIDTH > VL_count, and the opposite
-    // In Case 1 : 1 Vgpr request can get possible 1-2 or more threads per pull
-    // In Case 2 : 1 Vgpr request may only get half of the number of threads, etc 
-    // Thus: we calculate how many threads can be served for each bank, as well as the iterations
+    // Calculate how many requests made to vrf
     uint32_t VL_count = VLEN/XLEN;
-
-    // Case 1 : SIMD_WIDTH > VL_count
     uint32_t max_threads_per_req = 0;
     uint32_t iterations_per_thread = 0;
+    uint32_t nz_iterator_req = 0;
 
-    // Assuming SIMD_WIDTH, VL_count are powers of 2
+    // Assuming SIMD_WIDTH, VL_count are powers of 2 
+    // Case 1 : SIMD_WIDTH > VL_count 
+    // ==> Each SIMD_WIDTH has 2 or more thread
+    // ==> Meaning NZ iterator works at granularity of SIMD_WIDTH / VL_count
     if(SIMD_WIDTH > VL_count) {
       max_threads_per_req = SIMD_WIDTH / VL_count;
       iterations_per_thread = 1;
+
+      // TODO : Probably exists a more elegant way of doing this calculation
+      auto temp_tmask = trace->tmask;
+      for(uint32_t tid_base = 0; tid_base < NUM_THREADS; tid_base += max_threads_per_req){
+
+        int flag = 0;
+        
+        for(uint32_t tid_offset = 0; tid_offset < max_threads_per_req; tid_offset++) {
+            if(temp_tmask.test(tid_base + tid_offset)){
+                flag = 1;
+            }
+        }
+
+        nz_iterator_req += flag;
+      }
     }
-    // Case 2 : SIMD_WIDTH < VL_count ==> Meaning 
+    // Case 2 : SIMD_WIDTH < VL_count 
+    // ==> Meaning each SIMD_WIDTH only has half a thread 
+    // ==> Meaning Nz iterator can work at granularity of each thread
     else {
       max_threads_per_req = 1;
       iterations_per_thread = VL_count / SIMD_WIDTH;
+      nz_iterator_req = trace->tmask.count();
     }
-
-    // Assuming NUM_THREADS is power of 2
-    // Calculate overall number of requests being needed (under assumption all threads active)
-    // TOFIX : Include the concept of a Non zero iterator
-
-    if(SIMD_WIDTH == NUM_THREADS){
-        total_vgpr_batch_requests = (max_threads_per_req * iterations_per_thread); 
-    } else {
-        // Imply SIMD_WIDTH < NUM_THREADS
-        int temp = NUM_THREADS / SIMD_WIDTH;
-        total_vgpr_batch_requests = temp * (max_threads_per_req)
-    }
+    total_vgpr_requests = (max_threads_per_req) * iterations_per_thread * nz_iterator_req;
 
 
     // send VGPR requests (we do this once)
@@ -175,7 +177,7 @@ void VOpcUnit::tick() {
         ++pending_v_rsps_;
       }
     }
-    total_vgpr_batch_requests -= 1;
+    total_vgpr_requests -= 1;
 
     // mark current instruction as pending
     instr_pending_ = true;
@@ -200,7 +202,7 @@ void VOpcUnit::tick() {
   }
 
   // Send the next batch of requests
-  if( (total_vgpr_batch_requests != 0) && (pending_v_rsps_ == 0) ){
+  if( (total_vgpr_requests != 0) && (pending_v_rsps_ == 0) ){
     for (uint32_t i = 0; i < NUM_SRC_REGS; i++) {
       if (vopd_to_fetch_.test(i)) {
         VgprReq vgpr_req;
@@ -211,16 +213,16 @@ void VOpcUnit::tick() {
         ++pending_v_rsps_;
       }
     }
-    total_vgpr_batch_requests -= 1;
+    total_vgpr_requests -= 1;
   }
 
   // process outgoing instructions
-  if ( (0 == pending_s_rsps_) && (pending_v_rsps_ == 0) && (total_vgpr_batch_requests == 0)) {
+  if ( (0 == pending_s_rsps_) && (pending_v_rsps_ == 0) && (total_vgpr_requests == 0)) {
     auto trace = Input.front();
     bool done = false;
 
 
-  // TOFIX : Need to fix the total_vgpr_batch_requests case for vlmul 
+  // TOFIX : Need to fix the total_vgpr_requests case for vlmul 
   #ifdef FUSED_VPU
     done = this->fused_schedule(trace);
   #else
