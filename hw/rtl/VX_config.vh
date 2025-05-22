@@ -97,6 +97,15 @@
 `define VLEN `XLEN
 `endif
 
+`ifdef EXT_ARA2_ENABLE
+`ifndef VLEN
+`define VLEN (4 * `XLEN)
+`endif
+`else
+`define VLEN `XLEN
+`endif
+
+
 `ifndef NUM_CLUSTERS
 `define NUM_CLUSTERS 1
 `endif
