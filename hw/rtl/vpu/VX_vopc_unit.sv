@@ -158,10 +158,10 @@ module VX_vopc_unit import VX_gpu_pkg::*; #(
         STATE_DISPATCH: begin
 
             // TOFIX : the slide unit 
-            if (slide_flag) begin
-                
+            // if (slide_flag) begin
+            // end else if (output_ready) begin
 
-            end else if (output_ready) begin
+            if (output_ready) begin
                 if (last_dispatch) begin
                     state_n = STATE_IDLE;
                 end else if (dispatch_fire) begin
@@ -248,10 +248,9 @@ module VX_vopc_unit import VX_gpu_pkg::*; #(
 
     // TOFIX : Get the slide width 
     // Slide Operation 
-    reg [NUM_SRC_OPDS-1:0][`SIMD_WIDTH-1:0][`XLEN-1:0] slide_destination;
-    reg [`XLEN-1:0] slide_width;  // is either rs1 or imm  
-
-    wire slide_flag; 
+    // reg [NUM_SRC_OPDS-1:0][`SIMD_WIDTH-1:0][`XLEN-1:0] slide_destination;
+    // reg [`XLEN-1:0] slide_width;  // is either rs1 or imm  
+    // wire slide_flag; 
 
     // state machine update
     always @(posedge clk) begin
