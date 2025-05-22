@@ -90,18 +90,17 @@
 
 // TOFIX : Need to fix this for ARA2 support
 `ifdef EXT_V_ENABLE
-`ifndef VLEN
-`define VLEN (4 * `XLEN)
-`endif
+    `ifndef VLEN
+        `define VLEN (4 * `XLEN)
+    `endif
 `else
-`ifdef EXT_ARA2_ENABLE
-`ifndef VLEN
-`define VLEN (4 * `XLEN)
-`endif
-`else
-`define VLEN `XLEN
-`endif
-`define VLEN `XLEN
+    `ifdef EXT_ARA2_ENABLE
+        `ifndef VLEN
+            `define VLEN (4 * `XLEN)
+        `endif
+    `else
+        `define VLEN `XLEN
+    `endif
 `endif
 
 `ifndef NUM_CLUSTERS

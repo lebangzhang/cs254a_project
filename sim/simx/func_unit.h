@@ -130,10 +130,10 @@ public:
 // ara2_note : add ara2 to funcunit
 #ifdef EXT_ARA2_ENABLE 
 
-class Ara2PUUnit : public FuncUnit {
+class Ara2Unit : public FuncUnit {
 
 public:
-    Ara2PUUnit(const SimContext& ctx, Core*);
+    Ara2Unit(const SimContext& ctx, Core*);
 
     void tick() override;
 

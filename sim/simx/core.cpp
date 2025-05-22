@@ -155,7 +155,7 @@ Core::Core(const SimContext& ctx,
   func_units_.at((int)FUType::VPU) = SimPlatform::instance().create_object<VpuUnit>(this);
 #endif
 #ifdef EXT_ARA2_ENABLE
-  func_units_.at((int)FUType::ARA) = SimPlatform::instance().create_object<Ara2PUUnit>(this);
+  func_units_.at((int)FUType::ARA) = SimPlatform::instance().create_object<Ara2Unit>(this);
 #endif
 
 

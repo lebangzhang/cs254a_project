@@ -31,7 +31,7 @@
     #include "vec_unit.h"
 #else
     #ifdef EXT_ARA2_ENABLE
-        #include "voperands.h"
+        #include "ara_operands.h"
         #include "ara_unit.h"
     #else 
         #ifdef DISABLE_OPC
