@@ -38,8 +38,10 @@ public:
       , vpu_states_(arch.num_warps(), arch.num_threads())
       , num_lanes_(arch.num_warps())
       , pending_reqs_(arch.num_warps())
+
   {
     this->reset();
+
   }
 
   ~Impl() {}
@@ -55,9 +57,16 @@ public:
       if (input.empty())
           return;
 
+
+      // 1, At each CC, only receive 1 insn
       auto trace = input.front();
 
       int delay = 0;
+
+      // 2. For now, assume all lane units behave the same way 
+      // TOFIX : Check if this is actually true
+
+      /*
       switch (trace->vpu_type) {
       case VpuType::VSET:
         break;
@@ -91,7 +100,9 @@ public:
       default:
         std::abort();
       }
-
+      */
+    
+      // 3. Return that trace at the output
       simobject_->Outputs.at(iw).push(trace, 2 + delay);
 
       DT(3, simobject_->name() << ": op=" << trace->vpu_type << ", " << *trace);
@@ -1762,9 +1773,22 @@ AraUnit::AraUnit(const SimContext& ctx,
                  Core* core)
   : SimObject<AraUnit>(ctx, name)
   , Inputs(ISSUE_WIDTH, this)
-	, Outputs(ISSUE_WIDTH, this)
+  , Outputs(ISSUE_WIDTH, this)
   , impl_(new Impl(this, arch, core))
-{}
+
+
+  // TOFIX : Make this a variable 
+  , lane_unit_(8)
+  , lane_req_ports(8, this)
+  , lane_rsp_ports(8, this) 
+{
+
+  for(uint32_t i =0; i < 8 ; i++){
+    lane_unit_.at(i) = Lane_Unit::Create();
+  }
+
+
+}
 
 AraUnit::~AraUnit() {
   delete impl_;

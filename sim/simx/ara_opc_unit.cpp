@@ -166,18 +166,9 @@ void Ara_Opc_Unit::tick() {
     total_vgpr_requests = (max_threads_per_req) * iterations_per_thread * nz_iterator_req;
 
 
-    // send VGPR requests (we do this once)
-    for (uint32_t i = 0; i < NUM_SRC_REGS; i++) {
-      if (vopd_to_fetch_.test(i)) {
-        VgprReq vgpr_req;
-        vgpr_req.rid = trace->src_regs[i].id();
-        vgpr_req.wid = trace->wid;
-        vgpr_req.opd = i;
-        vgpr_req_ports.push(vgpr_req);
-        ++pending_v_rsps_;
-      }
-    }
-    total_vgpr_requests -= 1;
+    // ARA 2 NOTE : Force the vgpr request to be 0
+    total_vgpr_requests = 0;
+
 
     // mark current instruction as pending
     instr_pending_ = true;
@@ -191,36 +182,18 @@ void Ara_Opc_Unit::tick() {
     __unused(rsp);
     gpr_rsp_ports.pop();
   }
-
-  // process incoming VGPR responses
-  if (!vgpr_rsp_ports.empty()) {
-    assert(pending_v_rsps_ != 0);
-    --pending_v_rsps_;
-    auto rsp = vgpr_rsp_ports.front();
-    __unused(rsp);
-    vgpr_rsp_ports.pop();
-  }
-
-  // Send the next batch of requests
-  if( (total_vgpr_requests != 0) && (pending_v_rsps_ == 0) ){
-    for (uint32_t i = 0; i < NUM_SRC_REGS; i++) {
-      if (vopd_to_fetch_.test(i)) {
-        VgprReq vgpr_req;
-        vgpr_req.rid = trace->src_regs[i].id();
-        vgpr_req.wid = trace->wid;
-        vgpr_req.opd = i;
-        vgpr_req_ports.push(vgpr_req);
-        ++pending_v_rsps_;
-      }
-    }
-    total_vgpr_requests -= 1;
-  }
+ 
 
   // process outgoing instructions
   if ( (0 == pending_s_rsps_) && (pending_v_rsps_ == 0) && (total_vgpr_requests == 0)) {
     auto trace = Input.front();
     bool done = false;
 
+
+    // TOFIX : Check here
+    // Ara 2 Note : Don't perform vlmul latency here 
+    vlmul_counter_ = 1;
+    vl_counter_ = 1;
 
   // TOFIX : Need to fix the total_vgpr_requests case for vlmul 
   #ifdef FUSED_Ara

@@ -1,49 +1,88 @@
+// Copyright © 2019-2023
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 #pragma once
 
-#include "arch.h"
-#include "instr.h"
 #include "instr_trace.h"
-#include <simobject.h>
-#include "types.h"
 
 namespace vortex {
 
-class Core;
+class Lane_Unit : public SimObject<Lane_Unit> {
 
-class LaneUnit : public SimObject<LaneUnit> {
+private: 
+		uint32_t total_stalls_ = 0;
+
 public:
 
-    SimPort<instr_trace_t*> Inputs;
-    SimPort<instr_trace_t*> Outputs;
+    // Take in the inputs 
+    SimPort<instr_trace_t*> Input;
+    SimPort<instr_trace_t*> Output;
 
-    /* Need a structure for Sequencer_Req and Sequencer_Rsp */
-    SimPort<Sequencer_Req> lane_unit_req_ports
-    SimPort<Sequencer_Rsp> lane_unit_rsp_ports 
+    Lane_Unit(const SimContext& ctx)
+			: SimObject<Lane_Unit>(ctx, "lane_unit")
+			, Input(this)
+			, Output(this)
+    {
+			total_stalls_ = 0;
+	}
 
-    /* Add scoreboard/table tracking */
+    virtual ~Lane_Unit() {}
 
-    LaneUnit(const SimContext& ctx,
+    virtual void reset() {
+			total_stalls_ = 0;
+		}
 
-             /* Lane id */ 
-            
-             Core* core);
+    virtual void tick() {
+			if (Input.empty())
+				return;
+			auto trace = Input.front();
+			uint32_t stalls = 0;
 
-    ~LaneUnit();
+            /*
+			for (int i = 0; i < NUM_SRC_REGS; ++i) {
+				uint32_t x_rid = trace->src_regs[i].id();
+				if (x_rid == 0)
+					continue; // skip x0 or empty
+				for (int j = i + 1; j < NUM_SRC_REGS; ++j) {
+					uint32_t y_rid = trace->src_regs[j].id();
+					if (y_rid == 0)
+						continue; // skip x0 or empty
+					int bank_x = x_rid % NUM_BANKS;
+					int bank_y = y_rid % NUM_BANKS;
+					if (bank_x == bank_y) {
+						++stalls;
+					}
+				}
+			}
+            */
 
-    void reset();
+			total_stalls_ += stalls;
 
-    void tick();
+			Output.push(trace, 2 + stalls);
 
-private:
+			DT(3, "pipeline-operands: " << *trace);
 
-    // Pass trace to register file 
-    /* Need a new vrf slice with 8 banks and Barber Pole Shifting + How Sequencing is handled */
-    Operand_Requestor::Ptr operand_requestor_;
+			Input.pop();
+    };
 
-    /* Need Vector Functional Units */
-    // Clone _vec_unit 
+		bool writeback(instr_trace_t* trace) {
+			__unused(trace);
+			return true;
+		}
 
-    uint32_t total_stalls_ = 0;
+		uint32_t total_stalls() const {
+			return total_stalls_;
+		}
 };
 
 }
