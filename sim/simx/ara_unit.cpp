@@ -52,67 +52,7 @@ public:
   }
 
   void tick() {
-    for (uint32_t iw = 0; iw < ISSUE_WIDTH; ++iw) {
-      auto& input = simobject_->Inputs.at(iw);
-      if (input.empty())
-          return;
-
-
-      // 1, At each CC, only receive 1 insn
-      auto trace = input.front();
-
-      int delay = 0;
-
-      // 2. For now, assume all lane units behave the same way 
-      // TOFIX : Check if this is actually true
-
-      /*
-      switch (trace->vpu_type) {
-      case VpuType::VSET:
-        break;
-      case VpuType::ARITH:
-      case VpuType::ARITH_R:
-        delay = 1;
-        break;
-      case VpuType::IMUL:
-        delay = LATENCY_IMUL;
-        break;
-      case VpuType::IDIV:
-        delay = XLEN;
-        break;
-      case VpuType::FNCP:
-      case VpuType::FNCP_R:
-        delay = 2;
-        break;
-      case VpuType::FMA:
-      case VpuType::FMA_R:
-        delay = LATENCY_FMA;
-        break;
-      case VpuType::FDIV:
-        delay = LATENCY_FDIV;
-        break;
-      case VpuType::FSQRT:
-        delay = LATENCY_FSQRT;
-        break;
-      case VpuType::FCVT:
-        delay = LATENCY_FCVT;
-        break;
-      default:
-        std::abort();
-      }
-      */
-    
-      // 3. Return that trace at the output
-      simobject_->Outputs.at(iw).push(trace, 2 + delay);
-
-      DT(3, simobject_->name() << ": op=" << trace->vpu_type << ", " << *trace);
-
-      if (trace->eop && trace->fetch_stall) {
-        core_->resume(trace->wid);
-      }
-
-      input.pop();
-    }
+    // Tick Content moved into the parent AraUnit class
   }
 
   void load(const Instr &instr,
@@ -1775,27 +1715,31 @@ AraUnit::AraUnit(const SimContext& ctx,
   : SimObject<AraUnit>(ctx, name)
   , Inputs(ISSUE_WIDTH, this)
   , Outputs(ISSUE_WIDTH, this)
+  , core_(core)
   , impl_(new Impl(this, arch, core))
 
 
-  // TOFIX : Make this a variable 
+  // TOFIX : In the scenario all lane units are not the same  
+  /*
   , lane_unit_(NUM_ARA_LANES)
   , lane_req_ports(NUM_ARA_LANES, this)
   , lane_rsp_ports(NUM_ARA_LANES, this) 
+  */
+  , lane_unit_(1)
+  , lane_req_ports(1, this)
+  , lane_rsp_ports(1, this) 
+
 {
 
   // Create Lane Units 
-  for(uint32_t i =0; i < NUM_ARA_LANES ; i++){
+  for(uint32_t i =0; i < 1 ; i++){
     lane_unit_.at(i) = Lane_Unit::Create();
   }
 
   // Bind Ports to operand requestor inside the lanes
-  for(uint32_t i=0; i < NUM_ARA_LANES; i++){
+  for(uint32_t i=0; i < 1; i++){
     this->lane_req_ports.at(i).bind(&lane_unit_.at(i)->lane_opreq_req_port);
     lane_unit_.at(i)->lane_opreq_rsp_port.bind(&this->lane_rsp_ports.at(i));
-
-    /*opc_units_.at(i)->gpr_req_ports.bind(&gpr_unit_->ReqIn.at(i));*/
-    /*gpr_unit_->RspOut.at(i).bind(&opc_units_.at(i)->gpr_rsp_ports);*/
   }
   
 }
@@ -1809,7 +1753,65 @@ void AraUnit::reset() {
 }
 
 void AraUnit::tick() {
-  impl_->tick();
+    impl_->tick();
+
+    for (uint32_t iw = 0; iw < ISSUE_WIDTH; ++iw) {
+      auto& input = Inputs.at(iw);
+      if (input.empty())
+          return;
+
+      // 1, At each CC, only receive 1 insn
+      auto trace = input.front();
+
+      int delay = 0;
+
+      // 2. For now, assume all lane units behave the same way 
+      // TOFIX : Check if this is actually true
+
+      switch (trace->vpu_type) {
+      case VpuType::VSET:
+        break;
+      case VpuType::ARITH:
+      case VpuType::ARITH_R:
+        delay = 1;
+        break;
+      case VpuType::IMUL:
+        delay = LATENCY_IMUL;
+        break;
+      case VpuType::IDIV:
+        delay = XLEN;
+        break;
+      case VpuType::FNCP:
+      case VpuType::FNCP_R:
+        delay = 2;
+        break;
+      case VpuType::FMA:
+      case VpuType::FMA_R:
+        delay = LATENCY_FMA;
+        break;
+      case VpuType::FDIV:
+        delay = LATENCY_FDIV;
+        break;
+      case VpuType::FSQRT:
+        delay = LATENCY_FSQRT;
+        break;
+      case VpuType::FCVT:
+        delay = LATENCY_FCVT;
+        break;
+      default:
+        std::abort();
+      }
+    
+      // 3. Return that trace at the output
+      Outputs.at(iw).push(trace, 2 + delay);
+
+      if (trace->eop && trace->fetch_stall) {
+        core_->resume(trace->wid);
+      }
+
+      input.pop();
+    }
+
 }
 
 bool AraUnit::get_csr(uint32_t addr, uint32_t wid, uint32_t tid, Word* value) {

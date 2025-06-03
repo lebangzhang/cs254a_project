@@ -86,7 +86,9 @@ public:
   const PerfStats& perf_stats() const;
 
 private:
+
   std::vector<Lane_Unit::Ptr>    lane_unit_;
+  Core*                     core_;
 
   class Impl;
   Impl* impl_;
