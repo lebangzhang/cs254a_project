@@ -1767,6 +1767,7 @@ private:
 
 ///////////////////////////////////////////////////////////////////////////////
 
+
 AraUnit::AraUnit(const SimContext& ctx,
                  const char* name,
                  const Arch& arch,
@@ -1778,16 +1779,25 @@ AraUnit::AraUnit(const SimContext& ctx,
 
 
   // TOFIX : Make this a variable 
-  , lane_unit_(8)
-  , lane_req_ports(8, this)
-  , lane_rsp_ports(8, this) 
+  , lane_unit_(NUM_ARA_LANES)
+  , lane_req_ports(NUM_ARA_LANES, this)
+  , lane_rsp_ports(NUM_ARA_LANES, this) 
 {
 
-  for(uint32_t i =0; i < 8 ; i++){
+  // Create Lane Units 
+  for(uint32_t i =0; i < NUM_ARA_LANES ; i++){
     lane_unit_.at(i) = Lane_Unit::Create();
   }
 
+  // Bind Ports to operand requestor inside the lanes
+  for(uint32_t i=0; i < NUM_ARA_LANES; i++){
+    this->lane_req_ports.at(i).bind(&lane_unit_.at(i)->lane_opreq_req_port);
+    lane_unit_.at(i)->lane_opreq_rsp_port.bind(&this->lane_rsp_ports.at(i));
 
+    /*opc_units_.at(i)->gpr_req_ports.bind(&gpr_unit_->ReqIn.at(i));*/
+    /*gpr_unit_->RspOut.at(i).bind(&opc_units_.at(i)->gpr_rsp_ports);*/
+  }
+  
 }
 
 AraUnit::~AraUnit() {

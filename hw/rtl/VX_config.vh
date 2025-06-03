@@ -406,12 +406,16 @@
 `endif
 
 // Number of ARA2 units 
-`ifndef NUM_ARA_LANES
-`define NUM_ARA_LANES   `SIMD_WIDTH
+`ifndef NUM_ARA_DISPATCH_LANES
+`define NUM_ARA_DISPATCH_LANES   `SIMD_WIDTH
 `endif
-`ifndef NUM_ARA_BLOCKS
-`define NUM_ARA_BLOCKS  `ISSUE_WIDTH
+`ifndef NUM_ARA_DISPATCH_BLOCKS
+`define NUM_ARA_DISPATCH_BLOCKS  `ISSUE_WIDTH
 `endif
+`ifndef NUM_ARA_LANES 
+`define NUM_ARA_LANES 8 
+`endif
+
 
 
 // Size of Instruction Buffer

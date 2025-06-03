@@ -28,10 +28,16 @@ public:
     SimPort<instr_trace_t*> Input;
     SimPort<instr_trace_t*> Output;
 
+
+    SimPort<instr_trace_t*> lane_opreq_req_port;
+    SimPort<instr_trace_t*> lane_opreq_rsp_port;
+
     Lane_Unit(const SimContext& ctx)
 			: SimObject<Lane_Unit>(ctx, "lane_unit")
 			, Input(this)
 			, Output(this)
+            , lane_opreq_rsp_port(this)
+            , lane_opreq_req_port(this)
     {
 			total_stalls_ = 0;
 	}

@@ -143,7 +143,7 @@ Core::Core(const SimContext& ctx,
   dispatchers_.at((int)FUType::VPU) = SimPlatform::instance().create_object<Dispatcher>(this, 2, NUM_VPU_BLOCKS, NUM_VPU_LANES);
 #endif
 #ifdef EXT_ARA2_ENABLE
-  dispatchers_.at((int)FUType::ARA) = SimPlatform::instance().create_object<Dispatcher>(this, 2, NUM_ARA_BLOCKS, NUM_ARA_LANES);
+  dispatchers_.at((int)FUType::ARA) = SimPlatform::instance().create_object<Dispatcher>(this, 2, NUM_ARA_DISPATCH_BLOCKS, NUM_ARA_DISPATCH_LANES);
 #endif
 
   // initialize execute units
