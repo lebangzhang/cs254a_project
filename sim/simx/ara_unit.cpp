@@ -1756,60 +1756,36 @@ void AraUnit::tick() {
     impl_->tick();
 
     for (uint32_t iw = 0; iw < ISSUE_WIDTH; ++iw) {
-      auto& input = Inputs.at(iw);
-      if (input.empty())
-          return;
+        auto& input = Inputs.at(iw);
+        if (input.empty())
+            return;
 
-      // 1, At each CC, only receive 1 insn
-      auto trace = input.front();
+        // 1. At each CC, only process 1 instruction
+        auto trace = input.front();
 
-      int delay = 0;
-
-      // 2. For now, assume all lane units behave the same way 
-      // TOFIX : Check if this is actually true
-
-      switch (trace->vpu_type) {
-      case VpuType::VSET:
-        break;
-      case VpuType::ARITH:
-      case VpuType::ARITH_R:
-        delay = 1;
-        break;
-      case VpuType::IMUL:
-        delay = LATENCY_IMUL;
-        break;
-      case VpuType::IDIV:
-        delay = XLEN;
-        break;
-      case VpuType::FNCP:
-      case VpuType::FNCP_R:
-        delay = 2;
-        break;
-      case VpuType::FMA:
-      case VpuType::FMA_R:
-        delay = LATENCY_FMA;
-        break;
-      case VpuType::FDIV:
-        delay = LATENCY_FDIV;
-        break;
-      case VpuType::FSQRT:
-        delay = LATENCY_FSQRT;
-        break;
-      case VpuType::FCVT:
-        delay = LATENCY_FCVT;
-        break;
-      default:
-        std::abort();
-      }
+        // 2. For now, assume all lane units behave the same way <--- TOFIX (Check if there is lane biasing or this is good enough apprx) 
+        // If lane 0 is not empty --> Wait for next CC
+        auto &lane_0_req = this->lane_req_ports.at(0);
+        if(!lane_0_req.empty())
+            return;
     
-      // 3. Return that trace at the output
-      Outputs.at(iw).push(trace, 2 + delay);
+        // Lane 0 has space to receive instruction --> Send request to lane_0
+        this->lane_req_ports.at(0).push(trace, 1);
+        input.pop();
 
-      if (trace->eop && trace->fetch_stall) {
-        core_->resume(trace->wid);
-      }
+        // 3. Return the first trace by lane unit response port
+        auto &lane_0_rsp = this->lane_rsp_ports.at(0);
 
-      input.pop();
+        if (!lane_0_rsp.empty()){
+            auto &trace_received = this->lane_rsp_ports.at(0).front();
+            Outputs.at(iw).push(trace_received, 2);
+            if (trace_received->eop && trace_received->fetch_stall) {
+                core_->resume(trace_received->wid);
+            }
+            this->lane_rsp_ports.at(0).pop();
+        }
+
+
     }
 
 }

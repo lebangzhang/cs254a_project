@@ -49,36 +49,71 @@ public:
 		}
 
     virtual void tick() {
-			if (Input.empty())
-				return;
-			auto trace = Input.front();
-			uint32_t stalls = 0;
 
-            /*
-			for (int i = 0; i < NUM_SRC_REGS; ++i) {
-				uint32_t x_rid = trace->src_regs[i].id();
-				if (x_rid == 0)
+
+        if (lane_opreq_req_port.empty())
+			return;
+		auto trace = lane_opreq_req_port.front();
+		uint32_t stalls = 0;
+
+		total_stalls_ += stalls;
+		lane_opreq_rsp_port.push(trace, 2 + stalls);
+		lane_opreq_req_port.pop();
+
+        // Simulate Bank conflicts in lane unit 
+        /*
+		for (int i = 0; i < NUM_SRC_REGS; ++i) {
+			uint32_t x_rid = trace->src_regs[i].id();
+			if (x_rid == 0)
+				continue; // skip x0 or empty
+			for (int j = i + 1; j < NUM_SRC_REGS; ++j) {
+				uint32_t y_rid = trace->src_regs[j].id();
+				if (y_rid == 0)
 					continue; // skip x0 or empty
-				for (int j = i + 1; j < NUM_SRC_REGS; ++j) {
-					uint32_t y_rid = trace->src_regs[j].id();
-					if (y_rid == 0)
-						continue; // skip x0 or empty
-					int bank_x = x_rid % NUM_BANKS;
-					int bank_y = y_rid % NUM_BANKS;
-					if (bank_x == bank_y) {
-						++stalls;
-					}
+				int bank_x = x_rid % NUM_BANKS;
+				int bank_y = y_rid % NUM_BANKS;
+				if (bank_x == bank_y) {
+					++stalls;
 				}
 			}
-            */
+		}
+        */
 
-			total_stalls_ += stalls;
-
-			Output.push(trace, 2 + stalls);
-
-			DT(3, "pipeline-operands: " << *trace);
-
-			Input.pop();
+        /*
+        switch (trace->vpu_type) {
+            case VpuType::VSET:
+            break;
+            case VpuType::ARITH:
+            case VpuType::ARITH_R:
+                delay = 1;
+                break;
+            case VpuType::IMUL:
+                delay = LATENCY_IMUL;
+                break;
+            case VpuType::IDIV:
+                delay = XLEN;
+                break;
+            case VpuType::FNCP:
+            case VpuType::FNCP_R:
+                delay = 2;
+                break;
+            case VpuType::FMA:
+            case VpuType::FMA_R:
+                delay = LATENCY_FMA;
+                break;
+            case VpuType::FDIV:
+                delay = LATENCY_FDIV;
+                break;
+            case VpuType::FSQRT:
+                delay = LATENCY_FSQRT;
+                break;
+            case VpuType::FCVT:
+                delay = LATENCY_FCVT;
+                break;
+            default:
+                std::abort();
+        }
+      */
     };
 
 		bool writeback(instr_trace_t* trace) {
