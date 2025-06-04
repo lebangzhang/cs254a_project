@@ -156,7 +156,12 @@ module VX_vopc_unit import VX_gpu_pkg::*; #(
         end
 
         STATE_DISPATCH: begin
-           if (output_ready) begin
+
+            // TOFIX : the slide unit 
+            // if (slide_flag) begin
+            // end else if (output_ready) begin
+
+            if (output_ready) begin
                 if (last_dispatch) begin
                     state_n = STATE_IDLE;
                 end else if (dispatch_fire) begin
@@ -172,6 +177,8 @@ module VX_vopc_unit import VX_gpu_pkg::*; #(
                         end
                         state_n = STATE_FETCH;
                     end
+
+                    // TOFIX : Lane Counter + access to vrf
                     lane_counter_n = lane_counter + 1;
                 end
             end
@@ -221,6 +228,7 @@ module VX_vopc_unit import VX_gpu_pkg::*; #(
     // operands buffer
     reg [NUM_SRC_OPDS-1:0][`SIMD_WIDTH-1:0][`XLEN-1:0] opd_values;
 
+    // TOFIX : Apply packing to vgpr
     // handle GPR & VGPR responses
     always @(posedge clk) begin
         // reset all operands on dispatch
@@ -237,6 +245,12 @@ module VX_vopc_unit import VX_gpu_pkg::*; #(
             end
         end
     end
+
+    // TOFIX : Get the slide width 
+    // Slide Operation 
+    // reg [NUM_SRC_OPDS-1:0][`SIMD_WIDTH-1:0][`XLEN-1:0] slide_destination;
+    // reg [`XLEN-1:0] slide_width;  // is either rs1 or imm  
+    // wire slide_flag; 
 
     // state machine update
     always @(posedge clk) begin

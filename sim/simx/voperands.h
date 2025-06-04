@@ -17,6 +17,7 @@
 #include "opc_unit.h"
 #include "vopc_unit.h"
 #include "gpr_unit.h"
+#include "vgpr_unit.h"
 
 namespace vortex {
 

@@ -16,6 +16,7 @@
 #include "instr_trace.h"
 #include "opc_unit.h"
 #include "gpr_unit.h"
+#include "vgpr_unit.h"
 
 namespace vortex {
 

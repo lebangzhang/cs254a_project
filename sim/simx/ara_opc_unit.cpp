@@ -11,13 +11,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "vopc_unit.h"
+#include "ara_opc_unit.h"
 #include "core.h"
 
 using namespace vortex;
 
-VOpcUnit::VOpcUnit(const SimContext &ctx, Core* core)
-  : SimObject<VOpcUnit>(ctx, "vopc-unit")
+Ara_Opc_Unit::Ara_Opc_Unit(const SimContext &ctx, Core* core)
+  : SimObject<Ara_Opc_Unit>(ctx, "ara-opc-unit")
   , Input(this, 1)
   , Output(this)
   , gpr_req_ports(this)
@@ -28,9 +28,9 @@ VOpcUnit::VOpcUnit(const SimContext &ctx, Core* core)
   this->reset();
 }
 
-VOpcUnit::~VOpcUnit() {}
+Ara_Opc_Unit::~Ara_Opc_Unit() {}
 
-void VOpcUnit::reset() {
+void Ara_Opc_Unit::reset() {
   pending_s_rsps_ = 0;
   pending_v_rsps_ = 0;
   vl_counter_ = 0;
@@ -44,7 +44,7 @@ void VOpcUnit::reset() {
   total_vgpr_requests = 0;
 }
 
-void VOpcUnit::tick() {
+void Ara_Opc_Unit::tick() {
   // process incoming instructions
   if (Input.empty())
     return;
@@ -57,8 +57,8 @@ void VOpcUnit::tick() {
     assert(pending_v_rsps_ == 0);
 
     // capture SIMD counters
-    if (trace->fu_type == FUType::VPU) {
-      auto trace_data = std::dynamic_pointer_cast<VecUnit::ExeTraceData>(trace->data);
+    if (trace->fu_type == FUType::ARA) {
+      auto trace_data = std::dynamic_pointer_cast<AraUnit::ExeTraceData>(trace->data);
       active_PC_ = trace->PC;
       if (trace->vpu_type != VpuType::VSET) {
         vl_counter_ = trace_data->vl;
@@ -74,7 +74,7 @@ void VOpcUnit::tick() {
       }
     } else {
       assert(trace->fu_type == FUType::LSU);
-      auto trace_data = std::dynamic_pointer_cast<VecUnit::MemTraceData>(trace->data);
+      auto trace_data = std::dynamic_pointer_cast<AraUnit::MemTraceData>(trace->data);
       vs2_opd_ = (trace->src_regs[1].type != RegType::None) ? 1 : -0;
       vl_counter_ = trace_data->vl;
       vlmul_counter_ = trace_data->vnf;
@@ -166,18 +166,9 @@ void VOpcUnit::tick() {
     total_vgpr_requests = (max_threads_per_req) * iterations_per_thread * nz_iterator_req;
 
 
-    // send VGPR requests (we do this once)
-    for (uint32_t i = 0; i < NUM_SRC_REGS; i++) {
-      if (vopd_to_fetch_.test(i)) {
-        VgprReq vgpr_req;
-        vgpr_req.rid = trace->src_regs[i].id();
-        vgpr_req.wid = trace->wid;
-        vgpr_req.opd = i;
-        vgpr_req_ports.push(vgpr_req);
-        ++pending_v_rsps_;
-      }
-    }
-    total_vgpr_requests -= 1;
+    // ARA 2 NOTE : Force the vgpr request to be 0
+    total_vgpr_requests = 0;
+
 
     // mark current instruction as pending
     instr_pending_ = true;
@@ -191,30 +182,7 @@ void VOpcUnit::tick() {
     __unused(rsp);
     gpr_rsp_ports.pop();
   }
-
-  // process incoming VGPR responses
-  if (!vgpr_rsp_ports.empty()) {
-    assert(pending_v_rsps_ != 0);
-    --pending_v_rsps_;
-    auto rsp = vgpr_rsp_ports.front();
-    __unused(rsp);
-    vgpr_rsp_ports.pop();
-  }
-
-  // Send the next batch of requests
-  if( (total_vgpr_requests != 0) && (pending_v_rsps_ == 0) ){
-    for (uint32_t i = 0; i < NUM_SRC_REGS; i++) {
-      if (vopd_to_fetch_.test(i)) {
-        VgprReq vgpr_req;
-        vgpr_req.rid = trace->src_regs[i].id();
-        vgpr_req.wid = trace->wid;
-        vgpr_req.opd = i;
-        vgpr_req_ports.push(vgpr_req);
-        ++pending_v_rsps_;
-      }
-    }
-    total_vgpr_requests -= 1;
-  }
+ 
 
   // process outgoing instructions
   if ( (0 == pending_s_rsps_) && (pending_v_rsps_ == 0) && (total_vgpr_requests == 0)) {
@@ -222,8 +190,13 @@ void VOpcUnit::tick() {
     bool done = false;
 
 
+    // TOFIX : Check here
+    // Ara 2 Note : Don't perform vlmul latency here 
+    vlmul_counter_ = 1;
+    vl_counter_ = 1;
+
   // TOFIX : Need to fix the total_vgpr_requests case for vlmul 
-  #ifdef FUSED_VPU
+  #ifdef FUSED_Ara
     done = this->fused_schedule(trace);
   #else
     done = this->schedule(trace);
@@ -241,7 +214,7 @@ void VOpcUnit::tick() {
   }
 }
 
-bool VOpcUnit::schedule(instr_trace_t* trace) {
+bool Ara_Opc_Unit::schedule(instr_trace_t* trace) {
   // we need to run the instruction again for vlmul
   assert(vlmul_counter_ > 0);
   --vlmul_counter_;
@@ -273,7 +246,7 @@ bool VOpcUnit::schedule(instr_trace_t* trace) {
   return true;
 }
 
-bool VOpcUnit::fused_schedule(instr_trace_t* trace) {
+bool Ara_Opc_Unit::fused_schedule(instr_trace_t* trace) {
   // reduction instructions are serialized via writeback
   if (is_reduction_) {
     if (red_counter_ == 0) {
@@ -335,12 +308,12 @@ bool VOpcUnit::fused_schedule(instr_trace_t* trace) {
       }
     }
     // reset group counter
-    if (trace->fu_type == FUType::VPU) {
-      auto trace_data = std::dynamic_pointer_cast<VecUnit::ExeTraceData>(trace->data);
+    if (trace->fu_type == FUType::ARA) {
+      auto trace_data = std::dynamic_pointer_cast<AraUnit::ExeTraceData>(trace->data);
       vlmul_counter_ = trace_data->vlmul;
     } else {
       assert(trace->fu_type == FUType::LSU);
-      auto trace_data = std::dynamic_pointer_cast<VecUnit::MemTraceData>(trace->data);
+      auto trace_data = std::dynamic_pointer_cast<AraUnit::MemTraceData>(trace->data);
       vlmul_counter_ = trace_data->vnf;
     }
 
@@ -364,13 +337,13 @@ bool VOpcUnit::fused_schedule(instr_trace_t* trace) {
   return true;
 }
 
-void VOpcUnit::decode(instr_trace_t* trace) {
+void Ara_Opc_Unit::decode(instr_trace_t* trace) {
   // translate to scalar pipeline
   switch (trace->fu_type) {
   case FUType::LSU:
     // no conversion
     break;
-  case FUType::VPU:
+  case FUType::ARA:
     // decode VPU instructions
     switch (trace->vpu_type) {
     case VpuType::VSET:
@@ -422,14 +395,14 @@ void VOpcUnit::decode(instr_trace_t* trace) {
   this->lsu_flush(trace);
 }
 
-void VOpcUnit::writeback(instr_trace_t* trace) {
+void Ara_Opc_Unit::writeback(instr_trace_t* trace) {
   // only notify writeback for the currently active reduction instructions
   if (instr_pending_ && wb_counter_ > 0 && trace->PC == active_PC_) {
     --wb_counter_;
   }
 }
 
-void VOpcUnit::lsu_flush(instr_trace_t* trace) {
+void Ara_Opc_Unit::lsu_flush(instr_trace_t* trace) {
   if (trace->fu_type != FUType::LSU)
     return;
   if (lsu_flush_) {

@@ -118,7 +118,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        name: [regression, opencl, cache, config1, config2, debug, scope, stress, synthesis, vm, vector]
+        name: [regression, opencl, cache, config1, config2, debug, scope, stress, synthesis, vm, vector, ara2_vector]
         xlen: [32, 64]
 
     steps:

@@ -21,7 +21,7 @@ namespace vortex {
 
 class Core;
 
-class VOpcUnit : public SimObject<VOpcUnit> {
+class Ara_Opc_Unit : public SimObject<Ara_Opc_Unit> {
 public:
   SimPort<instr_trace_t*> Input;
   SimPort<instr_trace_t*> Output;
@@ -32,9 +32,9 @@ public:
   SimPort<VgprReq> vgpr_req_ports;
   SimPort<VgprRsp> vgpr_rsp_ports;
 
-  VOpcUnit(const SimContext &ctx, Core* core);
+  Ara_Opc_Unit(const SimContext &ctx, Core* core);
 
-  virtual ~VOpcUnit();
+  virtual ~Ara_Opc_Unit();
 
   virtual void reset();
 

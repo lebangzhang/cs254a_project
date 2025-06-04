@@ -5,6 +5,7 @@
 #include "instr_trace.h"
 #include <simobject.h>
 #include "types.h"
+#include "lane_unit.h"
 
 namespace vortex {
 
@@ -56,6 +57,11 @@ public:
   std::vector<SimPort<instr_trace_t*>> Inputs;
   std::vector<SimPort<instr_trace_t*>> Outputs;
 
+
+  std::vector<SimPort<instr_trace_t*>> lane_req_ports;
+  std::vector<SimPort<instr_trace_t*>> lane_rsp_ports;
+
+
   AraUnit(const SimContext& ctx,
           const char* name,
           const Arch& arch,
@@ -80,6 +86,9 @@ public:
   const PerfStats& perf_stats() const;
 
 private:
+
+  std::vector<Lane_Unit::Ptr>    lane_unit_;
+  Core*                     core_;
 
   class Impl;
   Impl* impl_;

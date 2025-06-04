@@ -88,13 +88,19 @@
 `endif
 `endif
 
-// TODO : Need to fix this for ARA2 support
+// TOFIX : Need to fix this for ARA2 support
 `ifdef EXT_V_ENABLE
-`ifndef VLEN
-`define VLEN (4 * `XLEN)
-`endif
+    `ifndef VLEN
+        `define VLEN (4 * `XLEN)
+    `endif
 `else
-`define VLEN `XLEN
+    `ifdef EXT_ARA2_ENABLE
+        `ifndef VLEN
+            `define VLEN (4 * `XLEN)
+        `endif
+    `else
+        `define VLEN `XLEN
+    `endif
 `endif
 
 `ifndef NUM_CLUSTERS
@@ -400,12 +406,16 @@
 `endif
 
 // Number of ARA2 units 
-`ifndef NUM_ARA_LANES
-`define NUM_ARA_LANES   `SIMD_WIDTH
+`ifndef NUM_ARA_DISPATCH_LANES
+`define NUM_ARA_DISPATCH_LANES   `SIMD_WIDTH
 `endif
-`ifndef NUM_ARA_BLOCKS
-`define NUM_ARA_BLOCKS  `ISSUE_WIDTH
+`ifndef NUM_ARA_DISPATCH_BLOCKS
+`define NUM_ARA_DISPATCH_BLOCKS  `ISSUE_WIDTH
 `endif
+`ifndef NUM_ARA_LANES 
+`define NUM_ARA_LANES 8 
+`endif
+
 
 
 // Size of Instruction Buffer
