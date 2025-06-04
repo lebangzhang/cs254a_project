@@ -1756,6 +1756,18 @@ void AraUnit::tick() {
     impl_->tick();
 
     for (uint32_t iw = 0; iw < ISSUE_WIDTH; ++iw) {
+
+        // 3. Handle trace by lane response port to prevent deadlock 
+        auto &lane_0_rsp = this->lane_rsp_ports.at(0);
+
+        if (!lane_0_rsp.empty()){
+            auto &trace_received = this->lane_rsp_ports.at(0).front();
+            Outputs.at(iw).push(trace_received, 2);
+            this->lane_rsp_ports.at(0).pop();
+        }
+        
+
+        // 0. Check if there is a valid input
         auto& input = Inputs.at(iw);
         if (input.empty())
             return;
@@ -1771,19 +1783,14 @@ void AraUnit::tick() {
     
         // Lane 0 has space to receive instruction --> Send request to lane_0
         this->lane_req_ports.at(0).push(trace, 1);
+
+
+        /*Outputs.at(iw).push(trace, 2);*/
+        /*if (trace->eop && trace->fetch_stall) {*/
+            /*core_->resume(trace->wid);*/
+        /*}*/
+
         input.pop();
-
-        // 3. Return the first trace by lane unit response port
-        auto &lane_0_rsp = this->lane_rsp_ports.at(0);
-
-        if (!lane_0_rsp.empty()){
-            auto &trace_received = this->lane_rsp_ports.at(0).front();
-            Outputs.at(iw).push(trace_received, 2);
-            if (trace_received->eop && trace_received->fetch_stall) {
-                core_->resume(trace_received->wid);
-            }
-            this->lane_rsp_ports.at(0).pop();
-        }
 
 
     }

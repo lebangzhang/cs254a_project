@@ -54,10 +54,7 @@ public:
         if (lane_opreq_req_port.empty())
 			return;
 		auto trace = lane_opreq_req_port.front();
-		uint32_t stalls = 0;
-
-		total_stalls_ += stalls;
-		lane_opreq_rsp_port.push(trace, 2 + stalls);
+		lane_opreq_rsp_port.push(trace, 1);
 		lane_opreq_req_port.pop();
 
         // Simulate Bank conflicts in lane unit 
