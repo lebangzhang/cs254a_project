@@ -14,6 +14,7 @@
 #pragma once
 
 #include "instr_trace.h"
+#include "operand_requestor.h"
 
 namespace vortex {
 
@@ -21,61 +22,85 @@ class Lane_Unit : public SimObject<Lane_Unit> {
 
 private: 
 		uint32_t total_stalls_ = 0;
+        uint32_t num_ara2_lane_insn = 1;
 
 public:
 
-    // Take in the inputs 
     SimPort<instr_trace_t*> Input;
     SimPort<instr_trace_t*> Output;
 
+    SimPort<instr_trace_t*> lane_req_port;
+    SimPort<instr_trace_t*> lane_rsp_port;
 
-    SimPort<instr_trace_t*> lane_opreq_req_port;
-    SimPort<instr_trace_t*> lane_opreq_rsp_port;
+    Operand_Requestor::Ptr  op_req_unit;
+    std::vector<SimPort<instr_trace_t*>> op_req_port;
+    std::vector<SimPort<instr_trace_t*>> op_rsp_port;
+
+
 
     Lane_Unit(const SimContext& ctx)
 			: SimObject<Lane_Unit>(ctx, "lane_unit")
 			, Input(this)
 			, Output(this)
-            , lane_opreq_rsp_port(this)
-            , lane_opreq_req_port(this)
+            , lane_rsp_port(this)
+            , lane_req_port(this)
+            , op_rsp_port(num_ara2_lane_insn, this)
+            , op_req_port(num_ara2_lane_insn, this)
     {
-			total_stalls_ = 0;
+		total_stalls_ = 0;
+    
+        // Create Operand Requestor 
+        op_req_unit = Operand_Requestor::Create();
+
+        // Bind Ports to operand requestor inside the lanes
+        for(int i=0; i < num_ara2_lane_insn; i++){
+            this->op_req_port.at(i).bind(&op_req_unit->op_req_port.at(i)); 
+            op_req_unit->op_rsp_port.at(i).bind(&this->op_rsp_port.at(i));
+        }
 	}
 
     virtual ~Lane_Unit() {}
 
     virtual void reset() {
-			total_stalls_ = 0;
-		}
+		total_stalls_ = 0;
+	}
 
     virtual void tick() {
 
 
-        if (lane_opreq_req_port.empty())
+        // 3. Handle the output from operand requestor 
+        for(int i=0; i < num_ara2_lane_insn; i++){
+
+            auto &op_response = this->op_rsp_port.at(i);
+
+            // Non empty response --> return that trace back to ara_unit
+            // TOFIX : Add the concept of ALU and MUL latency 
+            if(!op_response.empty()){
+                auto &trace_received = this->op_rsp_port.at(i).front();
+		        lane_rsp_port.push(trace_received, 1);
+                this->op_rsp_port.at(i).pop();
+            }
+        }
+
+        // 1. If request port empty ==> Return 
+        if (lane_req_port.empty())
 			return;
-		auto trace = lane_opreq_req_port.front();
-		lane_opreq_rsp_port.push(trace, 1);
-		lane_opreq_req_port.pop();
 
-        // Simulate Bank conflicts in lane unit 
-        /*
-		for (int i = 0; i < NUM_SRC_REGS; ++i) {
-			uint32_t x_rid = trace->src_regs[i].id();
-			if (x_rid == 0)
-				continue; // skip x0 or empty
-			for (int j = i + 1; j < NUM_SRC_REGS; ++j) {
-				uint32_t y_rid = trace->src_regs[j].id();
-				if (y_rid == 0)
-					continue; // skip x0 or empty
-				int bank_x = x_rid % NUM_BANKS;
-				int bank_y = y_rid % NUM_BANKS;
-				if (bank_x == bank_y) {
-					++stalls;
-				}
-			}
-		}
-        */
-
+        // 2. If not empty
+        for(int i=0; i < num_ara2_lane_insn; i++){
+            // Check for empty port ==> Forward request to operand requestor and return from function
+            if(this->op_req_port.at(i).empty()){
+                /*printf("LANE_UNIT-REQ lane  1: req=%d rsp=%d\n", this->lane_req_port.size(), this->lane_rsp_port.size());*/
+                /*printf("LANE_UNIT-REQ opreq 1: req=%d rsp=%d\n", this->op_req_port.at(0).size(), this->op_rsp_port.at(0).size());*/
+		        auto trace = lane_req_port.front();
+                this->op_req_port.at(i).push(trace, 1);
+		        lane_req_port.pop();
+                /*printf("LANE_UNIT-REQ lane  2: req=%d rsp=%d\n", this->lane_req_port.size(), this->lane_rsp_port.size());*/
+                /*printf("LANE_UNIT-REQ opreq 2: req=%d rsp=%d\n", this->op_req_port.at(0).size(), this->op_rsp_port.at(0).size());*/
+                return;
+            }
+        }
+        
         /*
         switch (trace->vpu_type) {
             case VpuType::VSET:

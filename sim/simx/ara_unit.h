@@ -88,6 +88,7 @@ public:
 private:
 
   std::vector<Lane_Unit::Ptr>    lane_unit_;
+  uint32_t ARA_MAX_LANE_INSN;
   Core*                     core_;
 
   class Impl;

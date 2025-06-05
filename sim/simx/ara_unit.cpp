@@ -1738,9 +1738,10 @@ AraUnit::AraUnit(const SimContext& ctx,
 
   // Bind Ports to operand requestor inside the lanes
   for(uint32_t i=0; i < 1; i++){
-    this->lane_req_ports.at(i).bind(&lane_unit_.at(i)->lane_opreq_req_port);
-    lane_unit_.at(i)->lane_opreq_rsp_port.bind(&this->lane_rsp_ports.at(i));
+    this->lane_req_ports.at(i).bind(&lane_unit_.at(i)->lane_req_port);
+    lane_unit_.at(i)->lane_rsp_port.bind(&this->lane_rsp_ports.at(i));
   }
+
   
 }
 
@@ -1752,6 +1753,12 @@ void AraUnit::reset() {
   impl_->reset();
 }
 
+
+
+
+
+
+
 void AraUnit::tick() {
     impl_->tick();
 
@@ -1761,11 +1768,12 @@ void AraUnit::tick() {
         auto &lane_0_rsp = this->lane_rsp_ports.at(0);
 
         if (!lane_0_rsp.empty()){
+            /*printf("ARA_UNIT-RSP 1 req=%d rsp=%d\n", this->lane_req_ports.at(0).size(), lane_0_rsp.size());*/
             auto &trace_received = this->lane_rsp_ports.at(0).front();
             Outputs.at(iw).push(trace_received, 2);
             this->lane_rsp_ports.at(0).pop();
+            /*printf("ARA_UNIT-RSP 2 req=%d rsp=%d\n", this->lane_req_ports.at(0).size(), lane_0_rsp.size());*/
         }
-        
 
         // 0. Check if there is a valid input
         auto& input = Inputs.at(iw);
@@ -1776,26 +1784,23 @@ void AraUnit::tick() {
         auto trace = input.front();
 
         // 2. For now, assume all lane units behave the same way <--- TOFIX (Check if there is lane biasing or this is good enough apprx) 
-        // If lane 0 is not empty --> Wait for next CC
+        // Check if lane is full --> If full, then stall
         auto &lane_0_req = this->lane_req_ports.at(0);
-        if(!lane_0_req.empty())
+        if(lane_0_req.size() == 8)
             return;
     
         // Lane 0 has space to receive instruction --> Send request to lane_0
+        /*printf("ARA_UNIT-REQ 1 req=%d rsp=%d\n", this->lane_req_ports.at(0).size(), this->lane_rsp_ports.at(0).size());*/
         this->lane_req_ports.at(0).push(trace, 1);
-
-
-        /*Outputs.at(iw).push(trace, 2);*/
-        /*if (trace->eop && trace->fetch_stall) {*/
-            /*core_->resume(trace->wid);*/
-        /*}*/
-
+        /*printf("ARA_UNIT-REQ 2 req=%d rsp=%d\n", this->lane_req_ports.at(0).size(), this->lane_rsp_ports.at(0).size());*/
         input.pop();
-
-
     }
 
 }
+
+
+
+
 
 bool AraUnit::get_csr(uint32_t addr, uint32_t wid, uint32_t tid, Word* value) {
   return impl_->get_csr(addr, wid, tid, value);
