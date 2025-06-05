@@ -78,6 +78,8 @@ public:
             // Non empty response --> return that trace back to ara_unit
             // TOFIX : Add the concept of ALU and MUL latency 
             if(!op_response.empty()){
+                printf("LANE_UNIT-RSP lane  1: req=%d rsp=%d\n", this->lane_req_port.size(), this->lane_rsp_port.size());
+                printf("LANE_UNIT-RSP opreq 1: req=%d rsp=%d\n", this->op_req_port.at(i).size(), this->op_rsp_port.at(i).size());
                 auto &trace_received = this->op_rsp_port.at(i).front();
 		        lane_rsp_port.push(trace_received, 1);
                 this->op_rsp_port.at(i).pop();
@@ -92,13 +94,13 @@ public:
         for(int i=0; i < num_ara2_lane_insn; i++){
             // Check for empty port ==> Forward request to operand requestor and return from function
             if(this->op_req_port.at(i).empty()){
-                /*printf("LANE_UNIT-REQ lane  1: req=%d rsp=%d\n", this->lane_req_port.size(), this->lane_rsp_port.size());*/
-                /*printf("LANE_UNIT-REQ opreq 1: req=%d rsp=%d\n", this->op_req_port.at(0).size(), this->op_rsp_port.at(0).size());*/
+                printf("LANE_UNIT-REQ lane  1: req=%d rsp=%d\n", this->lane_req_port.size(), this->lane_rsp_port.size());
+                printf("LANE_UNIT-REQ opreq 1: req=%d rsp=%d\n", this->op_req_port.at(0).size(), this->op_rsp_port.at(0).size());
 		        auto trace = lane_req_port.front();
                 this->op_req_port.at(i).push(trace, 1);
 		        lane_req_port.pop();
-                /*printf("LANE_UNIT-REQ lane  2: req=%d rsp=%d\n", this->lane_req_port.size(), this->lane_rsp_port.size());*/
-                /*printf("LANE_UNIT-REQ opreq 2: req=%d rsp=%d\n", this->op_req_port.at(0).size(), this->op_rsp_port.at(0).size());*/
+                printf("LANE_UNIT-REQ lane  2: req=%d rsp=%d\n", this->lane_req_port.size(), this->lane_rsp_port.size());
+                printf("LANE_UNIT-REQ opreq 2: req=%d rsp=%d\n", this->op_req_port.at(0).size(), this->op_rsp_port.at(0).size());
                 return;
             }
         }

@@ -1768,11 +1768,11 @@ void AraUnit::tick() {
         auto &lane_0_rsp = this->lane_rsp_ports.at(0);
 
         if (!lane_0_rsp.empty()){
-            /*printf("ARA_UNIT-RSP 1 req=%d rsp=%d\n", this->lane_req_ports.at(0).size(), lane_0_rsp.size());*/
+            printf("ARA_UNIT-RSP 1 req=%d rsp=%d\n", this->lane_req_ports.at(0).size(), lane_0_rsp.size());
             auto &trace_received = this->lane_rsp_ports.at(0).front();
             Outputs.at(iw).push(trace_received, 2);
             this->lane_rsp_ports.at(0).pop();
-            /*printf("ARA_UNIT-RSP 2 req=%d rsp=%d\n", this->lane_req_ports.at(0).size(), lane_0_rsp.size());*/
+            printf("ARA_UNIT-RSP 2 req=%d rsp=%d\n", this->lane_req_ports.at(0).size(), lane_0_rsp.size());
         }
 
         // 0. Check if there is a valid input
@@ -1790,9 +1790,9 @@ void AraUnit::tick() {
             return;
     
         // Lane 0 has space to receive instruction --> Send request to lane_0
-        /*printf("ARA_UNIT-REQ 1 req=%d rsp=%d\n", this->lane_req_ports.at(0).size(), this->lane_rsp_ports.at(0).size());*/
+        printf("ARA_UNIT-REQ 1 req=%d rsp=%d\n", this->lane_req_ports.at(0).size(), this->lane_rsp_ports.at(0).size());
         this->lane_req_ports.at(0).push(trace, 1);
-        /*printf("ARA_UNIT-REQ 2 req=%d rsp=%d\n", this->lane_req_ports.at(0).size(), this->lane_rsp_ports.at(0).size());*/
+        printf("ARA_UNIT-REQ 2 req=%d rsp=%d\n", this->lane_req_ports.at(0).size(), this->lane_rsp_ports.at(0).size());
         input.pop();
     }
 

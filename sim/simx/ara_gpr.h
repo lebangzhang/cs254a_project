@@ -16,10 +16,15 @@
 
 namespace vortex {
 
-struct AraGprReq {
+struct AraGprPkt {
   uint32_t port_id;
   uint32_t rid;
-  uint32_t wid;
+
+  friend std::ostream& operator<<(std::ostream& os, const AraGprPkt& req) {
+    os << "123123";
+    return os;
+  }
+
 };
 
 
@@ -28,8 +33,9 @@ struct AraGprReq {
 class Ara_Gpr : public SimObject<Ara_Gpr> {
 
 private: 
-		uint32_t total_stalls_ = 0;
-        uint32_t num_ara2_lane_insn = 10;
+	uint32_t total_stalls_ = 0;
+    uint32_t NUM_ARA_GPR_BANKS = 8;
+    uint32_t num_gpr_arbitration_port = 8;
 
 public:
 
@@ -37,16 +43,17 @@ public:
     SimPort<instr_trace_t*> Input;
     SimPort<instr_trace_t*> Output;
 
-    SimPort<instr_trace_t*> ara_gpr_req;
-    SimPort<instr_trace_t*> ara_gpr_rsp;
+    std::vector<SimPort<AraGprPkt>> ara_gpr_req_port;
+    std::vector<SimPort<AraGprPkt>> ara_gpr_rsp_port;
 
 
     Ara_Gpr(const SimContext& ctx)
 			: SimObject<Ara_Gpr>(ctx, "unit")
 			, Input(this)
 			, Output(this)
-            , ara_gpr_req(this)
-            , ara_gpr_rsp(this)
+            , ara_gpr_req_port(num_gpr_arbitration_port, this)
+            , ara_gpr_rsp_port(num_gpr_arbitration_port, this)
+
 
     {
 		total_stalls_ = 0;
@@ -60,22 +67,23 @@ public:
 
     virtual void tick() {
 
-        // 1. Check if request port is empty 
-        /*
-        for(int i = 0; i < num_ara2_lane_insn; i++){
 
-            // If none of the ports are empty + Not yet been processed ==> Send requests to VGPR
-            if(!this->op_req_port.at(i).empty() && (bitvector.at(i) == 0)){
+        // TOFIX : Simulate bank conflicts
+        // 1. Simulate bank conflicts
+        for(int i = 0; i < num_gpr_arbitration_port; i++){ 
 
-                printf(" XXXXX-11111 %d %d\n", i, this->op_req_port.at(i).size());
-                auto trace = this->op_req_port.at(i).front();
-                this->op_rsp_port.at(i).push(trace, 1);
-                this->op_req_port.at(i).pop();
-                printf(" XXXXX-22222 %d %d\n", i, this->op_req_port.at(i).size());
+            // 1a. Check if request port is empty 
+            if(!ara_gpr_req_port.at(i).empty()) {
+
+                // Send Response back 
+                AraGprPkt gpr_rsp = ara_gpr_req_port.at(i).front();
+                ara_gpr_rsp_port.at(i).push(gpr_rsp, 1);
+            
+                // Pop from request port
+                printf("22222\n");
+                ara_gpr_req_port.at(i).pop();
             }
-
         }
-        */
     };
 
 	bool writeback(instr_trace_t* trace) {
