@@ -18,11 +18,13 @@
 
 namespace vortex {
 
+
+// TOFIX : Rename to Ara_Lane_Unit
 class Lane_Unit : public SimObject<Lane_Unit> {
 
 private: 
 		uint32_t total_stalls_ = 0;
-        uint32_t num_ara2_lane_insn = 1;
+        uint32_t num_ara2_lane_insn = 8;
 
 public:
 

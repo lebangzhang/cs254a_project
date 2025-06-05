@@ -18,12 +18,14 @@
 
 namespace vortex {
 
+// TOFIX : Rename to ARA_Operand_Requestor 
 class Operand_Requestor : public SimObject<Operand_Requestor> {
 
 private: 
 		uint32_t total_stalls_ = 0;
-        uint32_t max_insn = 10;
-        uint32_t num_ara2_lane_insn = 10;
+
+        // TOFIX : Get this value from lane_unit
+        uint32_t num_ara2_lane_insn = 8;
 
 public:
 
@@ -33,7 +35,11 @@ public:
 
     std::vector<SimPort<instr_trace_t*>> op_req_port;
     std::vector<SimPort<instr_trace_t*>> op_rsp_port;
-    std::vector<int> bitvector;
+    std::vector<int> first_entrance_bitvector;
+
+    Ara_Gpr::Ptr ara_gpr_unit;
+    SimPort<instr_trace_t*> ara_gpr_req;
+    SimPort<instr_trace_t*> ara_gpr_rsp;
 
 
     Operand_Requestor(const SimContext& ctx)
@@ -42,13 +48,23 @@ public:
 			, Output(this)
             , op_rsp_port(num_ara2_lane_insn, this)
             , op_req_port(num_ara2_lane_insn, this)
-            , bitvector(num_ara2_lane_insn)
+            , first_entrance_bitvector(num_ara2_lane_insn)
+            , ara_gpr_req(this)
+            , ara_gpr_rsp(this)
     {
 		total_stalls_ = 0;
 
+        // Initialize first entrace bitvector 
         for(int i=0; i<num_ara2_lane_insn; i++){
-            bitvector.at(i) = 0;
+            first_entrance_bitvector.at(i) = 0;
         }
+
+        // Create Ara_Gpr        
+        ara_gpr_unit = Ara_Gpr::Create();
+
+        // Bind Ports from operand requestor to ara_gpr
+        this->ara_gpr_req.bind(&ara_gpr_unit->ara_gpr_req); 
+        ara_gpr_unit->ara_gpr_rsp.bind(&this->ara_gpr_rsp);
 	}
 
     virtual ~Operand_Requestor() {}
@@ -59,19 +75,16 @@ public:
 
     virtual void tick() {
 
+        // 2. Handle response from GPR
+
         // 1. Check if request port is empty 
         for(int i = 0; i < num_ara2_lane_insn; i++){
-
             // If none of the ports are empty + Not yet been processed ==> Send requests to VGPR
-            if(!this->op_req_port.at(i).empty() && (bitvector.at(i) == 0)){
-
-                printf(" XXXXX-11111 %d %d\n", i, this->op_req_port.at(i).size());
+            if(!this->op_req_port.at(i).empty() && (first_entrance_bitvector.at(i) == 0)){
                 auto trace = this->op_req_port.at(i).front();
                 this->op_rsp_port.at(i).push(trace, 1);
                 this->op_req_port.at(i).pop();
-                printf(" XXXXX-22222 %d %d\n", i, this->op_req_port.at(i).size());
             }
-
         }
     };
 
