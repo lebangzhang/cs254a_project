@@ -1733,7 +1733,7 @@ AraUnit::AraUnit(const SimContext& ctx,
 
   // Create Lane Units 
   for(uint32_t i =0; i < 1 ; i++){
-    lane_unit_.at(i) = Lane_Unit::Create();
+    lane_unit_.at(i) = Ara_Lane_Unit::Create();
   }
 
   // Bind Ports to operand requestor inside the lanes

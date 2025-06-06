@@ -5,7 +5,7 @@
 #include "instr_trace.h"
 #include <simobject.h>
 #include "types.h"
-#include "lane_unit.h"
+#include "ara_lane_unit.h"
 
 namespace vortex {
 
@@ -87,7 +87,7 @@ public:
 
 private:
 
-  std::vector<Lane_Unit::Ptr>    lane_unit_;
+  std::vector<Ara_Lane_Unit::Ptr>    lane_unit_;
   uint32_t ARA_MAX_LANE_INSN;
   Core*                     core_;
 

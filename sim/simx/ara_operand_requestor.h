@@ -18,8 +18,7 @@
 
 namespace vortex {
 
-// TOFIX : Rename to ARA_Operand_Requestor 
-class Operand_Requestor : public SimObject<Operand_Requestor> {
+class Ara_Operand_Requestor : public SimObject<Ara_Operand_Requestor> {
 
 private: 
 	uint32_t total_stalls_ = 0;
@@ -45,8 +44,8 @@ public:
     std::vector<int> gpr_packet_pending_counter; 
 
 
-    Operand_Requestor(const SimContext& ctx)
-			: SimObject<Operand_Requestor>(ctx, "unit")
+    Ara_Operand_Requestor(const SimContext& ctx)
+			: SimObject<Ara_Operand_Requestor>(ctx, "unit")
 			, Input(this)
 			, Output(this)
             , op_rsp_port(num_ara2_lane_insn, this)
@@ -77,7 +76,7 @@ public:
         } 
 	}
 
-    virtual ~Operand_Requestor() {}
+    virtual ~Ara_Operand_Requestor() {}
 
     virtual void reset() {
 		total_stalls_ = 0;
