@@ -24,7 +24,7 @@ class Lane_Unit : public SimObject<Lane_Unit> {
 
 private: 
 		uint32_t total_stalls_ = 0;
-        uint32_t num_ara2_lane_insn = 100;
+        uint32_t num_ara2_lane_insn = 8;
 
 public:
 
@@ -55,7 +55,7 @@ public:
         op_req_unit = Operand_Requestor::Create();
 
         // Bind Ports to operand requestor inside the lanes
-        for(int i=0; i < num_ara2_lane_insn; i++){
+        for(uint32_t i=0; i < num_ara2_lane_insn; i++){
             this->op_req_port.at(i).bind(&op_req_unit->op_req_port.at(i)); 
             op_req_unit->op_rsp_port.at(i).bind(&this->op_rsp_port.at(i));
         }
@@ -71,7 +71,7 @@ public:
 
 
         // 3. Handle the output from operand requestor 
-        for(int i=0; i < num_ara2_lane_insn; i++){
+        for(uint32_t i=0; i < num_ara2_lane_insn; i++){
 
             auto &op_response = this->op_rsp_port.at(i);
 
@@ -91,7 +91,7 @@ public:
 			return;
 
         // 2. If not empty
-        for(int i=0; i < num_ara2_lane_insn; i++){
+        for(uint32_t i=0; i < num_ara2_lane_insn; i++){
             // Check for empty port ==> Forward request to operand requestor and return from function
             if(this->op_req_port.at(i).empty()){
                 DT(3, "Ara-Lane_Unit: Request Start (Lane) : req = " << this->lane_req_port.size() << " rsp = " << this->lane_rsp_port.size());
