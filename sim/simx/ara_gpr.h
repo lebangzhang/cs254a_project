@@ -34,8 +34,8 @@ class Ara_Gpr : public SimObject<Ara_Gpr> {
 
 private: 
 	uint32_t total_stalls_ = 0;
-    uint32_t NUM_ARA_GPR_BANKS = 8;
-    uint32_t num_gpr_arbitration_port = 8;
+    uint32_t NUM_ARA_GPR_BANKS = 100;
+    uint32_t num_gpr_arbitration_port = 100;
 
 public:
 
@@ -66,7 +66,7 @@ public:
 	}
 
     virtual void tick() {
-
+    
 
         // TOFIX : Simulate bank conflicts
         // 1. Simulate bank conflicts
@@ -80,7 +80,7 @@ public:
                 ara_gpr_rsp_port.at(i).push(gpr_rsp, 1);
             
                 // Pop from request port
-                printf("22222\n");
+                DT(3, "Ara-Reg-File : gpr port num = " << i << " port_id " << gpr_rsp.port_id );
                 ara_gpr_req_port.at(i).pop();
             }
         }

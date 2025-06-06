@@ -25,9 +25,9 @@ private:
 	uint32_t total_stalls_ = 0;
 
     // TOFIX : Get this value from lane_unit
-    uint32_t num_ara2_lane_insn = 8;
+    uint32_t num_ara2_lane_insn = 100;
         
-    uint32_t num_gpr_arbitration_port = 8;
+    uint32_t num_gpr_arbitration_port = 100;
 
 public:
 
@@ -97,7 +97,6 @@ public:
     virtual void tick() {
 
         // 4. Officially free the port 
-        /*
         for(int port_id = 0; port_id < num_ara2_lane_insn; port_id++){
 
             // This will make sure if port is not empty, we are not taking the old value
@@ -116,30 +115,29 @@ public:
                 uint32_t port_id = ara_gpr_rsp_port.at(i).front().port_id;
 
                 // Decrement pending counter for that port_id + pop from response port 
-                printf("Ara_packet_pop 1: portid=%d counter=%d \n", port_id, gpr_packet_pending_counter.at(port_id));
+                DT(3, "Ara-Operand_Request: Response Start : portid = " << port_id << " gpr_packet_counter = " << gpr_packet_pending_counter.at(port_id)  );
                 gpr_packet_pending_counter.at(port_id) -= 1;
-                printf("Ara_packet_pop 2: portid=%d counter=%d \n", port_id, gpr_packet_pending_counter.at(port_id));
                 ara_gpr_rsp_port.at(i).pop();
+                DT(3, "Ara-Operand_Request: Response End  : portid = " << port_id << " gpr_packet_counter = " << gpr_packet_pending_counter.at(port_id)  );
                 
 
                 // Check if all requests have been fufiled
                 if(gpr_packet_pending_counter.at(port_id) == 0){
 
                     // Return trace
-                    printf("Return trace\n", port_id, gpr_packet_pending_counter.at(port_id));
+                    DT(3, "Ara-Operand_Request: Trace Return Start : portid = " << port_id << " gpr_packet_counter = " << gpr_packet_pending_counter.at(port_id)  );
                     auto trace = this->op_req_port.at(port_id).front();
                     this->op_rsp_port.at(port_id).push(trace, 1);
 
                     // Free port 
-                    printf("11111\n");
                     this->op_req_port.at(port_id).pop();
 
                     // This will make sure if port is not empty, we are not taking the old value
                     first_entrance_bitvector.at(port_id) = 2;
+                    DT(3, "Ara-Operand_Request: Trace Return End  : portid = " << port_id << " gpr_packet_counter = " << gpr_packet_pending_counter.at(port_id)  );
                 }
             }
         }
-        */ 
 
         // 1. Check if request port is empty 
         for(int port_id = 0; port_id < num_ara2_lane_insn; port_id++){
@@ -187,21 +185,26 @@ public:
                 // Store the requests + initialize starting number of requests 
                 ara_packet_storage.at(port_id) = Packet_List;
                 gpr_packet_pending_counter.at(port_id) = ara_packet_storage.at(port_id).size();
-                printf("Ara_packet_initalize: %d %d \n", port_id, gpr_packet_pending_counter.at(port_id));
-
+                DT(3, "Ara-Operand_Request: Packet Construct: portid = " << port_id << " gpr_packet_counter = " << gpr_packet_pending_counter.at(port_id)  );
 
                 // Mark finished first pass, but keep it in port to show unfinished request 
                 first_entrance_bitvector.at(port_id) = 1;
 
+                // Special case of no regfile access ==> Don't pass to RF, resolve here, otherwise insn will never commit 
+                if(gpr_packet_pending_counter.at(port_id) == 0){
+                    first_entrance_bitvector.at(port_id) = 0;
+                    this->op_rsp_port.at(port_id).push(trace, 1);
+                    this->op_req_port.at(port_id).pop();
+                }
+
                 // Temporary Fix 
-                first_entrance_bitvector.at(port_id) = 0;
-                this->op_rsp_port.at(port_id).push(trace, 1);
-                this->op_req_port.at(port_id).pop();
+                /*first_entrance_bitvector.at(port_id) = 0;*/
+                /*this->op_rsp_port.at(port_id).push(trace, 1);*/
+                /*this->op_req_port.at(port_id).pop();*/
             }
         }
 
         // 2. Move requests from fifo to gpr ports  
-        /*
         for(int i=0; i < num_gpr_arbitration_port; i++){
 
             // 2a. Check if port is free and Check if there are requests 
@@ -210,12 +213,11 @@ public:
                 AraGprPkt gpr_req = packet_request_fifo.front();
 
 
-                printf("Ara_gpr_req_sent\n");
+                DT(3, "Ara-Operand_Request: GPR Req: portid = " << gpr_req.port_id << " gpr_packet_counter = " << gpr_packet_pending_counter.at(gpr_req.port_id)  );
                 ara_gpr_req_port.at(i).push(gpr_req);
                 packet_request_fifo.pop();
             }
         }
-        */
     
     };
 
