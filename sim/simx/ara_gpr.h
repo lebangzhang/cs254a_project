@@ -18,7 +18,8 @@ namespace vortex {
 
 struct AraGprPkt {
   uint32_t port_id;
-  uint32_t rid;
+  uint32_t rid;         // The vector id  (E.g: v0, v1 v2)
+  uint32_t vr_id;       // The subvector register id (E.g: v00 --> 0, v01 --> 1, v02 --> 2 )
 
   friend std::ostream& operator<<(std::ostream& os, const AraGprPkt& req) {
     os << "123123";
@@ -29,13 +30,13 @@ struct AraGprPkt {
 
 
 
-
 class Ara_Gpr : public SimObject<Ara_Gpr> {
 
 private: 
 	uint32_t total_stalls_ = 0;
 
     // TOFIX : Get this from operand requestor 
+    // Also same as the number of ara gpr banks
     uint32_t num_gpr_arbitration_port = 8;
 
 public:
@@ -96,9 +97,9 @@ public:
             uint32_t i = 0;
             while (i < packet_collector.size()) {
                 
-                // Calculate bank 
+                // Calculate bank following barber shift formula 
                 AraGprPkt gpr_rsp = packet_collector.at(i);
-                uint32_t bank_x = gpr_rsp.rid % num_gpr_arbitration_port;
+                uint32_t bank_x = (gpr_rsp.rid + gpr_rsp.vr_id) % num_gpr_arbitration_port;
 
                 if (bank == bank_x) {
                     ara_gpr_rsp_port.at(bank).push(gpr_rsp, 1);

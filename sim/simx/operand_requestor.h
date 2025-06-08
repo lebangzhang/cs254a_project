@@ -168,23 +168,31 @@ public:
                 }
 
                 // Construct AraGprPkt requests + Store it 
-                std::vector<AraGprPkt> Packet_List;
-                for (uint32_t i = 0; i < NUM_SRC_REGS; i++) {
-                    if (opd_to_fetch.test(i)) {
-                        AraGprPkt gpr_req;
-                        gpr_req.rid = trace->src_regs[i].id();
-                        gpr_req.port_id = port_id;
+                // TOFIX : The concept of EW and VLmul 
+                uint32_t pending_requests = 0;
+                uint32_t VL_count = VLEN/XLEN;
+                VL_count = VL_count / NUM_ARA_LANES; 
 
-                        Packet_List.push_back(gpr_req);
+                // NOTE : Don't change the loop arrangement (Do iteration for outer, then NUM_SRC_REGS for inner) 
+                for(uint32_t iteration = 0; iteration < VL_count; iteration++){
 
-                        // Put it into request fifo 
-                        packet_request_fifo.push(gpr_req);
+                    for (uint32_t i = 0; i < NUM_SRC_REGS; i++) {
+                        if (opd_to_fetch.test(i)) {
+                            AraGprPkt gpr_req;
+                            gpr_req.rid = trace->src_regs[i].id();
+                            gpr_req.vr_id = iteration;
+                            gpr_req.port_id = port_id;
+    
+                            // Put it into request fifo 
+                            packet_request_fifo.push(gpr_req);
+
+                            pending_requests += 1;
+                        }
                     }
                 }
-
+    
                 // Store the requests + initialize starting number of requests 
-                ara_packet_storage.at(port_id) = Packet_List;
-                gpr_packet_pending_counter.at(port_id) = ara_packet_storage.at(port_id).size();
+                gpr_packet_pending_counter.at(port_id) = pending_requests; 
                 DT(3, "Ara-Operand_Request: Packet Construct: portid = " << port_id << " gpr_packet_counter = " << gpr_packet_pending_counter.at(port_id)  );
 
                 // Mark finished first pass, but keep it in port to show unfinished request 
