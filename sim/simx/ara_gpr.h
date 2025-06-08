@@ -67,6 +67,7 @@ public:
     
 
         // 1. Copy all requests into packet collector
+        /*
         for(uint32_t i = 0; i < ara_gpr_req_ports.size(); i++){
 
             AraGprPkt gpr_req = ara_gpr_req_ports.front();
@@ -97,9 +98,9 @@ public:
                 }
             }
         }
+        */ 
 
         // Temporary Fix for gprf (Debugging purposes)
-        /*
         for(uint32_t i = 0; i < ara_gpr_req_ports.size(); i++){ 
             // Send Response back 
             AraGprPkt gpr_rsp = ara_gpr_req_ports.front();
@@ -109,7 +110,7 @@ public:
             DT(3, "Ara-Reg-File : gpr req num = " << i << " port_id " << gpr_rsp.port_id );
             ara_gpr_req_ports.pop();
         }
-        */
+        
     };
 
 	bool writeback(instr_trace_t* trace) {

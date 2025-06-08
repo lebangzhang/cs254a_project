@@ -19,7 +19,6 @@
 namespace vortex {
 
 
-// TOFIX : Rename to Ara_Ara_Lane_Unit
 class Ara_Lane_Unit : public SimObject<Ara_Lane_Unit> {
 
 private: 

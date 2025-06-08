@@ -34,6 +34,7 @@ public:
 
     std::vector<SimPort<instr_trace_t*>> op_req_port;
     std::vector<SimPort<instr_trace_t*>> op_rsp_port;
+
     std::vector<int> first_entrance_bitvector;
 
     Ara_Gpr::Ptr ara_gpr_unit;
@@ -127,6 +128,10 @@ public:
                 first_entrance_bitvector.at(port_id) = 2;
                 DT(3, "Ara-Operand_Request: Trace Return End  : portid = " << port_id << " gpr_packet_counter = " << gpr_packet_pending_counter.at(port_id));
             }
+
+
+            // TOFIX: URGENT Get the response back to the slide unit 
+            
         }
 
         // 1. Check if request port is empty 
@@ -195,6 +200,9 @@ public:
                 /*this->op_req_port.at(port_id).pop();*/
             }
         }
+
+
+        // 2. TOFIX : URGENT Slide 
     };
 
 	bool writeback(instr_trace_t* trace) {
