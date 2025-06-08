@@ -21,18 +21,21 @@ struct AraGprPkt {
   uint32_t rid;
 
   friend std::ostream& operator<<(std::ostream& os, const AraGprPkt& req) {
-    os << "AraGprPkt ......... ";
+    os << "123123";
     return os;
   }
 
 };
 
 
+
+
 class Ara_Gpr : public SimObject<Ara_Gpr> {
 
 private: 
 	uint32_t total_stalls_ = 0;
-    uint32_t NUM_ARA_GPR_BANKS = 8;
+    uint32_t NUM_ARA_GPR_BANKS = 100;
+    uint32_t num_gpr_arbitration_port = 100;
 
 public:
 
@@ -40,18 +43,17 @@ public:
     SimPort<instr_trace_t*> Input;
     SimPort<instr_trace_t*> Output;
 
-    SimPort<AraGprPkt> ara_gpr_req_ports;
-    SimPort<AraGprPkt> ara_gpr_rsp_ports;
-
-    std::vector<AraGprPkt> packet_collector;
+    std::vector<SimPort<AraGprPkt>> ara_gpr_req_port;
+    std::vector<SimPort<AraGprPkt>> ara_gpr_rsp_port;
 
 
     Ara_Gpr(const SimContext& ctx)
 			: SimObject<Ara_Gpr>(ctx, "unit")
 			, Input(this)
 			, Output(this)
-            , ara_gpr_req_ports(this)
-            , ara_gpr_rsp_ports(this)
+            , ara_gpr_req_port(num_gpr_arbitration_port, this)
+            , ara_gpr_rsp_port(num_gpr_arbitration_port, this)
+
 
     {
 		total_stalls_ = 0;
@@ -66,51 +68,22 @@ public:
     virtual void tick() {
     
 
-        // 1. Copy all requests into packet collector
-        /*
-        for(uint32_t i = 0; i < ara_gpr_req_ports.size(); i++){
+        // TOFIX : Simulate bank conflicts
+        // 1. Simulate bank conflicts
+        for(int i = 0; i < num_gpr_arbitration_port; i++){ 
 
-            AraGprPkt gpr_req = ara_gpr_req_ports.front();
-            packet_collector.push_back(gpr_req);
-            ara_gpr_req_ports.pop();
+            // 1a. Check if request port is empty 
+            if(!ara_gpr_req_port.at(i).empty()) {
 
-        }
-
-        // 2. Perform bank conflict algo
-        for(uint32_t bank = 0; bank < NUM_ARA_GPR_BANKS; bank++){
-
-            for(uint32_t i = 0; i < packet_collector.size(); i++){
-
-                // 2a. Calculate bank
-                AraGprPkt gpr_rsp = packet_collector.at(i);
-                uint32_t bank_x = gpr_rsp.rid % NUM_ARA_GPR_BANKS;
-
-                // 2b. Check if banks match
-                if(bank == bank_x){
-
-                    // Send to output and remove from packet_collector
-                    ara_gpr_rsp_ports.push(gpr_rsp, 1);
-                    DT(3, "Ara-Reg-File : gpr req num = " << i << " port_id " << gpr_rsp.port_id );
-                    packet_collector.erase(packet_collector.begin() + i);
-
-                    // Skip to calculate next bank
-                    break;
-                }
+                // Send Response back 
+                AraGprPkt gpr_rsp = ara_gpr_req_port.at(i).front();
+                ara_gpr_rsp_port.at(i).push(gpr_rsp, 1);
+            
+                // Pop from request port
+                DT(3, "Ara-Reg-File : gpr port num = " << i << " port_id " << gpr_rsp.port_id );
+                ara_gpr_req_port.at(i).pop();
             }
         }
-        */ 
-
-        // Temporary Fix for gprf (Debugging purposes)
-        for(uint32_t i = 0; i < ara_gpr_req_ports.size(); i++){ 
-            // Send Response back 
-            AraGprPkt gpr_rsp = ara_gpr_req_ports.front();
-            ara_gpr_rsp_ports.push(gpr_rsp, 1);
-            
-            // Pop from request port
-            DT(3, "Ara-Reg-File : gpr req num = " << i << " port_id " << gpr_rsp.port_id );
-            ara_gpr_req_ports.pop();
-        }
-        
     };
 
 	bool writeback(instr_trace_t* trace) {

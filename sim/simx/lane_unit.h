@@ -14,16 +14,17 @@
 #pragma once
 
 #include "instr_trace.h"
-#include "ara_operand_requestor.h"
+#include "operand_requestor.h"
 
 namespace vortex {
 
 
-class Ara_Lane_Unit : public SimObject<Ara_Lane_Unit> {
+// TOFIX : Rename to Ara_Lane_Unit
+class Lane_Unit : public SimObject<Lane_Unit> {
 
 private: 
 		uint32_t total_stalls_ = 0;
-        uint32_t num_ara2_lane_insn = 8;
+        uint32_t num_ara2_lane_insn = 100;
 
 public:
 
@@ -33,13 +34,14 @@ public:
     SimPort<instr_trace_t*> lane_req_port;
     SimPort<instr_trace_t*> lane_rsp_port;
 
-    Ara_Operand_Requestor::Ptr  op_req_unit;
+    Operand_Requestor::Ptr  op_req_unit;
     std::vector<SimPort<instr_trace_t*>> op_req_port;
     std::vector<SimPort<instr_trace_t*>> op_rsp_port;
 
 
-    Ara_Lane_Unit(const SimContext& ctx)
-			: SimObject<Ara_Lane_Unit>(ctx, "lane_unit")
+
+    Lane_Unit(const SimContext& ctx)
+			: SimObject<Lane_Unit>(ctx, "lane_unit")
 			, Input(this)
 			, Output(this)
             , lane_rsp_port(this)
@@ -50,16 +52,16 @@ public:
 		total_stalls_ = 0;
     
         // Create Operand Requestor 
-        op_req_unit = Ara_Operand_Requestor::Create();
+        op_req_unit = Operand_Requestor::Create();
 
         // Bind Ports to operand requestor inside the lanes
-        for(uint32_t i=0; i < num_ara2_lane_insn; i++){
+        for(int i=0; i < num_ara2_lane_insn; i++){
             this->op_req_port.at(i).bind(&op_req_unit->op_req_port.at(i)); 
             op_req_unit->op_rsp_port.at(i).bind(&this->op_rsp_port.at(i));
         }
 	}
 
-    virtual ~Ara_Lane_Unit() {}
+    virtual ~Lane_Unit() {}
 
     virtual void reset() {
 		total_stalls_ = 0;
@@ -69,15 +71,15 @@ public:
 
 
         // 3. Handle the output from operand requestor 
-        for(uint32_t i=0; i < num_ara2_lane_insn; i++){
+        for(int i=0; i < num_ara2_lane_insn; i++){
 
             auto &op_response = this->op_rsp_port.at(i);
 
             // Non empty response --> return that trace back to ara_unit
             // TOFIX : Add the concept of ALU and MUL latency 
             if(!op_response.empty()){
-                DT(3, "Ara-Ara_Lane_Unit: Response Start (Lane) : req = " << this->lane_req_port.size() << " rsp = " << this->lane_rsp_port.size());
-                DT(3, "Ara-Ara_Lane_Unit: Response Start (opreq) : req = " << this->op_req_port.at(i).size() << " rsp = " << this->op_rsp_port.at(i).size());
+                DT(3, "Ara-Lane_Unit: Response Start (Lane) : req = " << this->lane_req_port.size() << " rsp = " << this->lane_rsp_port.size());
+                DT(3, "Ara-Lane_Unit: Response Start (opreq) : req = " << this->op_req_port.at(i).size() << " rsp = " << this->op_rsp_port.at(i).size());
                 auto &trace_received = this->op_rsp_port.at(i).front();
 		        lane_rsp_port.push(trace_received, 1);
                 this->op_rsp_port.at(i).pop();
@@ -89,11 +91,11 @@ public:
 			return;
 
         // 2. If not empty
-        for(uint32_t i=0; i < num_ara2_lane_insn; i++){
+        for(int i=0; i < num_ara2_lane_insn; i++){
             // Check for empty port ==> Forward request to operand requestor and return from function
             if(this->op_req_port.at(i).empty()){
-                DT(3, "Ara-Ara_Lane_Unit: Request Start (Lane) : req = " << this->lane_req_port.size() << " rsp = " << this->lane_rsp_port.size());
-                DT(3, "Ara-Ara_Lane_Unit: Request Start (opreq) : req = " << this->op_req_port.at(i).size() << " rsp = " << this->op_rsp_port.at(i).size());
+                DT(3, "Ara-Lane_Unit: Request Start (Lane) : req = " << this->lane_req_port.size() << " rsp = " << this->lane_rsp_port.size());
+                DT(3, "Ara-Lane_Unit: Request Start (opreq) : req = " << this->op_req_port.at(i).size() << " rsp = " << this->op_rsp_port.at(i).size());
 		        auto trace = lane_req_port.front();
                 this->op_req_port.at(i).push(trace, 1);
 		        lane_req_port.pop();

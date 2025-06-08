@@ -18,13 +18,16 @@
 
 namespace vortex {
 
-class Ara_Operand_Requestor : public SimObject<Ara_Operand_Requestor> {
+// TOFIX : Rename to ARA_Operand_Requestor 
+class Operand_Requestor : public SimObject<Operand_Requestor> {
 
 private: 
 	uint32_t total_stalls_ = 0;
 
     // TOFIX : Get this value from lane_unit
-    uint32_t num_ara2_lane_insn = 8;
+    uint32_t num_ara2_lane_insn = 100;
+        
+    uint32_t num_gpr_arbitration_port = 100;
 
 public:
 
@@ -34,31 +37,31 @@ public:
 
     std::vector<SimPort<instr_trace_t*>> op_req_port;
     std::vector<SimPort<instr_trace_t*>> op_rsp_port;
-
     std::vector<int> first_entrance_bitvector;
 
     Ara_Gpr::Ptr ara_gpr_unit;
-    SimPort<AraGprPkt> ara_gpr_req_ports;
-    SimPort<AraGprPkt> ara_gpr_rsp_ports;
+    std::vector<SimPort<AraGprPkt>> ara_gpr_req_port;
+    std::vector<SimPort<AraGprPkt>> ara_gpr_rsp_port;
 
     std::vector<std::vector<AraGprPkt>> ara_packet_storage; 
     std::vector<int> gpr_packet_pending_counter; 
+    std::queue<AraGprPkt> packet_request_fifo;
 
 
-    Ara_Operand_Requestor(const SimContext& ctx)
-			: SimObject<Ara_Operand_Requestor>(ctx, "unit")
+    Operand_Requestor(const SimContext& ctx)
+			: SimObject<Operand_Requestor>(ctx, "unit")
 			, Input(this)
 			, Output(this)
             , op_rsp_port(num_ara2_lane_insn, this)
             , op_req_port(num_ara2_lane_insn, this)
             , first_entrance_bitvector(num_ara2_lane_insn)
-            , ara_gpr_req_ports(this)
-            , ara_gpr_rsp_ports(this)
+            , ara_gpr_req_port(num_gpr_arbitration_port, this)
+            , ara_gpr_rsp_port(num_gpr_arbitration_port, this)
     {
 		total_stalls_ = 0;
 
         // Initialize first entrace bitvector 
-        for(uint32_t i=0; i < num_ara2_lane_insn; i++){
+        for(int i=0; i < num_ara2_lane_insn; i++){
             first_entrance_bitvector.at(i) = 0;
         }
 
@@ -66,24 +69,26 @@ public:
         ara_gpr_unit = Ara_Gpr::Create();
 
         // Bind Ports from operand requestor to ara_gpr
-        this->ara_gpr_req_ports.bind(&ara_gpr_unit->ara_gpr_req_ports); 
-        ara_gpr_unit->ara_gpr_rsp_ports.bind(&this->ara_gpr_rsp_ports);
+        for(int i=0; i < num_gpr_arbitration_port; i++){
+            this->ara_gpr_req_port.at(i).bind(&ara_gpr_unit->ara_gpr_req_port.at(i)); 
+            ara_gpr_unit->ara_gpr_rsp_port.at(i).bind(&this->ara_gpr_rsp_port.at(i));
+        }
 
         // Create + Initialize ara_packet_storage and pending counter
-        for(uint32_t i=0; i < num_ara2_lane_insn; i++){
+        for(int i=0; i < num_ara2_lane_insn; i++){
             std::vector<AraGprPkt> temp;
             ara_packet_storage.push_back(temp);
             gpr_packet_pending_counter.push_back(0);
         } 
 	}
 
-    virtual ~Ara_Operand_Requestor() {}
+    virtual ~Operand_Requestor() {}
 
     virtual void reset() {
 		total_stalls_ = 0;
 
         // Reset first entrace bitvector
-        for(uint32_t i=0; i<num_ara2_lane_insn; i++){
+        for(int i=0; i<num_ara2_lane_insn; i++){
             first_entrance_bitvector.at(i) = 0;
         }
 
@@ -91,8 +96,8 @@ public:
 
     virtual void tick() {
 
-        // 4. Officially free the lane_unit port 
-        for(uint32_t port_id = 0; port_id < num_ara2_lane_insn; port_id++){
+        // 4. Officially free the port 
+        for(int port_id = 0; port_id < num_ara2_lane_insn; port_id++){
 
             // This will make sure if port is not empty, we are not taking the old value
             if(first_entrance_bitvector.at(port_id) == 2){
@@ -101,41 +106,41 @@ public:
         }
         
         // 3. Handle response from GPR
-        for(uint32_t i = 0; i < ara_gpr_rsp_ports.size(); i++){
+        for(int i = 0; i < num_gpr_arbitration_port; i++){
             
-            // Get port id 
-            uint32_t port_id = ara_gpr_rsp_ports.front().port_id;
+            // Check if response exists
+            if(!ara_gpr_rsp_port.at(i).empty()){
+                
+                // Get port id 
+                uint32_t port_id = ara_gpr_rsp_port.at(i).front().port_id;
 
-            // Decrement pending counter for that port_id + pop from response port 
-            DT(3, "Ara-Operand_Request: Response Start : portid = " << port_id << " gpr_packet_counter = " << gpr_packet_pending_counter.at(port_id));
-            gpr_packet_pending_counter.at(port_id) -= 1;
-            ara_gpr_rsp_ports.pop();
-            DT(3, "Ara-Operand_Request: Response End  : portid = " << port_id << " gpr_packet_counter = " << gpr_packet_pending_counter.at(port_id));
+                // Decrement pending counter for that port_id + pop from response port 
+                DT(3, "Ara-Operand_Request: Response Start : portid = " << port_id << " gpr_packet_counter = " << gpr_packet_pending_counter.at(port_id)  );
+                gpr_packet_pending_counter.at(port_id) -= 1;
+                ara_gpr_rsp_port.at(i).pop();
+                DT(3, "Ara-Operand_Request: Response End  : portid = " << port_id << " gpr_packet_counter = " << gpr_packet_pending_counter.at(port_id)  );
                 
 
-            // Check if all requests have been fufiled
-            if(gpr_packet_pending_counter.at(port_id) == 0){
+                // Check if all requests have been fufiled
+                if(gpr_packet_pending_counter.at(port_id) == 0){
 
-                // Return trace
-                DT(3, "Ara-Operand_Request: Trace Return Start : portid = " << port_id << " gpr_packet_counter = " << gpr_packet_pending_counter.at(port_id)  );
-                auto trace = this->op_req_port.at(port_id).front();
-                this->op_rsp_port.at(port_id).push(trace, 1);
+                    // Return trace
+                    DT(3, "Ara-Operand_Request: Trace Return Start : portid = " << port_id << " gpr_packet_counter = " << gpr_packet_pending_counter.at(port_id)  );
+                    auto trace = this->op_req_port.at(port_id).front();
+                    this->op_rsp_port.at(port_id).push(trace, 1);
 
-                // Free lane's op_req port 
-                this->op_req_port.at(port_id).pop();
+                    // Free port 
+                    this->op_req_port.at(port_id).pop();
 
-                // Reasoning for setting it to 2 is for the above 
-                first_entrance_bitvector.at(port_id) = 2;
-                DT(3, "Ara-Operand_Request: Trace Return End  : portid = " << port_id << " gpr_packet_counter = " << gpr_packet_pending_counter.at(port_id));
+                    // This will make sure if port is not empty, we are not taking the old value
+                    first_entrance_bitvector.at(port_id) = 2;
+                    DT(3, "Ara-Operand_Request: Trace Return End  : portid = " << port_id << " gpr_packet_counter = " << gpr_packet_pending_counter.at(port_id)  );
+                }
             }
-
-
-            // TOFIX: URGENT Get the response back to the slide unit 
-            
         }
 
         // 1. Check if request port is empty 
-        for(uint32_t port_id = 0; port_id < num_ara2_lane_insn; port_id++){
+        for(int port_id = 0; port_id < num_ara2_lane_insn; port_id++){
 
             // If none of the ports are empty + Not yet been processed ==> Send requests to VGPR
             if(!this->op_req_port.at(port_id).empty() && (first_entrance_bitvector.at(port_id) == 0)){
@@ -172,37 +177,48 @@ public:
 
                         Packet_List.push_back(gpr_req);
 
-                        // 2. Send it to the GPR 
-                        DT(3, "Ara-Operand_Request: Packet Sent: portid = " << port_id << " rid = " << gpr_req.rid  );
-                        ara_gpr_req_ports.push(gpr_req);
+                        // Put it into request fifo 
+                        packet_request_fifo.push(gpr_req);
                     }
                 }
 
                 // Store the requests + initialize starting number of requests 
                 ara_packet_storage.at(port_id) = Packet_List;
                 gpr_packet_pending_counter.at(port_id) = ara_packet_storage.at(port_id).size();
-                DT(3, "Ara-Operand_Request: Packet Overall: portid = " << port_id << " gpr_packet_counter = " << gpr_packet_pending_counter.at(port_id)  );
+                DT(3, "Ara-Operand_Request: Packet Construct: portid = " << port_id << " gpr_packet_counter = " << gpr_packet_pending_counter.at(port_id)  );
 
                 // Mark finished first pass, but keep it in port to show unfinished request 
                 first_entrance_bitvector.at(port_id) = 1;
 
                 // Special case of no regfile access ==> Don't pass to RF, resolve here, otherwise insn will never commit 
                 if(gpr_packet_pending_counter.at(port_id) == 0){
-                    DT(3, "Ara-Operand_Request: Is special : portid = " << port_id);
                     first_entrance_bitvector.at(port_id) = 0;
                     this->op_rsp_port.at(port_id).push(trace, 1);
                     this->op_req_port.at(port_id).pop();
                 }
 
-                // Temporary Fix to bypass RF (For Debugging Purposes) 
+                // Temporary Fix 
                 /*first_entrance_bitvector.at(port_id) = 0;*/
                 /*this->op_rsp_port.at(port_id).push(trace, 1);*/
                 /*this->op_req_port.at(port_id).pop();*/
             }
         }
 
+        // 2. Move requests from fifo to gpr ports  
+        for(int i=0; i < num_gpr_arbitration_port; i++){
 
-        // 2. TOFIX : URGENT Slide 
+            // 2a. Check if port is free and Check if there are requests 
+            if(ara_gpr_req_port.at(i).empty() && !packet_request_fifo.empty()){
+                
+                AraGprPkt gpr_req = packet_request_fifo.front();
+
+
+                DT(3, "Ara-Operand_Request: GPR Req: portid = " << gpr_req.port_id << " gpr_packet_counter = " << gpr_packet_pending_counter.at(gpr_req.port_id)  );
+                ara_gpr_req_port.at(i).push(gpr_req);
+                packet_request_fifo.pop();
+            }
+        }
+    
     };
 
 	bool writeback(instr_trace_t* trace) {
