@@ -25,9 +25,9 @@ private:
 	uint32_t total_stalls_ = 0;
 
     // TOFIX : Get this value from lane_unit
-    uint32_t num_ara2_lane_insn = 100;
+    uint32_t num_ara2_lane_insn = 8;
         
-    uint32_t num_gpr_arbitration_port = 100;
+    uint32_t num_gpr_arbitration_port = 8;
 
 public:
 
