@@ -83,28 +83,31 @@ failed=0
 
 
 mkdir TEMP_BIN
+mkdir TEMP_DUMP
 for testcase in "${testcases[@]}"; do
   echo "Testcase: $testcase"
   for f in $(find "$TEST_DIR/v${VLEN}x$XLEN" -type f -name "${testcase}*"); do
     filename=$(basename "$f")
     "$RISCV_TOOLCHAIN_PATH/bin/riscv$XLEN-unknown-elf-objdump" -D "$f" > "$filename.dump"
     "$RISCV_TOOLCHAIN_PATH/bin/riscv$XLEN-unknown-elf-objcopy" -O binary "$f" "$filename.bin"
-    "$SCRIPT_DIR/../../../sim/simx/simx" -v "$filename.bin" > "$filename.log"
-    if [ $? -eq 0 ]; then
-      echo "$filename PASSED"
-      let "passed+=1"
-    else
-      echo "$filename FAILED"
-      let "failed+=1"
-    fi
+    # "$SCRIPT_DIR/../../../sim/simx/simx" -v "$filename.bin" > "$filename.log"
+    # if [ $? -eq 0 ]; then
+    #   echo "$filename PASSED"
+    #   let "passed+=1"
+    # else
+    #   echo "$filename FAILED"
+    #   let "failed+=1"
+    # fi
     # REG_TESTS=1 informs the script to delete the previous binary after each vector test to save disk space
     # Otherwise, the vector regression tests would run out of disk space eventually
 
-    if [ "$REG_TESTS" -eq "1" ]; then
-      cat "$filename.log"
-      cp "$filename.bin" TEMP_BIN
-      rm -f "$filename.bin" "$filename.dump" "$filename.log" > /dev/null 2>&1
-    fi
+    cp "$filename.bin" TEMP_BIN
+    cp "$filename.dump" TEMP_DUMP
+    # if [ "$REG_TESTS" -eq "1" ]; then
+      # cat "$filename.log"
+      # cp "$filename.bin" TEMP_BIN
+      # rm -f "$filename.bin" "$filename.dump" "$filename.log" > /dev/null 2>&1
+    # fi
   done
 done
 

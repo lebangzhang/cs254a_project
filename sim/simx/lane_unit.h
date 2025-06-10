@@ -31,14 +31,16 @@ public:
     SimPort<instr_trace_t*> Input;
     SimPort<instr_trace_t*> Output;
 
+    // Connection to ara_unit 
     SimPort<instr_trace_t*> lane_req_port;
     SimPort<instr_trace_t*> lane_rsp_port;
 
+    // Connection to operand_requestor
     Operand_Requestor::Ptr  op_req_unit;
     std::vector<SimPort<instr_trace_t*>> op_req_port;
     std::vector<SimPort<instr_trace_t*>> op_rsp_port;
 
-
+    std::vector<int> microop_counter;
 
     Lane_Unit(const SimContext& ctx)
 			: SimObject<Lane_Unit>(ctx, "lane_unit")
@@ -59,6 +61,11 @@ public:
             this->op_req_port.at(i).bind(&op_req_unit->op_req_port.at(i)); 
             op_req_unit->op_rsp_port.at(i).bind(&this->op_rsp_port.at(i));
         }
+
+        // Initialize microop counter 
+        for(int i=0; i < num_ara2_lane_insn; i++){
+            microop_counter.push_back(0);
+        }
 	}
 
     virtual ~Lane_Unit() {}
@@ -69,35 +76,46 @@ public:
 
     virtual void tick() {
 
+        // 4. Return trace when no more microops to perform
 
-        // 3. Handle the output from operand requestor 
+        // 3. Take requests from micro-op queue to functional unit 
+
+        // 2. Handle the output from operand requestor 
         for(int i=0; i < num_ara2_lane_insn; i++){
 
             auto &op_response = this->op_rsp_port.at(i);
 
             // Non empty response --> return that trace back to ara_unit
-            // TOFIX : Add the concept of ALU and MUL latency 
             if(!op_response.empty()){
-                DT(3, "Ara-Lane_Unit: Response Start (Lane) : req = " << this->lane_req_port.size() << " rsp = " << this->lane_rsp_port.size());
-                DT(3, "Ara-Lane_Unit: Response Start (opreq) : req = " << this->op_req_port.at(i).size() << " rsp = " << this->op_rsp_port.at(i).size());
                 auto &trace_received = this->op_rsp_port.at(i).front();
 		        lane_rsp_port.push(trace_received, 1);
                 this->op_rsp_port.at(i).pop();
             }
         }
 
-        // 1. If request port empty ==> Return 
+        // 1a. If request port empty ==> Return 
         if (lane_req_port.empty())
 			return;
 
-        // 2. If not empty
+        // 1b. If not empty ==> Take 1 request from ara_unit to 
         for(int i=0; i < num_ara2_lane_insn; i++){
-            // Check for empty port ==> Forward request to operand requestor and return from function
+
+            // Check for empty slot in the op_req_port  ==> Forward request to operand requestor and return from function
             if(this->op_req_port.at(i).empty()){
-                DT(3, "Ara-Lane_Unit: Request Start (Lane) : req = " << this->lane_req_port.size() << " rsp = " << this->lane_rsp_port.size());
-                DT(3, "Ara-Lane_Unit: Request Start (opreq) : req = " << this->op_req_port.at(i).size() << " rsp = " << this->op_rsp_port.at(i).size());
-		        auto trace = lane_req_port.front();
+		        
+                // Forward request to operand_requestor
+                auto trace = lane_req_port.front();
                 this->op_req_port.at(i).push(trace, 1);
+                DT(3, "Ara-Lane_Unit: To op_req_port : " << i << " Received request " << *trace);
+
+                // Initialize microop counter 
+                uint32_t VL_count = VLEN/XLEN;
+                VL_count = VL_count / NUM_ARA_LANES; 
+                // TORETURN : For stress testing
+                /*VL_count = 4;*/
+                // TOFIX : Need to fix method for calculating microop
+                microop_counter.at(i) = VL_count;
+
 		        lane_req_port.pop();
                 return;
             }

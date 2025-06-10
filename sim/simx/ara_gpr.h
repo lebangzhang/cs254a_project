@@ -70,6 +70,31 @@ public:
     virtual void tick() {
     
 
+        // 2. Simulate bank conflicts and response
+        for(uint32_t bank = 0; bank < num_gpr_arbitration_port; bank++){
+
+            if(packet_collector.size() == 0){
+                break;
+            }
+
+            uint32_t i = 0;
+            while (i < packet_collector.size()) {
+                
+                // Calculate bank following barber shift formula 
+                AraGprPkt gpr_rsp = packet_collector.at(i);
+                uint32_t bank_x = (gpr_rsp.rid + gpr_rsp.vr_id) % num_gpr_arbitration_port;
+
+                if (bank == bank_x) {
+                    ara_gpr_rsp_port.at(bank).push(gpr_rsp, 2);
+                    DT(3, "Ara-Reg-File : Bank Match: bank=" << bank << ", gpr_rsp.rid=" << gpr_rsp.rid << ", gpr_Rsp.vr_id=" << gpr_rsp.vr_id << ", port_id=" << gpr_rsp.port_id );
+                    packet_collector.erase(packet_collector.begin() + i);
+                    break;  // break to next bank
+                } else {
+                    ++i;
+                }
+            }
+        }
+
         // 1. Put all packets into packet_collector
         for(int i = 0; i < num_gpr_arbitration_port; i++){ 
 
@@ -86,34 +111,7 @@ public:
             }
         }
 
-
-        // 2. Simulate bank conflicts and response
-        for(uint32_t bank = 0; bank < num_gpr_arbitration_port; bank++){
-
-            if(packet_collector.size() == 0){
-                break;
-            }
-
-            uint32_t i = 0;
-            while (i < packet_collector.size()) {
-                
-                // Calculate bank following barber shift formula 
-                AraGprPkt gpr_rsp = packet_collector.at(i);
-                uint32_t bank_x = (gpr_rsp.rid + gpr_rsp.vr_id) % num_gpr_arbitration_port;
-
-                if (bank == bank_x) {
-                    ara_gpr_rsp_port.at(bank).push(gpr_rsp, 1);
-                    DT(3, "Ara-Reg-File : gpr req num = " << i << " port_id " << gpr_rsp.port_id );
-                    packet_collector.erase(packet_collector.begin() + i);
-                    break;  // break to next bank
-                } else {
-                    ++i;
-                }
-            }
-        }
-
-
-        // Temporary Fix 
+        // Temporary Fix (If needed, the following code can be used as replacement for debug) 
         /*
         for(int i = 0; i < num_gpr_arbitration_port; i++){ 
 

@@ -413,7 +413,7 @@
 `define NUM_ARA_DISPATCH_BLOCKS  `ISSUE_WIDTH
 `endif
 `ifndef NUM_ARA_LANES 
-`define NUM_ARA_LANES 8 
+`define NUM_ARA_LANES 1 
 `endif
 
 

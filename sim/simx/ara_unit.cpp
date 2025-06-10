@@ -1728,7 +1728,6 @@ AraUnit::AraUnit(const SimContext& ctx,
   , lane_unit_(1)
   , lane_req_ports(1, this)
   , lane_rsp_ports(1, this) 
-
 {
 
   // Create Lane Units 
@@ -1740,8 +1739,8 @@ AraUnit::AraUnit(const SimContext& ctx,
   for(uint32_t i=0; i < 1; i++){
     this->lane_req_ports.at(i).bind(&lane_unit_.at(i)->lane_req_port);
     lane_unit_.at(i)->lane_rsp_port.bind(&this->lane_rsp_ports.at(i));
-  }
 
+   }
   
 }
 
