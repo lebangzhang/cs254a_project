@@ -37,7 +37,7 @@ private:
 
     // TOFIX : Get this from operand requestor 
     // Also same as the number of ara gpr banks
-    uint32_t num_gpr_arbitration_port = 8;
+    uint32_t num_gpr_arbitration_port = NUM_ARA_GPR_PORTS;
 
 public:
 
@@ -69,6 +69,7 @@ public:
 
     virtual void tick() {
     
+        /*DT(3, "----- Entered Ara-Gpr Unit -----");*/
 
         // 2. Simulate bank conflicts and response
         for(uint32_t bank = 0; bank < num_gpr_arbitration_port; bank++){
@@ -128,6 +129,9 @@ public:
             }
         }
         */
+
+
+        /*DT(3, "----- Finished Ara-Gpr Unit -----");*/
     };
 
 	bool writeback(instr_trace_t* trace) {

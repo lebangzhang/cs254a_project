@@ -1739,7 +1739,6 @@ AraUnit::AraUnit(const SimContext& ctx,
   for(uint32_t i=0; i < 1; i++){
     this->lane_req_ports.at(i).bind(&lane_unit_.at(i)->lane_req_port);
     lane_unit_.at(i)->lane_rsp_port.bind(&this->lane_rsp_ports.at(i));
-
    }
   
 }
@@ -1759,7 +1758,14 @@ void AraUnit::reset() {
 
 
 void AraUnit::tick() {
+
+
+    /*DT(3, "----- Entered ARA_IMPL_Unit ------");*/
     impl_->tick();
+    /*DT(3, "----- Finished ARA_IMPL_Unit ------");*/
+
+
+    /*DT(3, "----- Entered ARA_Unit ------");*/
 
     for (uint32_t iw = 0; iw < ISSUE_WIDTH; ++iw) {
 
@@ -1792,6 +1798,8 @@ void AraUnit::tick() {
         this->lane_req_ports.at(0).push(trace, 1);
         input.pop();
     }
+    
+    /*DT(3, "----- Finished ARA_Unit ------");*/
 
 }
 

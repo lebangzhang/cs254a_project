@@ -60,6 +60,9 @@ public:
 
   std::vector<SimPort<instr_trace_t*>> lane_req_ports;
   std::vector<SimPort<instr_trace_t*>> lane_rsp_ports;
+  
+  std::vector<SimPort<instr_trace_t*>> insn_queue_req_ports;
+  std::vector<SimPort<instr_trace_t*>> insn_queue_rsp_ports;
 
 
   AraUnit(const SimContext& ctx,
@@ -87,6 +90,7 @@ public:
 
 private:
 
+  uint32_t num_ara2_lane_insn = 8;
   std::vector<Lane_Unit::Ptr>    lane_unit_;
   uint32_t ARA_MAX_LANE_INSN;
   Core*                     core_;

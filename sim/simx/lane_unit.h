@@ -24,7 +24,12 @@ class Lane_Unit : public SimObject<Lane_Unit> {
 
 private: 
 		uint32_t total_stalls_ = 0;
-        uint32_t num_ara2_lane_insn = 8;
+		float active_cycles = 0;
+		float total_insn = 0;
+		float total_insn_at_once = 0;
+        float peak_insn_at_once = 0;
+
+        uint32_t num_ara2_lane_insn = NUM_ARA_LANE_INSN;
 
 public:
 
@@ -52,6 +57,10 @@ public:
             , op_req_port(num_ara2_lane_insn, this)
     {
 		total_stalls_ = 0;
+        active_cycles = 0;
+        total_insn = 0; 
+        total_insn_at_once = 0;
+        peak_insn_at_once = 0;
     
         // Create Operand Requestor 
         op_req_unit = Operand_Requestor::Create();
@@ -76,9 +85,8 @@ public:
 
     virtual void tick() {
 
-        // 4. Return trace when no more microops to perform
 
-        // 3. Take requests from micro-op queue to functional unit 
+        /*DT(3, "----- Entered Lane_Unit ------");*/
 
         // 2. Handle the output from operand requestor 
         for(int i=0; i < num_ara2_lane_insn; i++){
@@ -93,9 +101,37 @@ public:
             }
         }
 
+        // 0. Calculate total active cycles (can be removed)
+        for(int i = 0; i < num_ara2_lane_insn; i++){
+            if(!this->op_req_port.at(i).empty()){
+                active_cycles += 1;
+                break;
+            }
+        } 
+
+        int temp = 0;
+        for(int i = 0; i < num_ara2_lane_insn; i++){
+            if(!this->op_req_port.at(i).empty()){
+                total_insn_at_once += 1;
+                temp += 1;
+            }
+        } 
+        if(temp > peak_insn_at_once){
+            peak_insn_at_once = temp; 
+        }
+
+        DT(3, "ACTIVE_CYCLES = " << active_cycles);
+        DT(3, "TOTAL INSN    = " << total_insn);
+        DT(3, "IPC           = " << total_insn         / active_cycles);
+        DT(3, "AVG PORT UTIL = " << total_insn_at_once / active_cycles);
+        DT(3, "PEAK PORT UTIL= " << peak_insn_at_once); 
+
+
         // 1a. If request port empty ==> Return 
-        if (lane_req_port.empty())
+        if (lane_req_port.empty()){
+            /*DT(3, "----- Finished Lane_Unit ------");*/
 			return;
+        }
 
         // 1b. If not empty ==> Take 1 request from ara_unit to 
         for(int i=0; i < num_ara2_lane_insn; i++){
@@ -116,46 +152,16 @@ public:
                 // TOFIX : Need to fix method for calculating microop
                 microop_counter.at(i) = VL_count;
 
+                // Perf Counter 
+                total_insn += 1;
+
 		        lane_req_port.pop();
                 return;
             }
         }
-        
-        /*
-        switch (trace->vpu_type) {
-            case VpuType::VSET:
-            break;
-            case VpuType::ARITH:
-            case VpuType::ARITH_R:
-                delay = 1;
-                break;
-            case VpuType::IMUL:
-                delay = LATENCY_IMUL;
-                break;
-            case VpuType::IDIV:
-                delay = XLEN;
-                break;
-            case VpuType::FNCP:
-            case VpuType::FNCP_R:
-                delay = 2;
-                break;
-            case VpuType::FMA:
-            case VpuType::FMA_R:
-                delay = LATENCY_FMA;
-                break;
-            case VpuType::FDIV:
-                delay = LATENCY_FDIV;
-                break;
-            case VpuType::FSQRT:
-                delay = LATENCY_FSQRT;
-                break;
-            case VpuType::FCVT:
-                delay = LATENCY_FCVT;
-                break;
-            default:
-                std::abort();
-        }
-      */
+
+        /*DT(3, "----- Finished Lane_Unit ------");*/
+
     };
 
 		bool writeback(instr_trace_t* trace) {

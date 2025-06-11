@@ -103,6 +103,7 @@
     `endif
 `endif
 
+
 `ifndef NUM_CLUSTERS
 `define NUM_CLUSTERS 1
 `endif
@@ -414,6 +415,22 @@
 `endif
 `ifndef NUM_ARA_LANES 
 `define NUM_ARA_LANES 1 
+`endif
+// ARA definitions 
+`ifndef NUM_ARA_LANE_INSN
+`define NUM_ARA_LANE_INSN 8
+`endif
+`ifndef NUM_ARA_GPR_PORTS
+`define NUM_ARA_GPR_PORTS 8
+`endif
+`ifndef NUM_ARA_ALU_LANES
+`define NUM_ARA_ALU_LANES 1
+`endif
+`ifndef NUM_ARA_MUL_LANES
+`define NUM_ARA_MUL_LANES 1
+`endif
+`ifndef NUM_ARA_VL_COUNT
+`define NUM_ARA_VL_COUNT 8
 `endif
 
 
