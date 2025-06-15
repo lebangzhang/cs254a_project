@@ -1728,7 +1728,6 @@ AraUnit::AraUnit(const SimContext& ctx,
   , lane_unit_(1)
   , lane_req_ports(1, this)
   , lane_rsp_ports(1, this) 
-
 {
 
   // Create Lane Units 
@@ -1738,9 +1737,9 @@ AraUnit::AraUnit(const SimContext& ctx,
 
   // Bind Ports to operand requestor inside the lanes
   for(uint32_t i=0; i < 1; i++){
-    this->lane_req_ports.at(i).bind(&lane_unit_.at(i)->lane_opreq_req_port);
-    lane_unit_.at(i)->lane_opreq_rsp_port.bind(&this->lane_rsp_ports.at(i));
-  }
+    this->lane_req_ports.at(i).bind(&lane_unit_.at(i)->lane_req_port);
+    lane_unit_.at(i)->lane_rsp_port.bind(&this->lane_rsp_ports.at(i));
+   }
   
 }
 
@@ -1752,8 +1751,21 @@ void AraUnit::reset() {
   impl_->reset();
 }
 
+
+
+
+
+
+
 void AraUnit::tick() {
+
+
+    /*DT(3, "----- Entered ARA_IMPL_Unit ------");*/
     impl_->tick();
+    /*DT(3, "----- Finished ARA_IMPL_Unit ------");*/
+
+
+    /*DT(3, "----- Entered ARA_Unit ------");*/
 
     for (uint32_t iw = 0; iw < ISSUE_WIDTH; ++iw) {
 
@@ -1761,11 +1773,11 @@ void AraUnit::tick() {
         auto &lane_0_rsp = this->lane_rsp_ports.at(0);
 
         if (!lane_0_rsp.empty()){
+            DT(3, "Ara-Unit: Response Start (Lane) : req = " << this->lane_req_ports.at(0).size() << " rsp = " << lane_0_rsp.size());
             auto &trace_received = this->lane_rsp_ports.at(0).front();
             Outputs.at(iw).push(trace_received, 2);
             this->lane_rsp_ports.at(0).pop();
         }
-        
 
         // 0. Check if there is a valid input
         auto& input = Inputs.at(iw);
@@ -1776,26 +1788,24 @@ void AraUnit::tick() {
         auto trace = input.front();
 
         // 2. For now, assume all lane units behave the same way <--- TOFIX (Check if there is lane biasing or this is good enough apprx) 
-        // If lane 0 is not empty --> Wait for next CC
+        // Check if lane is full --> If full, then stall
         auto &lane_0_req = this->lane_req_ports.at(0);
-        if(!lane_0_req.empty())
+        if(lane_0_req.size() == 8)
             return;
     
         // Lane 0 has space to receive instruction --> Send request to lane_0
+        DT(3, "Ara-Unit: Request Start (Lane) : req = " << this->lane_req_ports.at(0).size() << " rsp = " << lane_0_rsp.size());
         this->lane_req_ports.at(0).push(trace, 1);
-
-
-        /*Outputs.at(iw).push(trace, 2);*/
-        /*if (trace->eop && trace->fetch_stall) {*/
-            /*core_->resume(trace->wid);*/
-        /*}*/
-
         input.pop();
-
-
     }
+    
+    /*DT(3, "----- Finished ARA_Unit ------");*/
 
 }
+
+
+
+
 
 bool AraUnit::get_csr(uint32_t addr, uint32_t wid, uint32_t tid, Word* value) {
   return impl_->get_csr(addr, wid, tid, value);
