@@ -1687,6 +1687,43 @@ public:
     }
   }
 
+  std::string dumpRegister(uint32_t wid, uint32_t tid, uint32_t reg_idx) const {
+    assert(wid < vpu_states_.size() && tid < vpu_states_[wid].vreg_file.size());
+    assert(reg_idx < MAX_NUM_REGS);
+    const auto &reg = vpu_states_[wid].vreg_file[tid][reg_idx];
+    uint32_t n = VLENB / XLENB;
+    std::ostringstream oss;
+    oss << "{";
+    for (uint32_t i = 0; i < n; ++i) {
+      uint64_t value = 0;
+      // Combine bytes in little-endian order
+      for (uint32_t j = 0; j < XLENB; ++j) {
+        value |= static_cast<uint64_t>(reg.at(i * XLENB + j)) << (8 * j);
+      }
+      // Print the combined value
+      oss << "0x" << std::hex << std::setfill('0');
+      switch (XLENB) {
+      case 1:
+        oss << std::setw(2) << static_cast<uint32_t>(value);
+        break;
+      case 2:
+        oss << std::setw(4) << static_cast<uint32_t>(value);
+        break;
+      case 4:
+        oss << std::setw(8) << static_cast<uint32_t>(value);
+        break;
+      case 8:
+        oss << std::setw(16) << value;
+        break;
+      }
+      if (i != n - 1) {
+        oss << ", ";
+      }
+    }
+    oss << "}";
+    return oss.str();
+  }
+
   const PerfStats& perf_stats() const {
     return perf_stats_;
   }
@@ -1776,6 +1813,10 @@ void VecUnit::reset() {
 
 void VecUnit::tick() {
   impl_->tick();
+}
+
+std::string VecUnit::dumpRegister(uint32_t wid, uint32_t tid, uint32_t reg_idx) const {
+  return impl_->dumpRegister(wid, tid, reg_idx);
 }
 
 bool VecUnit::get_csr(uint32_t addr, uint32_t wid, uint32_t tid, Word* value) {

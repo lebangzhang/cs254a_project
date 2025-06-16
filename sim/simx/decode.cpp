@@ -372,7 +372,25 @@ static const char* op_string(const Instr &instr) {
   case Opcode::FMSUB:   return funct2 ? "FMSUB.D" : "FMSUB.S";
   case Opcode::FMNMADD: return funct2 ? "FNMADD.D" : "FNMADD.S";
   case Opcode::FMNMSUB: return funct2 ? "FNMSUB.D" : "FNMSUB.S";
-  case Opcode::VSET:    return "VSET";
+  case Opcode::VSET:    {
+    switch (funct3) {
+    case 0: return "OPIVV";
+    case 1: return "OPFVV";
+    case 2: return "OPMVV";
+    case 3: return "OPIVI";
+    case 4: return "OPIVX";
+    case 5: return "OPFVF";
+    case 6: return "OPMVX";
+    case 7:
+      if (instr.hasVattrMask(vattr_zimm)) {
+        return instr.hasImm() ? "VSETIVLI" : "VSETVLI";
+      } else {
+        return "VSETVL";
+      }
+    default:
+      std::abort();
+    }
+  }
   case Opcode::EXT1:
     switch (funct7) {
     case 0:

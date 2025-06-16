@@ -46,51 +46,57 @@ inline int64_t check_boxing(int64_t a) {
   return nan_box(0x7fc00000); // NaN
 }
 
-inline void read_register(std::vector<reg_data_t>& out, uint32_t src_index, const RegOpd& reg, const warp_t& warp) {
+void Emulator::fetch_registers(std::vector<reg_data_t>& out, uint32_t wid, uint32_t src_index, const RegOpd& reg) {
   __unused(src_index);
+  auto& warp = warps_.at(wid);
   uint32_t num_threads = warp.tmask.size();
-  uint32_t group_size = reg.group_size();
-  out.resize(num_threads * group_size);
+  out.resize(num_threads);
   switch (reg.type) {
   case RegType::None:
-#if defined(EXT_V_ENABLE) || defined(EXT_ARA2_ENABLE)
+#ifdef EXT_V_ENABLE
   case RegType::Vector:
+    DPH(2, "Src" << src_index << " Reg: " << reg << "={");
+    for (uint32_t t = 0; t < num_threads; ++t) {
+      if (t) DPN(2, ", ");
+      if (!warp.tmask.test(t)) {
+        DPN(2, "-");
+        continue;
+      }
+      DPN(2, vec_unit_->dumpRegister(wid, t, reg.idx));
+    }
+    DPN(2, "}" << std::endl);
 #endif
     break;
   case RegType::Integer: {
     DPH(2, "Src" << src_index << " Reg: " << reg << "={");
-    for (uint32_t g = 0; g < group_size; ++g) {
-      auto& reg_data = warp.ireg_file.at(reg.idx + g);
-      for (uint32_t t = 0; t < reg_data.size(); ++t) {
-        if (t) DPN(2, ", ");
-        if (!warp.tmask.test(t)) {
-          DPN(2, "-");
-          continue;
-        }
-        auto& value = out[g * num_threads + t];
-        value.u = reg_data.at(t);
-        DPN(2, "0x" << std::hex << value.u << std::dec);
+    auto& reg_data = warp.ireg_file.at(reg.idx);
+    for (uint32_t t = 0; t < num_threads; ++t) {
+      if (t) DPN(2, ", ");
+      if (!warp.tmask.test(t)) {
+        DPN(2, "-");
+        continue;
       }
+      auto& value = out[t];
+      value.u = reg_data.at(t);
+      DPN(2, "0x" << std::hex << value.u << std::dec);
     }
     DPN(2, "}" << std::endl);
   } break;
   case RegType::Float: {
     DPH(2, "Src" << src_index << " Reg: " << reg << "={");
-    for (uint32_t g = 0; g < group_size; ++g) {
-      auto& reg_data = warp.freg_file.at(reg.idx + g);
-      for (uint32_t t = 0; t < reg_data.size(); ++t) {
-        if (t) DPN(2, ", ");
-        if (!warp.tmask.test(t)) {
-          DPN(2, "-");
-          continue;
-        }
-        auto& value = out[g * num_threads + t];
-        value.u64 = reg_data.at(t);
-        if ((value.u64 >> 32) == 0xffffffff) {
-          DPN(2, "0x" << std::hex << value.u32 << std::dec);
-        } else {
-          DPN(2, "0x" << std::hex << value.u64 << std::dec);
-        }
+    auto& reg_data = warp.freg_file.at(reg.idx);
+    for (uint32_t t = 0; t < num_threads; ++t) {
+      if (t) DPN(2, ", ");
+      if (!warp.tmask.test(t)) {
+        DPN(2, "-");
+        continue;
+      }
+      auto& value = out[t];
+      value.u64 = reg_data.at(t);
+      if ((value.u64 >> 32) == 0xffffffff) {
+        DPN(2, "0x" << std::hex << value.u32 << std::dec);
+      } else {
+        DPN(2, "0x" << std::hex << value.u64 << std::dec);
       }
     }
     DPN(2, "}" << std::endl);
@@ -134,9 +140,9 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
   std::vector<reg_data_t> rs3_data;
 
   // load register values
-  if (rsrc0.type != RegType::None) read_register(rs1_data, 0, rsrc0, warp);
-  if (rsrc1.type != RegType::None) read_register(rs2_data, 1, rsrc1, warp);
-  if (rsrc2.type != RegType::None) read_register(rs3_data, 2, rsrc2, warp);
+  if (rsrc0.type != RegType::None) fetch_registers(rs1_data, wid, 0, rsrc0);
+  if (rsrc1.type != RegType::None) fetch_registers(rs2_data, wid, 1, rsrc1);
+  if (rsrc2.type != RegType::None) fetch_registers(rs3_data, wid, 2, rsrc2);
 
   uint32_t thread_start = 0;
   for (; thread_start < num_threads; ++thread_start) {
@@ -1504,7 +1510,16 @@ void Emulator::execute(const Instr &instr, uint32_t wid, instr_trace_t *trace) {
       break;
   #if defined(EXT_V_ENABLE) || defined(EXT_ARA2_ENABLE)
     case RegType::Vector:
-      DPH(2, "Dest Reg: " << rdest << "={}" << std::endl);
+      DPH(2, "Dest Reg: " << rdest << "={");
+      for (uint32_t t = 0; t < num_threads; ++t) {
+        if (t) DPN(2, ", ");
+        if (!warp.tmask.test(t)) {
+          DPN(2, "-");
+          continue;
+        }
+        DPN(2, vec_unit_->dumpRegister(wid, t, rdest.idx));
+      }
+      DPN(2, "}" << std::endl);
       break;
   #endif
     default:
