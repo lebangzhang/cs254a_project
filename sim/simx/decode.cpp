@@ -372,6 +372,7 @@ static const char* op_string(const Instr &instr) {
   case Opcode::FMSUB:   return funct2 ? "FMSUB.D" : "FMSUB.S";
   case Opcode::FMNMADD: return funct2 ? "FNMADD.D" : "FNMADD.S";
   case Opcode::FMNMSUB: return funct2 ? "FNMSUB.D" : "FNMSUB.S";
+#if defined(EXT_V_ENABLE) || defined(EXT_ARA2_ENABLE)
   case Opcode::VSET:    {
     switch (funct3) {
     case 0: return "OPIVV";
@@ -391,6 +392,7 @@ static const char* op_string(const Instr &instr) {
       std::abort();
     }
   }
+#endif
   case Opcode::EXT1:
     switch (funct7) {
     case 0:
