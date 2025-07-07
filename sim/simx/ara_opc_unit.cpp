@@ -190,12 +190,12 @@ void Ara_Opc_Unit::tick() {
     bool done = false;
 
 
-    // TOFIX : Check here
+    // TOFIX_ARA : Check here
     // Ara 2 Note : Don't perform vlmul latency here 
     vlmul_counter_ = 1;
     vl_counter_ = 1;
 
-  // TOFIX : Need to fix the total_vgpr_requests case for vlmul 
+  // TOFIX_ARA : Need to fix the total_vgpr_requests case for vlmul 
   #ifdef FUSED_Ara
     done = this->fused_schedule(trace);
   #else

@@ -1,4 +1,4 @@
-// Copyright © 2019-2023
+/*// Copyright © 2019-2023*/
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -52,6 +52,10 @@ private:
 
   bool fused_schedule(instr_trace_t* trace);
 
+  void reduction_layer0_1_group(instr_trace_t* trace, uint32_t vl_index);
+
+  bool reduction_layer1_and_more(instr_trace_t* trace);
+
   void decode(instr_trace_t* trace);
 
   void lsu_flush(instr_trace_t* trace);
@@ -71,9 +75,18 @@ private:
   bool     lsu_flush_ = false;
   uint32_t total_stalls_ = 0;
 
+  uint32_t total_vgpr_requests = 0;  // Total requests needed (for next vl)
+  uint32_t total_vgpr_req_count = 0; // To track requests sent (not needed for reduction since we iterate vl then threads for red) 
+  uint32_t vlmul_index = 0;
 
-  // Modification Note : 
-  uint32_t total_vgpr_requests = 0; 
+  // For the reduction operation
+  uint32_t red_level = 0;            // The reduction tree level 
+  uint32_t red_trace_flag = 0;       // Is the "writeback" counter for level 0
+  uint32_t red_trace_count = 0;      // To update the tree level 
+  uint32_t red_vrf_rsp = 0;          // To stop at the 4th response 
+  uint32_t red_state = 0;            // state = 0 (layer 0), state = 1 (others)
+
+  uint32_t fused_next_red_state = 0; // state = 0 (initial vrf req), state = 1 (actual reduction) 
 };
 
 } // namespace vortex

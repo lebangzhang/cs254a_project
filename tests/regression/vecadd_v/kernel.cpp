@@ -14,8 +14,8 @@ void kernel_body(kernel_arg_t* __UNIFORM__ arg) {
     uint32_t initial_index = blockIdx.x * vec_len_per_thread; 
 
     // Not Recognizable
+    /*
     uint32_t index = blockIdx.x * vec_len_per_thread; 
-
 
     TYPE* __restrict src0_ptr2 = src0_ptr+index;
     TYPE* __restrict src1_ptr2 = src1_ptr+index;
@@ -26,6 +26,7 @@ void kernel_body(kernel_arg_t* __UNIFORM__ arg) {
         auto b = src1_ptr2[i];
         dst_ptr2[i] = a + b;
     }
+    */
 
     // Recognizable
     /*
@@ -41,7 +42,6 @@ void kernel_body(kernel_arg_t* __UNIFORM__ arg) {
     */
 
     // Recognizable
-    /*
     TYPE A[10];
     for(uint32_t i = 0; i < vec_len_per_thread; i++){
 
@@ -53,7 +53,6 @@ void kernel_body(kernel_arg_t* __UNIFORM__ arg) {
     for(uint32_t i = 0; i < vec_len_per_thread; i++){
         dst_ptr[initial_index+i] = A[i];
     }
-    */
 
     // Attempt ??? 
     /*
