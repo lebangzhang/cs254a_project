@@ -100,8 +100,10 @@
 `define VX_CSR_MPM_SCRB_CSRS_H          12'hB8C
 `define VX_CSR_MPM_SCRB_WCTL            12'hB0D
 `define VX_CSR_MPM_SCRB_WCTL_H          12'hB8D
-`define VX_CSR_MPM_SCRB_VEC             12'hB13 // Vector scoreboard
-`define VX_CSR_MPM_SCRB_VEC_H           12'hB93
+`define VX_CSR_MPM_SCRB_VPU             12'hB13
+`define VX_CSR_MPM_SCRB_VPU_H           12'hB93
+`define VX_CSR_MPM_SCRB_TCU             12'hB14
+`define VX_CSR_MPM_SCRB_TCU_H           12'hB94
 // PERF: memory
 `define VX_CSR_MPM_IFETCHES             12'hB0E
 `define VX_CSR_MPM_IFETCHES_H           12'hB8E
@@ -182,7 +184,17 @@
 `define VX_CSR_MPM_COALESCER_MISS       12'hB1F     // coalescer misses
 `define VX_CSR_MPM_COALESCER_MISS_H     12'hB9F
 
-// Machine Performance-monitoring memory counters (class 3) ///////////////////
+// Machine Performance-monitoring VPU counters (class 3) //////////////////////
+// PERF: vector unit
+`define VX_CSR_MPM_VEC_READS            12'hB03     // vector reads
+`define VX_CSR_MPM_VEC_READS_H          12'hB83
+`define VX_CSR_MPM_VEC_WRITES           12'hB04     // vector writes
+`define VX_CSR_MPM_VEC_WRITES_H         12'hB84
+`define VX_CSR_MPM_VEC_LAT              12'hB05     // vector latency
+`define VX_CSR_MPM_VEC_LAT_H            12'hB85
+`define VX_CSR_MPM_VEC_ST               12'hB06     // vector stalls
+`define VX_CSR_MPM_VEC_ST_H             12'hB86
+
 // <Add your own counters: use addresses hB03..B1F, hB83..hB9F>
 
 // Machine Performance-monitoring vector counters

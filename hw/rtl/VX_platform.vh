@@ -76,6 +76,7 @@
                               /* verilator lint_off PINMISSING */ \
                               /* verilator lint_off IMPORTSTAR */ \
                               /* verilator lint_off UNSIGNED */ \
+                              /* verilator lint_off CMPCONST */ \
                               /* verilator lint_off SYMRSVDWORD */
 
 `define IGNORE_WARNINGS_END   /* verilator lint_on UNUSED */ \
@@ -88,6 +89,7 @@
                               /* verilator lint_off PINMISSING */ \
                               /* verilator lint_on IMPORTSTAR */ \
                               /* verilator lint_on UNSIGNED */ \
+                              /* verilator lint_on CMPCONST */ \
                               /* verilator lint_on SYMRSVDWORD */
 
 `define UNUSED_PARAM(x)  /* verilator lint_off UNUSED */ \
@@ -115,7 +117,8 @@
                         /* verilator lint_on UNUSED */
 
 `ifdef SV_DPI
-`define TRACE(level, args) dpi_trace(level, $sformatf args);
+`define TRACE(level, args) \
+    dpi_trace(level, $sformatf args);
 `else
 `define TRACE(level, args) \
     if (level <= `DEBUG_LEVEL) begin \
@@ -133,7 +136,9 @@
 `define RUNTIME_ASSERT(cond, msg)
 
 `define DEBUG_BLOCK(x)
-`define TRACE(level, args)
+`define TRACE(level, args) \
+    if (level <= `DEBUG_LEVEL) begin \
+    end
 `define SFORMATF(x) ""
 
 `define TRACING_ON
@@ -157,6 +162,7 @@
 
 `ifdef QUARTUS
 `define MAX_FANOUT      8
+`define LATENCY_IMUL    3
 `define FORCE_BRAM(d,w) (((d) >= 64 || (w) >= 16 || ((d) * (w)) >= 512) && ((d) * (w)) >= 64)
 `define USE_BLOCK_BRAM  (* ramstyle = "block" *)
 `define USE_FAST_BRAM   (* ramstyle = "MLAB, no_rw_check" *)
@@ -168,6 +174,7 @@
 `define STRING          string
 `elsif VIVADO
 `define MAX_FANOUT      8
+`define LATENCY_IMUL    3
 `define FORCE_BRAM(d,w) (((d) >= 64 || (w) >= 16 || ((d) * (w)) >= 512) && ((d) * (w)) >= 64)
 `define USE_BLOCK_BRAM  (* ram_style = "block" *)
 `define USE_FAST_BRAM   (* ram_style = "distributed" *)
@@ -182,6 +189,7 @@
 `endif
 `else
 `define MAX_FANOUT      8
+`define LATENCY_IMUL    3
 `define FORCE_BRAM(d,w) (((d) >= 64 || (w) >= 16 || ((d) * (w)) >= 512) && ((d) * (w)) >= 64)
 `define USE_BLOCK_BRAM
 `define USE_FAST_BRAM

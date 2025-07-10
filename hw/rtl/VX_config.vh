@@ -88,7 +88,6 @@
 `endif
 `endif
 
-// TOFIX : Need to fix this for ARA2 support
 `ifdef EXT_V_ENABLE
     `ifndef VLEN
         `define VLEN (4 * `XLEN)
@@ -101,6 +100,8 @@
     `else
         `define VLEN `XLEN
     `endif
+`else
+    `define VLEN `XLEN
 `endif
 
 
@@ -254,6 +255,12 @@
 `define STACK_LOG2_SIZE 13
 `endif
 
+`define RESET_DELAY     8
+
+`ifndef STALL_TIMEOUT
+`define STALL_TIMEOUT   (100000 * (1 ** (`L2_ENABLED + `L3_ENABLED)))
+`endif
+
 `ifndef SV_DPI
 `ifndef DPI_DISABLE
 `define DPI_DISABLE
@@ -354,18 +361,15 @@
 
 // Operand collectors
 `ifndef NUM_OPCS
-`define NUM_OPCS        4
-`endif
-`ifndef NUM_VOPCS
-`define NUM_VOPCS       1
+`define NUM_OPCS        `UP(`NUM_WARPS / (4 * `ISSUE_WIDTH))
 `endif
 
 // Register File Banks
 `ifndef NUM_GPR_BANKS
-`define NUM_GPR_BANKS   `MIN(`NUM_OPCS, 16)
+`define NUM_GPR_BANKS   4
 `endif
 `ifndef NUM_VGPR_BANKS
-`define NUM_VGPR_BANKS  `MIN(`NUM_VOPCS, 16)
+`define NUM_VGPR_BANKS  2
 `endif
 
 // Number of ALU units
@@ -406,23 +410,22 @@
 `define NUM_VPU_BLOCKS  `ISSUE_WIDTH
 `endif
 
-// Number of ARA2 units 
+// Number of ARA2 units
 `ifndef NUM_ARA_DISPATCH_LANES
 `define NUM_ARA_DISPATCH_LANES   `SIMD_WIDTH
 `endif
 `ifndef NUM_ARA_DISPATCH_BLOCKS
 `define NUM_ARA_DISPATCH_BLOCKS  `ISSUE_WIDTH
 `endif
-`ifndef NUM_ARA_LANES 
-`define NUM_ARA_LANES 1 
+`ifndef NUM_ARA_LANES
+`define NUM_ARA_LANES 1
 `endif
-// ARA definitions 
+// ARA definitions
 `ifndef NUM_ARA_LANE_INSN
 `define NUM_ARA_LANE_INSN 8
 `endif
 `ifndef NUM_ARA_GPR_PORTS
 `define NUM_ARA_GPR_PORTS 8
-`endif
 `ifndef NUM_ARA_ALU_LANES
 `define NUM_ARA_ALU_LANES 1
 `endif
@@ -433,7 +436,11 @@
 `define NUM_ARA_VL_COUNT 8
 `endif
 
-
+// Number of TCU units
+`define NUM_TCU_LANES   `NUM_THREADS
+`ifndef NUM_TCU_BLOCKS
+`define NUM_TCU_BLOCKS  `ISSUE_WIDTH
+`endif
 
 // Size of Instruction Buffer
 `ifndef IBUF_SIZE
@@ -453,18 +460,6 @@
 // Size of LSU Memory Request Queue
 `ifndef LSUQ_OUT_SIZE
 `define LSUQ_OUT_SIZE   `MAX(`LSUQ_IN_SIZE, `LSU_LINE_SIZE / (`XLEN / 8))
-`endif
-
-`ifndef LATENCY_IMUL
-`ifdef VIVADO
-`define LATENCY_IMUL 4
-`endif
-`ifdef QUARTUS
-`define LATENCY_IMUL 3
-`endif
-`ifndef LATENCY_IMUL
-`define LATENCY_IMUL 4
-`endif
 `endif
 
 // Floating-Point Units ///////////////////////////////////////////////////////
@@ -846,6 +841,26 @@
 `endif
 `endif
 
+// TCU Configurable Knobs /////////////////////////////////////////////////////
+
+`ifndef TCU_BHF
+`ifndef TCU_DSP
+`ifndef TCU_DPI
+
+`ifndef SYNTHESIS
+`ifndef DPI_DISABLE
+`define TCU_DPI
+`else
+`define TCU_BHF
+`endif
+`else
+`define TCU_DSP
+`endif
+
+`endif
+`endif
+`endif
+
 // ISA Extensions /////////////////////////////////////////////////////////////
 
 `ifdef ICACHE_ENABLE
@@ -926,10 +941,10 @@
     `define EXT_ZICOND_ENABLED 0
 `endif
 
-`ifdef EXT_TPU_ENABLE
-    `define EXT_TPU_ENABLED 1
+`ifdef EXT_TCU_ENABLE
+    `define EXT_TCU_ENABLED 1
 `else
-    `define EXT_TPU_ENABLED 0
+    `define EXT_TCU_ENABLED 0
 `endif
 
 `define ISA_STD_A           0
@@ -950,13 +965,15 @@
 `define ISA_EXT_L3CACHE     3
 `define ISA_EXT_LMEM        4
 `define ISA_EXT_ZICOND      5
+`define ISA_EXT_TCU         6
 
 `define MISA_EXT  (`ICACHE_ENABLED  << `ISA_EXT_ICACHE) \
                 | (`DCACHE_ENABLED  << `ISA_EXT_DCACHE) \
                 | (`L2_ENABLED      << `ISA_EXT_L2CACHE) \
                 | (`L3_ENABLED      << `ISA_EXT_L3CACHE) \
                 | (`LMEM_ENABLED    << `ISA_EXT_LMEM) \
-                | (`EXT_ZICOND_ENABLED << `ISA_EXT_ZICOND)
+                | (`EXT_ZICOND_ENABLED << `ISA_EXT_ZICOND) \
+                | (`EXT_TCU_ENABLED << `ISA_EXT_TCU) \
 
 `define MISA_STD  (`EXT_A_ENABLED <<  0) /* A - Atomic Instructions extension */ \
                 | (0 <<  1) /* B - Tentatively reserved for Bit operations extension */ \

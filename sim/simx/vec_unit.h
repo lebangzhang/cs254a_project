@@ -22,13 +22,9 @@ public:
 
   struct ExeTraceData : public ITraceData {
     using Ptr = std::shared_ptr<ExeTraceData>;
+    VpuOpType vpu_op;
     uint32_t vl = 0;
     uint32_t vlmul = 0;
-  };
-
-  struct ExeRet {
-    VpuType vpu_type;
-    bool rd_write;
   };
 
   struct PerfStats {
@@ -56,11 +52,7 @@ public:
   std::vector<SimPort<instr_trace_t*>> Inputs;
   std::vector<SimPort<instr_trace_t*>> Outputs;
 
-  VecUnit(const SimContext& ctx,
-          const char* name,
-          const Arch& arch,
-          Core* core);
-
+  VecUnit(const SimContext& ctx, const char* name, const Arch& arch, Core* core);
   ~VecUnit();
 
   void reset();
@@ -77,7 +69,9 @@ public:
 
   void store(const Instr &instr, uint32_t wid, uint32_t tid, const std::vector<reg_data_t>& rs1_data, const std::vector<reg_data_t>& rs2_data, MemTraceData* trace_data);
 
-  ExeRet execute(const Instr &instr, uint32_t wid, uint32_t tid, const std::vector<reg_data_t>& rs1_data, const std::vector<reg_data_t>& rs2_data, std::vector<reg_data_t>& rd_data, ExeTraceData* trace_data);
+  void configure(const Instr &instr, uint32_t wid, uint32_t tid, const std::vector<reg_data_t>& rs1_data, const std::vector<reg_data_t>& rs2_data, std::vector<reg_data_t>& rd_data, ExeTraceData* trace_data);
+
+  void execute(const Instr &instr, uint32_t wid, uint32_t tid, const std::vector<reg_data_t>& rs1_data, std::vector<reg_data_t>& rd_data, ExeTraceData* trace_data);
 
   const PerfStats& perf_stats() const;
 

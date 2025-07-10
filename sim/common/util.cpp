@@ -12,6 +12,8 @@
 // limitations under the License.
 
 #include "util.h"
+#include <fstream>
+#include <sstream>
 #include <string.h>
 
 using namespace vortex;
@@ -38,4 +40,27 @@ void vortex::aligned_free(void *ptr) {
   // retreive the stored unaligned address and use it to free the allocation
   void* unaligned_addr = ((void**)ptr)[-1];
   free(unaligned_addr);
+}
+
+std::string vortex::resolve_file_path(const std::string& filename, const std::string& searchPaths) {
+  std::ifstream ifs(filename);
+  if (!ifs) {
+    std::stringstream ss(searchPaths);
+    std::string path;
+    while (std::getline(ss, path, ',')) {
+      if (!path.empty()) {
+        std::string filePath = path + "/" + filename;
+        std::ifstream ifs(filePath);
+        if (ifs)
+          return filePath;
+      }
+    }
+  }
+  return filename;
+}
+
+std::string vortex::to_hex_str(uint32_t v) {
+  std::ostringstream oss;
+  oss << "0x" << std::hex << v;
+  return oss.str();
 }

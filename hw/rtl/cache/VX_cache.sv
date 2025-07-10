@@ -121,12 +121,12 @@ module VX_cache import VX_gpu_pkg::*; #(
 
     wire [NUM_BANKS-1:0] per_bank_core_req_fire;
 
-    VX_cache_flush #(
+    VX_cache_init #(
         .NUM_REQS  (NUM_REQS),
         .NUM_BANKS (NUM_BANKS),
         .TAG_WIDTH (TAG_WIDTH),
         .BANK_SEL_LATENCY (`TO_OUT_BUF_REG(REQ_XBAR_BUF)) // request xbar latency
-    ) flush_unit (
+    ) cache_init (
         .clk             (clk),
         .reset           (reset),
         .core_bus_in_if  (core_bus_if),
@@ -327,7 +327,7 @@ module VX_cache import VX_gpu_pkg::*; #(
         .PERF_CTR_BITS (PERF_CTR_BITS),
         .ARBITER     ("R"),
         .OUT_BUF     (REQ_XBAR_BUF)
-    ) req_xbar (
+    ) core_req_xbar (
         .clk       (clk),
         .reset     (reset),
     `ifdef PERF_ENABLE
@@ -450,7 +450,7 @@ module VX_cache import VX_gpu_pkg::*; #(
         .NUM_OUTPUTS (NUM_REQS),
         .DATAW       (CORE_RSP_DATAW),
         .ARBITER     ("R")
-    ) rsp_xbar (
+    ) core_rsp_xbar (
         .clk       (clk),
         .reset     (reset),
         `UNUSED_PIN (collisions),

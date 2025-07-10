@@ -28,7 +28,7 @@ module VX_commit import VX_gpu_pkg::*; #(
     VX_commit_sched_if.master commit_sched_if
 );
     `UNUSED_SPARAM (INSTANCE_ID)
-    localparam DATAW = UUID_WIDTH + VL_WIDTH + NW_WIDTH + SIMD_IDX_W + `SIMD_WIDTH + PC_BITS + 1 + NR_BITS + `SIMD_WIDTH * `XLEN + 1 + 1;
+    localparam OUT_DATAW = $bits(commit_t);
     localparam COMMIT_SIZEW = `CLOG2(`SIMD_WIDTH + 1);
     localparam COMMIT_ALL_SIZEW = COMMIT_SIZEW + `ISSUE_WIDTH - 1;
 
@@ -44,7 +44,7 @@ module VX_commit import VX_gpu_pkg::*; #(
     for (genvar i = 0; i < `ISSUE_WIDTH; ++i) begin : g_commit_arbs
 
         wire [NUM_EX_UNITS-1:0]            valid_in;
-        wire [NUM_EX_UNITS-1:0][DATAW-1:0] data_in;
+        wire [NUM_EX_UNITS-1:0][OUT_DATAW-1:0] data_in;
         wire [NUM_EX_UNITS-1:0]            ready_in;
 
         for (genvar j = 0; j < NUM_EX_UNITS; ++j) begin : g_data_in
@@ -55,7 +55,7 @@ module VX_commit import VX_gpu_pkg::*; #(
 
         VX_stream_arb #(
             .NUM_INPUTS (NUM_EX_UNITS),
-            .DATAW      (DATAW),
+            .DATAW      (OUT_DATAW),
             .ARBITER    ("P"),
             .OUT_BUF    (1)
         ) commit_arb (
@@ -172,7 +172,7 @@ module VX_commit import VX_gpu_pkg::*; #(
         assign writeback_if[i].data.data = commit_arb_if[i].data.data;
         assign writeback_if[i].data.sop  = commit_arb_if[i].data.sop;
         assign writeback_if[i].data.eop  = commit_arb_if[i].data.eop;
-        assign commit_arb_if[i].ready = 1;
+        assign commit_arb_if[i].ready    = 1;
     end
 
 `ifdef DBG_TRACE_PIPELINE
@@ -180,8 +180,8 @@ module VX_commit import VX_gpu_pkg::*; #(
         for (genvar j = 0; j < NUM_EX_UNITS; ++j) begin : g_j
             always @(posedge clk) begin
                 if (commit_if[j * `ISSUE_WIDTH + i].valid && commit_if[j * `ISSUE_WIDTH + i].ready) begin
-                    `TRACE(1, ("%t: %s: wid=%0d, sid=%0d, PC=0x%0h, ex=", $time, INSTANCE_ID, commit_if[j * `ISSUE_WIDTH + i].data.wid, commit_if[j * `ISSUE_WIDTH + i].data.sid, {commit_if[j * `ISSUE_WIDTH + i].data.PC, 1'b0}))
-                    trace_ex_type(1, j);
+                    `TRACE(1, ("%t: %s: wid=%0d, sid=%0d, PC=0x%0h, ex=", $time, INSTANCE_ID, commit_if[j * `ISSUE_WIDTH + i].data.wid, commit_if[j * `ISSUE_WIDTH + i].data.sid, to_fullPC(commit_if[j * `ISSUE_WIDTH + i].data.PC)))
+                    VX_trace_pkg::trace_ex_type(1, j);
                     `TRACE(1, (", tmask=%b, wb=%0d, rd=%0d, sop=%b, eop=%b, data=", commit_if[j * `ISSUE_WIDTH + i].data.tmask, commit_if[j * `ISSUE_WIDTH + i].data.wb, commit_if[j * `ISSUE_WIDTH + i].data.rd, commit_if[j * `ISSUE_WIDTH + i].data.sop, commit_if[j * `ISSUE_WIDTH + i].data.eop))
                     `TRACE_ARRAY1D(1, "0x%0h", commit_if[j * `ISSUE_WIDTH + i].data.data, `SIMD_WIDTH)
                     `TRACE(1, (" (#%0d)\n", commit_if[j * `ISSUE_WIDTH + i].data.uuid))

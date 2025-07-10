@@ -57,9 +57,6 @@ public:
   bool        wb;
 
   //--
-  int32_t     vopc;
-
-  //--
   RegOpd      dst_reg;
 
   //--
@@ -69,16 +66,7 @@ public:
   FUType     fu_type;
 
   //--
-  union {
-    uint32_t unit_type;
-    LsuType  lsu_type;
-    AluType  alu_type;
-    FpuType  fpu_type;
-    SfuType  sfu_type;
-  #if defined(EXT_V_ENABLE) || defined(EXT_ARA2_ENABLE)
-    VpuType  vpu_type;
-  #endif
-  };
+  OpType     op_type;
 
   ITraceData::Ptr data;
 
@@ -102,7 +90,7 @@ public:
     , dst_reg({RegType::None, 0})
     , src_regs(NUM_SRC_REGS, {RegType::None, 0})
     , fu_type(FUType::ALU)
-    , unit_type(0)
+    , op_type({})
     , data(nullptr)
     , pid(-1)
     , sop(true)
@@ -124,7 +112,7 @@ public:
     , dst_reg(rhs.dst_reg)
     , src_regs(rhs.src_regs)
     , fu_type(rhs.fu_type)
-    , unit_type(rhs.unit_type)
+    , op_type(rhs.op_type)
     , data(rhs.data)
     , pid(rhs.pid)
     , sop(rhs.sop)
@@ -172,5 +160,7 @@ public:
 private:
   bool log_once_;
 };
+
+using TraceArbiter = TxArbiter<instr_trace_t*>;
 
 }

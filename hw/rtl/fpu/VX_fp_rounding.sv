@@ -75,4 +75,5 @@ module VX_fp_rounding import VX_gpu_pkg::*, VX_fpu_pkg::*; #(
                                                               : sign_i;
 
 endmodule
+
 `endif

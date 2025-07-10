@@ -118,4 +118,5 @@ module VX_fpu_ncp import VX_gpu_pkg::*, VX_fpu_pkg::*; #(
     `FPU_MERGE_FFLAGS(fflags, fflags_out, mask_out, NUM_LANES);
 
 endmodule
+
 `endif

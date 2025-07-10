@@ -20,12 +20,11 @@ interface VX_result_if import VX_gpu_pkg::*; #(
 
     typedef struct packed {
         logic [UUID_WIDTH-1:0]      uuid;
-        logic [VL_WIDTH-1:0]        lid;
         logic [NW_WIDTH-1:0]        wid;
         logic [NUM_LANES-1:0]       tmask;
         logic [PC_BITS-1:0]         PC;
         logic                       wb;
-        logic [NR_BITS-1:0]         rd;
+        logic [NUM_REGS_BITS-1:0]   rd;
         logic [NUM_LANES-1:0][`XLEN-1:0] data;
         logic [PID_WIDTH-1:0]       pid;
         logic                       sop;

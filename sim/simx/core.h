@@ -24,22 +24,14 @@
 #include "scoreboard.h"
 
 
-// TOFIX : This is definitely not correct, we need to fix this 
+// TOFIX : This is definitely not correct, we need to fix this
 
-#ifdef EXT_V_ENABLE
-    #include "voperands.h"
-    #include "vec_unit.h"
+#if definef(EXT_V_ENABLE)
+  #include "voperands.h"
+#elif definef(EXT_ARA2_ENABLE)
+  #include "ara_operands.h"
 #else
-    #ifdef EXT_ARA2_ENABLE
-        #include "ara_operands.h"
-        #include "ara_unit.h"
-    #else 
-        #ifdef DISABLE_OPC
-            #include "operands_old.h"
-        #else
-            #include "operands.h"
-        #endif
-    #endif
+  #include "operands.h"
 #endif
 
 #include "dispatcher.h"
@@ -52,8 +44,6 @@ namespace vortex {
 class Socket;
 class Arch;
 class DCRS;
-
-using TraceArbiter = TxArbiter<instr_trace_t*>;
 
 class Core : public SimObject<Core> {
 public:
@@ -74,6 +64,9 @@ public:
   #if defined(EXT_V_ENABLE) || defined(EXT_ARA2_ENABLE)
     uint64_t vinstrs;
     uint64_t scrb_vpu;
+  #endif
+  #ifdef EXT_TCU_ENABLE
+    uint64_t scrb_tcu;
   #endif
     uint64_t ifetches;
     uint64_t loads;
@@ -98,6 +91,9 @@ public:
     #if defined(EXT_V_ENABLE) || defined(EXT_ARA2_ENABLE)
       , vinstrs(0)
       , scrb_vpu(0)
+    #endif
+    #ifdef EXT_TCU_ENABLE
+      , scrb_tcu(0)
     #endif
       , ifetches(0)
       , loads(0)
@@ -167,17 +163,33 @@ public:
     return emulator_.dcache_write(data, addr, size);
   }
 
+#ifdef EXT_TCU_ENABLE
+  TensorUnit::Ptr& tensor_unit() {
+    return tensor_unit_;
+  }
+#endif
+
 #ifdef EXT_V_ENABLE
   VecUnit::Ptr& vec_unit() {
     return vec_unit_;
   }
-#endif 
+#endif
+
 #ifdef EXT_ARA2_ENABLE
   AraUnit::Ptr& ara_unit() {
     return ara_unit_;
   }
 #endif
 
+  auto& trace_pool() {
+    return trace_pool_;
+  }
+
+  const PerfStats& perf_stats() const;
+
+  void dcache_write(const void* data, uint64_t addr, uint32_t size) {
+    return emulator_.dcache_write(data, addr, size);
+  }
 
   auto& trace_pool() {
     return trace_pool_;
@@ -206,6 +218,10 @@ private:
 #ifdef EXT_ARA2_ENABLE
   AraUnit::Ptr ara_unit_;
 #endif
+#ifdef EXT_TCU_ENABLE
+  TensorUnit::Ptr tensor_unit_;
+#endif
+
   Emulator emulator_;
 
   std::vector<IBuffer> ibuffers_;

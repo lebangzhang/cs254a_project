@@ -40,10 +40,9 @@ module VX_issue_top import VX_gpu_pkg::*; #(
     input wire [UUID_WIDTH-1:0]             writeback_uuid[`ISSUE_WIDTH],
     input wire [ISSUE_WIS_W-1:0]            writeback_wis[`ISSUE_WIDTH],
     input wire [SIMD_IDX_W-1:0]             writeback_sid[`ISSUE_WIDTH],
-    input wire [VL_WIDTH-1:0]               writeback_lid[`ISSUE_WIDTH],
     input wire [`SIMD_WIDTH-1:0]            writeback_tmask[`ISSUE_WIDTH],
     input wire [PC_BITS-1:0]                writeback_PC[`ISSUE_WIDTH],
-    input wire [NR_BITS-1:0]                writeback_rd[`ISSUE_WIDTH],
+    input wire [NUM_REGS_BITS-1:0]          writeback_rd[`ISSUE_WIDTH],
     input wire [`SIMD_WIDTH-1:0][`XLEN-1:0] writeback_data[`ISSUE_WIDTH],
     input wire                              writeback_sop[`ISSUE_WIDTH],
     input wire                              writeback_eop[`ISSUE_WIDTH],
@@ -52,23 +51,26 @@ module VX_issue_top import VX_gpu_pkg::*; #(
     output wire [UUID_WIDTH-1:0]            dispatch_uuid[NUM_EX_UNITS * `ISSUE_WIDTH],
     output wire [ISSUE_WIS_W-1:0]           dispatch_wis[NUM_EX_UNITS * `ISSUE_WIDTH],
     output wire [SIMD_IDX_W-1:0]            dispatch_sid[NUM_EX_UNITS * `ISSUE_WIDTH],
-    output wire [VL_WIDTH-1:0]              dispatch_lid[NUM_EX_UNITS * `ISSUE_WIDTH],
     output wire [`SIMD_WIDTH-1:0]           dispatch_tmask[NUM_EX_UNITS * `ISSUE_WIDTH],
     output wire [PC_BITS-1:0]               dispatch_PC[NUM_EX_UNITS * `ISSUE_WIDTH],
     output wire [INST_ALU_BITS-1:0]         dispatch_op_type[NUM_EX_UNITS * `ISSUE_WIDTH],
     output op_args_t                        dispatch_op_args[NUM_EX_UNITS * `ISSUE_WIDTH],
     output wire                             dispatch_wb[NUM_EX_UNITS * `ISSUE_WIDTH],
-    output wire [NR_BITS-1:0]               dispatch_rd[NUM_EX_UNITS * `ISSUE_WIDTH],
+    output wire [NUM_REGS_BITS-1:0]         dispatch_rd[NUM_EX_UNITS * `ISSUE_WIDTH],
     output wire [`SIMD_WIDTH-1:0][`XLEN-1:0] dispatch_rs1_data[NUM_EX_UNITS * `ISSUE_WIDTH],
     output wire [`SIMD_WIDTH-1:0][`XLEN-1:0] dispatch_rs2_data[NUM_EX_UNITS * `ISSUE_WIDTH],
     output wire [`SIMD_WIDTH-1:0][`XLEN-1:0] dispatch_rs3_data[NUM_EX_UNITS * `ISSUE_WIDTH],
     output wire                             dispatch_sop[NUM_EX_UNITS * `ISSUE_WIDTH],
     output wire                             dispatch_eop[NUM_EX_UNITS * `ISSUE_WIDTH],
-    input wire                              dispatch_ready[NUM_EX_UNITS * `ISSUE_WIDTH]
+    input wire                              dispatch_ready[NUM_EX_UNITS * `ISSUE_WIDTH],
+
+    output wire [ISSUE_WIS_W-1:0]           issue_sched_wis[`ISSUE_WIDTH],
+    output wire                             issue_sched_valid[`ISSUE_WIDTH]
 );
     VX_decode_if    decode_if();
     VX_dispatch_if  dispatch_if[NUM_EX_UNITS * `ISSUE_WIDTH]();
     VX_writeback_if writeback_if[`ISSUE_WIDTH]();
+    VX_issue_sched_if issue_sched_if[`ISSUE_WIDTH]();
 
 `ifdef EXT_V_ENABLE
     VX_vpu_states_if vpu_states_if();
@@ -98,7 +100,6 @@ module VX_issue_top import VX_gpu_pkg::*; #(
         assign writeback_if[i].data.uuid = writeback_uuid[i];
         assign writeback_if[i].data.wis = writeback_wis[i];
         assign writeback_if[i].data.sid = writeback_sid[i];
-        assign writeback_if[i].data.lid = writeback_lid[i];
         assign writeback_if[i].data.tmask = writeback_tmask[i];
         assign writeback_if[i].data.PC = writeback_PC[i];
         assign writeback_if[i].data.rd = writeback_rd[i];
@@ -112,7 +113,6 @@ module VX_issue_top import VX_gpu_pkg::*; #(
         assign dispatch_uuid[i] = dispatch_if[i].data.uuid;
         assign dispatch_wis[i] = dispatch_if[i].data.wis;
         assign dispatch_sid[i] = dispatch_if[i].data.sid;
-        assign dispatch_lid[i] = dispatch_if[i].data.lid;
         assign dispatch_tmask[i] = dispatch_if[i].data.tmask;
         assign dispatch_PC[i] = dispatch_if[i].data.PC;
         assign dispatch_op_type[i] = dispatch_if[i].data.op_type;
@@ -125,6 +125,11 @@ module VX_issue_top import VX_gpu_pkg::*; #(
         assign dispatch_sop[i] = dispatch_if[i].data.sop;
         assign dispatch_eop[i] = dispatch_if[i].data.eop;
         assign dispatch_if[i].ready = dispatch_ready[i];
+    end
+
+    for (genvar i = 0; i < `ISSUE_WIDTH; ++i) begin : g_issue_sched_if
+        assign issue_sched_wis[i] = issue_sched_if[i].wis;
+        assign issue_sched_valid[i] = issue_sched_if[i].valid;
     end
 
 `ifdef PERF_ENABLE
@@ -155,7 +160,8 @@ module VX_issue_top import VX_gpu_pkg::*; #(
 
         .decode_if      (decode_if),
         .writeback_if   (writeback_if),
-        .dispatch_if    (dispatch_if)
+        .dispatch_if    (dispatch_if),
+        .issue_sched_if (issue_sched_if)
     );
 
 endmodule

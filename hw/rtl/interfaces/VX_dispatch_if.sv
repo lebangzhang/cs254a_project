@@ -14,27 +14,9 @@
 `include "VX_define.vh"
 
 interface VX_dispatch_if import VX_gpu_pkg::*; ();
-    // warning: this layout should not be modified without updating VX_dispatch_unit!!!
-    typedef struct packed {
-        logic [UUID_WIDTH-1:0]              uuid;
-        logic [VL_WIDTH-1:0]                lid;
-        logic [ISSUE_WIS_W-1:0]             wis;
-        logic [SIMD_IDX_W-1:0]              sid;
-        logic [`SIMD_WIDTH-1:0]             tmask;
-        logic [PC_BITS-1:0]                 PC;
-        logic [INST_ALU_BITS-1:0]           op_type;
-        op_args_t                           op_args;
-        logic                               wb;
-        logic [NR_BITS-1:0]                 rd;
-        logic [`SIMD_WIDTH-1:0][`XLEN-1:0]  rs1_data;
-        logic [`SIMD_WIDTH-1:0][`XLEN-1:0]  rs2_data;
-        logic [`SIMD_WIDTH-1:0][`XLEN-1:0]  rs3_data;
-        logic                               sop;
-        logic                               eop;
-    } data_t;
 
     logic  valid;
-    data_t data;
+    dispatch_t data;
     logic  ready;
 
     modport master (

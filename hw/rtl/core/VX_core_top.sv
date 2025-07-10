@@ -25,8 +25,8 @@ module VX_core_top import VX_gpu_pkg::*; #(
     input wire                              reset,
 
     input wire                              dcr_write_valid,
-    input wire [VX_DCR_ADDR_WIDTH-1:0]     dcr_write_addr,
-    input wire [VX_DCR_DATA_WIDTH-1:0]     dcr_write_data,
+    input wire [VX_DCR_ADDR_WIDTH-1:0]      dcr_write_addr,
+    input wire [VX_DCR_DATA_WIDTH-1:0]      dcr_write_data,
 
     output wire [DCACHE_NUM_REQS-1:0]       dcache_req_valid,
     output wire [DCACHE_NUM_REQS-1:0]       dcache_req_rw,
@@ -57,12 +57,12 @@ module VX_core_top import VX_gpu_pkg::*; #(
 
 `ifdef GBAR_ENABLE
     output wire                             gbar_req_valid,
-    output wire [NB_WIDTH-1:0]             gbar_req_id,
-    output wire [NC_WIDTH-1:0]             gbar_req_size_m1,
-    output wire [NC_WIDTH-1:0]             gbar_req_core_id,
+    output wire [NB_WIDTH-1:0]              gbar_req_id,
+    output wire [NC_WIDTH-1:0]              gbar_req_size_m1,
+    output wire [NC_WIDTH-1:0]              gbar_req_core_id,
     input wire                              gbar_req_ready,
     input wire                              gbar_rsp_valid,
-    input wire [NB_WIDTH-1:0]              gbar_rsp_id,
+    input wire [NB_WIDTH-1:0]               gbar_rsp_id,
 `endif
     // Status
     output wire                             busy

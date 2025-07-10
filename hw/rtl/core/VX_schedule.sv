@@ -31,6 +31,7 @@ module VX_schedule import VX_gpu_pkg::*; #(
     VX_warp_ctl_if.slave    warp_ctl_if,
     VX_branch_ctl_if.slave  branch_ctl_if [`NUM_ALU_BLOCKS],
     VX_decode_sched_if.slave decode_sched_if,
+    VX_issue_sched_if.slave issue_sched_if[`ISSUE_WIDTH],
     VX_commit_sched_if.slave commit_sched_if,
 
     // outputs
@@ -72,10 +73,10 @@ module VX_schedule import VX_gpu_pkg::*; #(
     wire schedule_if_fire = schedule_if.valid && schedule_if.ready;
 
     // branch
-    wire [`NUM_ALU_BLOCKS-1:0]                  branch_valid;
-    wire [`NUM_ALU_BLOCKS-1:0][NW_WIDTH-1:0]   branch_wid;
-    wire [`NUM_ALU_BLOCKS-1:0]                  branch_taken;
-    wire [`NUM_ALU_BLOCKS-1:0][PC_BITS-1:0]    branch_dest;
+    wire [`NUM_ALU_BLOCKS-1:0]               branch_valid;
+    wire [`NUM_ALU_BLOCKS-1:0][NW_WIDTH-1:0] branch_wid;
+    wire [`NUM_ALU_BLOCKS-1:0]               branch_taken;
+    wire [`NUM_ALU_BLOCKS-1:0][PC_BITS-1:0]  branch_dest;
     for (genvar i = 0; i < `NUM_ALU_BLOCKS; ++i) begin : g_branch_init
         assign branch_valid[i] = branch_ctl_if[i].valid;
         assign branch_wid[i]   = branch_ctl_if[i].wid;
@@ -204,7 +205,7 @@ module VX_schedule import VX_gpu_pkg::*; #(
 
         // advance PC
         if (schedule_if_fire) begin
-            warp_pcs_n[schedule_if.data.wid] = schedule_if.data.PC + PC_BITS'(2);
+            warp_pcs_n[schedule_if.data.wid] = schedule_if.data.PC + from_fullPC(`XLEN'(4));
         end
     end
 
@@ -226,7 +227,7 @@ module VX_schedule import VX_gpu_pkg::*; #(
             wspawn.valid    <=  0;
 
             // activate first warp
-            warp_pcs[0]     <= base_dcrs.startup_addr[1 +: PC_BITS];
+            warp_pcs[0]     <= from_fullPC(base_dcrs.startup_addr);
             active_warps[0] <= 1;
             thread_masks[0][0] <= 1;
             is_single_warp  <= 1;
@@ -362,13 +363,17 @@ module VX_schedule import VX_gpu_pkg::*; #(
     wire [`NUM_WARPS-1:0] pending_warp_alm_empty;
 
     for (genvar i = 0; i < `NUM_WARPS; ++i) begin : g_pending_sizes
+
+        localparam isw = wid_to_isw(i);
+        localparam wis = wid_to_wis(i);
+
         VX_pending_size #(
             .SIZE      (4096),
             .ALM_EMPTY (1)
         ) counter (
             .clk       (clk),
             .reset     (reset),
-            .incr      (schedule_if_fire && (schedule_if.data.wid == NW_WIDTH'(i))),
+            .incr      (issue_sched_if[isw].valid && (issue_sched_if[isw].wis == wis)),
             .decr      (commit_sched_if.committed_warps[i]),
             .empty     (pending_warp_empty[i]),
             .alm_empty (pending_warp_alm_empty[i]),
@@ -428,6 +433,14 @@ module VX_schedule import VX_gpu_pkg::*; #(
 
     assign sched_perf.idles = perf_sched_idles;
     assign sched_perf.stalls = perf_sched_stalls;
+`endif
+
+`ifdef DBG_TRACE_PIPELINE
+    always @(posedge clk) begin
+        if (schedule_fire) begin
+            `TRACE(1, ("%t: %s: wid=%0d, PC=0x%0h, tmask=%b (#%0d)\n", $time, INSTANCE_ID, schedule_wid, to_fullPC(schedule_pc), schedule_tmask, instr_uuid))
+        end
+    end
 `endif
 
 endmodule

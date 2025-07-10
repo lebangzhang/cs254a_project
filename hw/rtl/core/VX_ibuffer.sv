@@ -33,21 +33,23 @@ module VX_ibuffer import VX_gpu_pkg::*; #(
     `UNUSED_SPARAM (INSTANCE_ID)
     `UNUSED_PARAM (ISSUE_ID)
 
-    localparam NUM_OPDS = NUM_SRC_OPDS + 1;
-    localparam DATAW = UUID_WIDTH + `NUM_THREADS + PC_BITS + EX_BITS + INST_OP_BITS + INST_ARGS_BITS + NUM_OPDS + (REG_IDX_BITS * NUM_OPDS);
+    localparam OUT_DATAW = $bits(ibuffer_t);
+
+    wire [ISSUE_WIS_W-1:0] decode_wis = wid_to_wis(decode_if.data.wid);
 
     wire [PER_ISSUE_WARPS-1:0] ibuf_ready_in;
-    assign decode_if.ready = ibuf_ready_in[decode_if.data.wid];
+    assign decode_if.ready = ibuf_ready_in[decode_wis];
 
     for (genvar w = 0; w < PER_ISSUE_WARPS; ++w) begin : g_instr_bufs
+        VX_ibuffer_if uop_sequencer_if();
         VX_elastic_buffer #(
-            .DATAW   (DATAW),
+            .DATAW   (OUT_DATAW),
             .SIZE    (`IBUF_SIZE),
             .OUT_REG (1)
         ) instr_buf (
             .clk      (clk),
             .reset    (reset),
-            .valid_in (decode_if.valid && decode_if.data.wid == ISSUE_WIS_W'(w)),
+            .valid_in (decode_if.valid && decode_wis == ISSUE_WIS_W'(w)),
             .data_in  ({
                 decode_if.data.uuid,
                 decode_if.data.tmask,
@@ -63,13 +65,20 @@ module VX_ibuffer import VX_gpu_pkg::*; #(
                 decode_if.data.rs3
             }),
             .ready_in (ibuf_ready_in[w]),
-            .valid_out(ibuffer_if[w].valid),
-            .data_out (ibuffer_if[w].data),
-            .ready_out(ibuffer_if[w].ready)
+            .valid_out(uop_sequencer_if.valid),
+            .data_out (uop_sequencer_if.data),
+            .ready_out(uop_sequencer_if.ready)
         );
     `ifndef L1_ENABLE
-        assign decode_if.ibuf_pop[w] = ibuffer_if[w].valid && ibuffer_if[w].ready;
+        assign decode_if.ibuf_pop[w] = uop_sequencer_if.valid && uop_sequencer_if.ready;
     `endif
+
+        VX_uop_sequencer uop_sequencer (
+            .clk       (clk),
+            .reset     (reset),
+            .input_if  (uop_sequencer_if),
+            .output_if (ibuffer_if[w])
+        );
     end
 
 `ifdef PERF_ENABLE

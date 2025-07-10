@@ -13,26 +13,10 @@
 
 `include "VX_define.vh"
 
-interface VX_commit_if import VX_gpu_pkg::*; #(
-    parameter NUM_LANES = `SIMD_WIDTH
-) ();
-
-    typedef struct packed {
-        logic [UUID_WIDTH-1:0]      uuid;
-        logic [VL_WIDTH-1:0]        lid;
-        logic [NW_WIDTH-1:0]        wid;
-        logic [SIMD_IDX_W-1:0]      sid;
-        logic [NUM_LANES-1:0]       tmask;
-        logic [PC_BITS-1:0]         PC;
-        logic                       wb;
-        logic [NR_BITS-1:0]         rd;
-        logic [NUM_LANES-1:0][`XLEN-1:0] data;
-        logic                       sop;
-        logic                       eop;
-    } data_t;
+interface VX_commit_if import VX_gpu_pkg::*; ();
 
     logic  valid;
-    data_t data;
+    commit_t data;
     logic  ready;
 
     modport master (

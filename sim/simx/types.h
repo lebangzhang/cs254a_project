@@ -18,6 +18,7 @@
 #include <queue>
 #include <vector>
 #include <unordered_map>
+#include <variant>
 #include <util.h>
 #include <stringutil.h>
 #include <VX_config.h>
@@ -31,6 +32,7 @@
 namespace vortex {
 
 typedef uint8_t Byte;
+
 #if (XLEN == 32)
 typedef uint32_t Word;
 typedef int32_t  WordI;
@@ -63,6 +65,13 @@ union reg_data_t {
   uint64_t u64;
   int32_t  i32;
   int64_t  i64;
+};
+
+///////////////////////////////////////////////////////////////////////////////
+
+struct op_string_t {
+  std::string op;
+  std::string arg;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -157,21 +166,145 @@ inline std::ostream &operator<<(std::ostream &os, const FUType& type) {
 ///////////////////////////////////////////////////////////////////////////////
 
 enum class AluType {
-  ARITH,
-  BRANCH,
-  SYSCALL,
-  IMUL,
-  IDIV
+  LUI,
+  AUIPC,
+  ADD,
+  SUB,
+  SLL,
+  SRL,
+  SRA,
+  SLT,
+  SLTU,
+  AND,
+  OR,
+  XOR,
+  CZERO
+};
+
+struct IntrAluArgs {
+  uint32_t is_imm : 1;
+  uint32_t is_w : 1;
+  uint32_t imm;
 };
 
 inline std::ostream &operator<<(std::ostream &os, const AluType& type) {
   switch (type) {
-  case AluType::ARITH:   os << "ARITH"; break;
-  case AluType::BRANCH:  os << "BRANCH"; break;
-  case AluType::SYSCALL: os << "SYSCALL"; break;
-  case AluType::IMUL:    os << "IMUL"; break;
-  case AluType::IDIV:    os << "IDIV"; break;
-  default: assert(false);
+  case AluType::LUI:     os << "LUI"; break;
+  case AluType::AUIPC:   os << "AUIPC"; break;
+  case AluType::ADD:     os << "ADD"; break;
+  case AluType::SUB:     os << "SUB"; break;
+  case AluType::SLL:     os << "SLL"; break;
+  case AluType::SRL:     os << "SRL"; break;
+  case AluType::SRA:     os << "SRA"; break;
+  case AluType::SLT:     os << "SLT"; break;
+  case AluType::SLTU:    os << "SLTU"; break;
+  case AluType::AND:     os << "AND"; break;
+  case AluType::OR:      os << "OR"; break;
+  case AluType::XOR:     os << "XOR"; break;
+  case AluType::CZERO:   os << "CZERO"; break;
+  default:
+    assert(false);
+  }
+  return os;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+enum class BrType {
+  BR,
+  JAL,
+  JALR,
+  SYS,
+};
+
+struct IntrBrArgs {
+  uint32_t cmp : 3;
+  uint32_t offset;
+};
+
+inline std::ostream &operator<<(std::ostream &os, const BrType& type) {
+  switch (type) {
+  case BrType::BR:   os << "BR"; break;
+  case BrType::JAL:  os << "JAL"; break;
+  case BrType::JALR: os << "JALR"; break;
+  case BrType::SYS:  os << "SYS"; break;
+  default:
+    assert(false);
+  }
+  return os;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+enum class VoteType {
+  ALL,
+  ANY,
+  UNI,
+  BAL
+};
+
+inline std::ostream &operator<<(std::ostream &os, const VoteType& vote) {
+  switch (vote) {
+  case VoteType::ALL: os << "ALL"; break;
+  case VoteType::ANY: os << "ANY"; break;
+  case VoteType::UNI: os << "UNI"; break;
+  case VoteType::BAL: os << "BAL"; break;
+  default:
+    assert(false);
+  }
+  return os;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+enum class ShflType {
+  UP,
+  DOWN,
+  BFLY,
+  IDX
+};
+
+inline std::ostream &operator<<(std::ostream &os, const ShflType& shfl) {
+  switch (shfl) {
+  case ShflType::UP:   os << "UP"; break;
+  case ShflType::DOWN: os << "DOWN"; break;
+  case ShflType::BFLY: os << "BFLY"; break;
+  case ShflType::IDX:  os << "IDX"; break;
+  default:
+    assert(false);
+  }
+  return os;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+enum class MdvType {
+  MUL,
+  MULHU,
+  MULH,
+  MULHSU,
+  DIV,
+  DIVU,
+  REM,
+  REMU
+};
+
+struct IntrMdvArgs {
+  uint32_t is_w : 1;
+};
+
+inline std::ostream &operator<<(std::ostream &os, const MdvType& type) {
+  switch (type) {
+  case MdvType::MUL:    os << "MUL"; break;
+  case MdvType::MULHU:  os << "MULHU"; break;
+  case MdvType::MULH:   os << "MULH"; break;
+  case MdvType::MULHSU: os << "MULHSU"; break;
+  case MdvType::DIV:    os << "DIV"; break;
+  case MdvType::DIVU:   os << "DIVU"; break;
+  case MdvType::REM:    os << "REM"; break;
+  case MdvType::REMU:   os << "REMU"; break;
+  default:
+    assert(false);
   }
   return os;
 }
@@ -181,26 +314,401 @@ inline std::ostream &operator<<(std::ostream &os, const AluType& type) {
 enum class LsuType {
   LOAD,
   STORE,
-#if defined(EXT_V_ENABLE) || defined(EXT_ARA2_ENABLE)
-  VLOAD,
-  VSTORE,
-#endif
   FENCE
+};
+
+struct IntrLsuArgs {
+  uint32_t width : 3;
+  uint32_t is_float : 1;
+  uint32_t offset;
 };
 
 inline std::ostream &operator<<(std::ostream &os, const LsuType& type) {
   switch (type) {
-  case LsuType::LOAD:  os << "LOAD"; break;
-  case LsuType::STORE: os << "STORE"; break;
-#if defined(EXT_V_ENABLE) || defined(EXT_ARA2_ENABLE)
-  case LsuType::VLOAD: os << "VLOAD"; break;
-  case LsuType::VSTORE:os << "VSTORE"; break;
-#endif
-  case LsuType::FENCE: os << "FENCE"; break;
-  default: assert(false);
+  case LsuType::LOAD:   os << "LOAD"; break;
+  case LsuType::STORE:  os << "STORE"; break;
+  case LsuType::FENCE:  os << "FENCE"; break;
+  default:
+    assert(false);
   }
   return os;
 }
+
+///////////////////////////////////////////////////////////////////////////////
+
+enum class AmoType {
+  LR,
+  SC,
+  AMOADD,
+  AMOSWAP,
+  AMOAND,
+  AMOOR,
+  AMOXOR,
+  AMOMIN,
+  AMOMAX,
+  AMOMINU,
+  AMOMAXU
+};
+
+struct IntrAmoArgs {
+  uint32_t width : 3;
+  uint32_t aq : 1;
+  uint32_t rl : 1;
+};
+
+inline std::ostream &operator<<(std::ostream &os, const AmoType& type) {
+  switch (type) {
+  case AmoType::LR:      os << "LR"; break;
+  case AmoType::SC:      os << "SC"; break;
+  case AmoType::AMOADD:  os << "AMOADD"; break;
+  case AmoType::AMOSWAP: os << "AMOSWAP"; break;
+  case AmoType::AMOAND:  os << "AMOAND"; break;
+  case AmoType::AMOOR:   os << "AMOOR"; break;
+  case AmoType::AMOXOR:  os << "AMOXOR"; break;
+  case AmoType::AMOMIN:  os << "AMOMIN"; break;
+  case AmoType::AMOMAX:  os << "AMOMAX"; break;
+  case AmoType::AMOMINU: os << "AMOMINU"; break;
+  case AmoType::AMOMAXU: os << "AMOMAXU"; break;
+  default:
+    assert(false);
+  }
+  return os;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+enum class FpuType {
+  FADD,
+  FSUB,
+  FMUL,
+  FDIV,
+  FSQRT,
+  FMADD,
+  FMSUB,
+  FNMADD,
+  FNMSUB,
+  F2I,
+  I2F,
+  F2F,
+  FCMP,
+  FSGNJ,
+  FCLASS,
+  FMVXW,
+  FMVWX,
+  FMINMAX,
+};
+
+struct IntrFpuArgs {
+  uint32_t frm : 3;
+  uint32_t cvt : 2;
+  uint32_t is_f64 : 1;
+};
+
+inline std::ostream &operator<<(std::ostream &os, const FpuType& type) {
+  switch (type) {
+  case FpuType::FADD:   os << "FADD"; break;
+  case FpuType::FSUB:   os << "FSUB"; break;
+  case FpuType::FMUL:   os << "FMUL"; break;
+  case FpuType::FDIV:   os << "FDIV"; break;
+  case FpuType::FSQRT:  os << "FSQRT"; break;
+  case FpuType::FMADD:  os << "FMADD"; break;
+  case FpuType::FMSUB:  os << "FMSUB"; break;
+  case FpuType::FNMADD: os << "FNMADD"; break;
+  case FpuType::FNMSUB: os << "FNMSUB"; break;
+  case FpuType::F2I:    os << "F2I"; break;
+  case FpuType::I2F:    os << "I2F"; break;
+  case FpuType::F2F:    os << "F2F"; break;
+  case FpuType::FCMP:   os << "FCMP"; break;
+  case FpuType::FSGNJ:  os << "FSGNJ"; break;
+  case FpuType::FCLASS: os << "FCLASS"; break;
+  case FpuType::FMVXW:  os << "FMVXW"; break;
+  case FpuType::FMVWX:  os << "FMVWX"; break;
+  case FpuType::FMINMAX: os << "FMIN_MAX"; break;
+  default:
+    assert(false);
+  }
+  return os;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+enum class WctlType {
+  TMC,
+  WSPAWN,
+  SPLIT,
+  JOIN,
+  BAR,
+  PRED
+};
+
+struct IntrWctlArgs {
+  uint32_t is_neg : 1;
+};
+
+inline std::ostream &operator<<(std::ostream &os, const WctlType& type) {
+  switch (type) {
+  case WctlType::TMC:    os << "TMC"; break;
+  case WctlType::WSPAWN: os << "WSPAWN"; break;
+  case WctlType::SPLIT:  os << "SPLIT"; break;
+  case WctlType::JOIN:   os << "JOIN"; break;
+  case WctlType::BAR:    os << "BAR"; break;
+  case WctlType::PRED:   os << "PRED"; break;
+  default:
+    assert(false);
+  }
+  return os;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+enum class CsrType {
+  CSRRW,
+  CSRRS,
+  CSRRC
+};
+
+struct IntrCsrArgs {
+  uint32_t is_imm: 1;
+  uint32_t imm : 5;
+  uint32_t csr : 12;
+};
+
+inline std::ostream &operator<<(std::ostream &os, const CsrType& type) {
+  switch (type) {
+  case CsrType::CSRRW: os << "CSRRW"; break;
+  case CsrType::CSRRS: os << "CSRRS"; break;
+  case CsrType::CSRRC: os << "CSRRC"; break;
+  default:
+    assert(false);
+  }
+  return os;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+enum class VsetType {
+  VSETVLI,
+  VSETIVLI,
+  VSETVL
+};
+
+struct IntrVsetArgs {
+  uint32_t zimm: 11;
+  uint32_t uimm: 5;
+
+  std::string to_string(VsetType type) const {
+    std::string str;
+    if (type != VsetType::VSETVL) {
+      str = "zimm=" + to_hex_str(zimm);
+      if (type == VsetType::VSETIVLI) {
+        str += ", uimm=" + to_hex_str(uimm);
+      }
+    }
+    return str;
+  }
+};
+
+inline std::ostream &operator<<(std::ostream &os, const VsetType& type) {
+  switch (type) {
+  case VsetType::VSETVLI:  os << "VSETVLI"; break;
+  case VsetType::VSETIVLI: os << "VSETIVLI"; break;
+  case VsetType::VSETVL:   os << "VSETVL"; break;
+  default:
+    assert(false);
+  }
+  return os;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+enum class VlsType {
+  VL,
+  VLS,
+  VLX,
+  VS,
+  VSS,
+  VSX
+};
+
+struct IntrVlsArgs {
+  uint32_t width:2;
+  uint32_t umop: 5;
+  uint32_t vm: 1;
+  uint32_t mew: 1;
+  uint32_t nf: 3;
+
+  std::string to_string(VlsType type) const {
+    std::string str = "width=" + std::to_string(width);
+    if (type == VlsType::VL) {
+      str +=  ", umop=" + std::to_string(umop);
+    }
+    str += ", vm=" + std::to_string(vm) +
+           ", mew=" + std::to_string(mew) +
+           ", nf=" + std::to_string(nf);
+    return str;
+  }
+};
+
+inline std::ostream &operator<<(std::ostream &os, const VlsType& type) {
+  switch (type) {
+  case VlsType::VL:  os << "VL"; break;
+  case VlsType::VLS: os << "VLS"; break;
+  case VlsType::VLX: os << "VLX"; break;
+  case VlsType::VS:  os << "VS"; break;
+  case VlsType::VSS: os << "VSS"; break;
+  case VlsType::VSX: os << "VSX"; break;
+  default:
+    assert(false);
+  }
+  return os;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+enum class VopType {
+  OPIVV,
+  OPFVV,
+  OPMVV,
+  OPIVI,
+  OPIVX,
+  OPFVF,
+  OPMVX
+};
+
+struct IntrVopArgs {
+  uint32_t vm: 1;
+  uint32_t funct6: 6;
+  uint32_t imm: 5;
+
+  std::string to_string(VopType type) const {
+    std::string str = "vm=" + std::to_string(vm) +
+                      ", funct6=" + std::to_string(funct6);
+    if (type == VopType::OPIVI || type == VopType::OPIVX) {
+      str += ", imm=" + to_hex_str(imm);
+    }
+    return str;
+  }
+};
+
+inline std::ostream &operator<<(std::ostream &os, const VopType& type) {
+  switch (type) {
+  case VopType::OPIVV:    os << "OPIVV"; break;
+  case VopType::OPFVV:    os << "OPFVV"; break;
+  case VopType::OPMVV:    os << "OPMVV"; break;
+  case VopType::OPIVI:    os << "OPIVI"; break;
+  case VopType::OPIVX:    os << "OPIVX"; break;
+  case VopType::OPFVF:    os << "OPFVF"; break;
+  case VopType::OPMVX:    os << "OPMVX"; break;
+  default:
+    assert(false);
+  }
+  return os;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+enum class VpuOpType {
+  VSET    = 0,
+
+  ARITH   = 1,
+  IMUL    = 2,
+  IDIV    = 3,
+
+  FMA     = 4,
+  FDIV    = 5,
+  FSQRT   = 6,
+  FCVT    = 7,
+  FNCP    = 8,
+
+  // reduction
+  ARITH_R = 9,
+  FMA_R   = 10,
+  FNCP_R  = 11
+};
+
+inline std::ostream &operator<<(std::ostream &os, const VpuOpType& type) {
+  switch (type) {
+  case VpuOpType::VSET:    os << "VSET"; break;
+  case VpuOpType::ARITH:   os << "ARITH"; break;
+  case VpuOpType::IMUL:    os << "IMUL"; break;
+  case VpuOpType::IDIV:    os << "IDIV"; break;
+  case VpuOpType::FMA:     os << "FMA"; break;
+  case VpuOpType::FDIV:    os << "FDIV"; break;
+  case VpuOpType::FSQRT:   os << "FSQRT"; break;
+  case VpuOpType::FCVT:    os << "FCVT"; break;
+  case VpuOpType::FNCP:    os << "FNCP"; break;
+  case VpuOpType::ARITH_R: os << "ARITH_R"; break;
+  case VpuOpType::FMA_R:   os << "FMA_R"; break;
+  case VpuOpType::FNCP_R:  os << "FNCP_R"; break;
+  default:
+    assert(false);
+  }
+  return os;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+enum class TcuType {
+  WMMA,
+};
+
+struct IntrTcuArgs {
+  uint32_t fmt_s  : 4;
+  uint32_t fmt_d  : 4;
+  uint32_t step_m : 4;
+  uint32_t step_n : 4;
+};
+
+inline std::ostream &operator<<(std::ostream &os, const TcuType& type) {
+  switch (type) {
+  case TcuType::WMMA: os << "WMMA"; break;
+  default:
+    assert(false);
+  }
+  return os;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+using OpType = std::variant<
+  AluType
+, BrType
+, MdvType
+, LsuType
+, AmoType
+, FpuType
+, CsrType
+, VoteType
+, ShflType
+, WctlType
+#ifdef EXT_V_ENABLE
+, VsetType
+, VlsType
+, VopType
+#endif
+#ifdef EXT_TCU_ENABLE
+, TcuType
+#endif
+>;
+
+using IntrArgs = std::variant<
+  IntrAluArgs
+, IntrBrArgs
+, IntrMdvArgs
+, IntrLsuArgs
+, IntrAmoArgs
+, IntrFpuArgs
+, IntrCsrArgs
+, IntrWctlArgs
+#ifdef EXT_V_ENABLE
+, IntrVsetArgs
+, IntrVlsArgs
+, IntrVopArgs
+#endif
+#ifdef EXT_TCU_ENABLE
+, IntrTcuArgs
+#endif
+>;
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -238,98 +746,6 @@ struct mem_addr_size_t {
   uint64_t addr;
   uint32_t size;
 };
-
-///////////////////////////////////////////////////////////////////////////////
-
-enum class FpuType {
-  FNCP,
-  FMA,
-  FDIV,
-  FSQRT,
-  FCVT
-};
-
-inline std::ostream &operator<<(std::ostream &os, const FpuType& type) {
-  switch (type) {
-  case FpuType::FNCP:  os << "FNCP"; break;
-  case FpuType::FMA:   os << "FMA"; break;
-  case FpuType::FDIV:  os << "FDIV"; break;
-  case FpuType::FSQRT: os << "FSQRT"; break;
-  case FpuType::FCVT:  os << "FCVT"; break;
-  default: assert(false);
-  }
-  return os;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-
-enum class SfuType {
-  TMC,
-  WSPAWN,
-  SPLIT,
-  JOIN,
-  BAR,
-  PRED,
-  CSRRW,
-  CSRRS,
-  CSRRC
-};
-
-inline std::ostream &operator<<(std::ostream &os, const SfuType& type) {
-  switch (type) {
-  case SfuType::TMC:    os << "TMC"; break;
-  case SfuType::WSPAWN: os << "WSPAWN"; break;
-  case SfuType::SPLIT:  os << "SPLIT"; break;
-  case SfuType::JOIN:   os << "JOIN"; break;
-  case SfuType::BAR:    os << "BAR"; break;
-  case SfuType::PRED:   os << "PRED"; break;
-  case SfuType::CSRRW:  os << "CSRRW"; break;
-  case SfuType::CSRRS:  os << "CSRRS"; break;
-  case SfuType::CSRRC:  os << "CSRRC"; break;
-  default: assert(false);
-  }
-  return os;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-
-enum class VpuType {
-  VSET    = 0,
-
-  ARITH   = 1,
-  IMUL    = 2,
-  IDIV    = 3,
-
-  FMA     = 4,
-  FDIV    = 5,
-  FSQRT   = 6,
-  FCVT    = 7,
-  FNCP    = 8,
-
-  // reduction
-  ARITH_R = 9,
-  FMA_R   = 10,
-  FNCP_R  = 11
-};
-
-inline std::ostream &operator<<(std::ostream &os, const VpuType& type) {
-  switch (type) {
-  case VpuType::VSET:   os << "VSET"; break;
-  case VpuType::ARITH:  os << "ARITH"; break;
-  case VpuType::IMUL:   os << "IMUL"; break;
-  case VpuType::IDIV:   os << "IDIV"; break;
-  case VpuType::FMA:    os << "FMA"; break;
-  case VpuType::FDIV:   os << "FDIV"; break;
-  case VpuType::FSQRT:  os << "FSQRT"; break;
-  case VpuType::FCVT:   os << "FCVT"; break;
-  case VpuType::FNCP:   os << "FNCP"; break;
-  case VpuType::ARITH_R:os << "ARITH_R"; break;
-  case VpuType::FMA_R:  os << "FMA_R"; break;
-  case VpuType::FNCP_R: os << "FNCP_R"; break;
-  default: assert(false);
-  }
-  return os;
-}
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -681,6 +1097,71 @@ private:
 
 ///////////////////////////////////////////////////////////////////////////////
 
+template <typename T>
+class TFifo : public SimObject<TFifo<T>> {
+public:
+  using Type = T;
+
+  TFifo(const SimContext& ctx, const char* name, uint32_t delay, uint32_t capacity = 0)
+    : SimObject<TFifo<T>>(ctx, name)
+    , bus_(this, capacity)
+    , delay_(delay) {
+  }
+
+  void reset() {
+    //--
+  }
+
+  void tick() {
+    //--
+  }
+
+  bool empty() const {
+    return bus_.empty();
+  }
+
+  bool full() const {
+    return bus_.full();
+  }
+
+  uint32_t size() const {
+    return bus_.size();
+  }
+
+  void push(const Type& value) {
+    if (bus_.full()) {
+      throw std::runtime_error("FIFO is full");
+    }
+    bus_.push(value, delay_);
+  }
+
+  Type& front() {
+    if (bus_.empty()) {
+      throw std::runtime_error("FIFO is empty");
+    }
+    return bus_.front();
+  }
+
+  const Type& front() const {
+    if (bus_.empty()) {
+      throw std::runtime_error("FIFO is empty");
+    }
+    return bus_.front();
+  }
+
+  void pop() {
+    if (bus_.empty()) {
+      throw std::runtime_error("FIFO is empty");
+    }
+    bus_.pop();
+  }
+
+private:
+  SimPort<Type> bus_;
+  uint32_t delay_;
+};
+
+///////////////////////////////////////////////////////////////////////////////
 template <typename Type>
 class TxArbiter : public SimObject<TxArbiter<Type>> {
 public:
@@ -902,7 +1383,8 @@ public:
     ArbiterType type,
     uint32_t num_inputs,
     uint32_t num_outputs = 1,
-    uint32_t delay = 1
+    uint32_t req_delay = 1,
+    uint32_t rsp_delay = 1
   )
     : SimObject<TxRxArbiter<Req, Rsp>>(ctx, name)
     , ReqIn(num_inputs, this)
@@ -910,11 +1392,12 @@ public:
     , ReqOut(num_outputs, this)
     , RspOut(num_outputs, this)
     , arbiter_(nullptr)
+    , rsp_delay_(rsp_delay)
     , lg2_num_reqs_(log2ceil(num_inputs / num_outputs))
   {
     if (num_inputs != num_outputs) {
       // allocate arbiter
-      arbiter_ = ReqArb::Create(name, type, num_inputs, num_outputs, delay);
+      arbiter_ = ReqArb::Create(name, type, num_inputs, num_outputs, req_delay);
       // bind arbiter inputs and outputs
       for (uint32_t i = 0; i < num_inputs; ++i) {
         ReqIn.at(i).bind(&arbiter_->Inputs.at(i));
@@ -963,7 +1446,7 @@ public:
         }
         uint32_t i = o * R + r;
         DT(4, this->name() << "-rsp" << o << "_" << i << ": " << in_rsp);
-        RspIn.at(i).push(in_rsp, 1);
+        RspIn.at(i).push(in_rsp, rsp_delay_);
         rsp_out.pop();
       }
     }
@@ -973,6 +1456,7 @@ protected:
   typedef TxArbiter<Req> ReqArb;
 
   typename ReqArb::Ptr arbiter_;
+  uint32_t rsp_delay_;
   uint32_t lg2_num_reqs_;
 };
 
@@ -997,7 +1481,8 @@ public:
     uint32_t num_inputs,
     uint32_t num_outputs,
     std::function<uint32_t(const Req& req)> output_sel,
-    uint32_t delay = 1
+    uint32_t req_delay = 1,
+    uint32_t rsp_delay = 1
   )
     : SimObject<TxRxCrossBar<Req, Rsp>>(ctx, name)
     , ReqIn(num_inputs, this)
@@ -1006,11 +1491,12 @@ public:
     , RspOut(num_outputs, this)
     , crossbar_(nullptr)
     , arbiter_(type, num_outputs)
+    , rsp_delay_(rsp_delay)
     , lg2_inputs_(log2ceil(num_inputs)) {
 
     if (num_inputs != 1 || num_outputs != 1) {
       // allocate crossbar
-      crossbar_ = ReqXbar::Create(name, num_inputs, num_outputs, output_sel, delay);
+      crossbar_ = ReqXbar::Create(name, num_inputs, num_outputs, output_sel, req_delay);
       // bind crossbar inputs and outputs
       for (uint32_t i = 0; i < num_inputs; ++i) {
         ReqIn.at(i).bind(&crossbar_->Inputs.at(i));
@@ -1069,14 +1555,17 @@ public:
           in_rsp.tag = rsp.tag >> lg2_inputs_;
         }
         DT(4, this->name() << "-rsp" << g << "_" << i << ": " << in_rsp);
-        RspIn.at(i).push(in_rsp, 1);
+        RspIn.at(i).push(in_rsp, rsp_delay_);
         rsp_out.pop();
       }
     }
   }
 
   uint64_t collisions() const {
-    return crossbar_->collisions();
+    if (crossbar_) {
+      return crossbar_->collisions();
+    }
+    return 0;
   }
 
 protected:
@@ -1084,6 +1573,7 @@ protected:
 
   typename ReqXbar::Ptr crossbar_;
   Arbiter arbiter_;
+  uint32_t rsp_delay_;
   uint32_t lg2_inputs_;
 };
 

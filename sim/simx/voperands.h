@@ -14,10 +14,7 @@
 #pragma once
 
 #include "instr_trace.h"
-#include "opc_unit.h"
 #include "vopc_unit.h"
-#include "gpr_unit.h"
-#include "vgpr_unit.h"
 
 namespace vortex {
 
@@ -38,18 +35,11 @@ public:
 
   void writeback(instr_trace_t* trace);
 
-  uint32_t total_stalls() const {
-    return total_stalls_;
-  }
+  uint32_t total_stalls() const;
 
 private:
-  std::vector<OpcUnit::Ptr> sopc_units_;
-  std::vector<VOpcUnit::Ptr> vopc_units_;
-  GPR::Ptr  sgpr_unit_;
-  VGPR::Ptr vgpr_unit_;
-  uint32_t  total_stalls_ = 0;
-  Arbiter   out_arb_;
-  Core*     core_;
+  std::vector<VOpcUnit::Ptr> opc_units_;
+  TraceArbiter::Ptr rsp_arb_;
 };
 
 } // namespace vortex

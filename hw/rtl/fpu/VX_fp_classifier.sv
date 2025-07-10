@@ -40,5 +40,5 @@ module VX_fp_classifier import VX_fpu_pkg::*; #(
     assign clss_o.is_signaling = is_signaling;
 
 endmodule
-`endif
 
+`endif

@@ -16,7 +16,7 @@
 interface VX_operands_if import VX_gpu_pkg::*; ();
 
     logic  valid;
-    instr_data_t data;
+    operands_t data;
     logic  ready;
 
     modport master (

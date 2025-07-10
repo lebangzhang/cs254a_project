@@ -125,7 +125,7 @@ inline void vx_tmc_zero() {
     __asm__ volatile (".insn r %0, 0, 0, x0, x0, x0" :: "i"(RISCV_CUSTOM0));
 }
 
-// switch execution to single thread zero
+// switch execution to single thread0
 inline void vx_tmc_one() {
     __asm__ volatile (
         "li a0, 1\n\t"  // Load immediate value 1 into a0 (x10) register
@@ -240,128 +240,64 @@ inline void vx_fence() {
     __asm__ volatile ("fence iorw, iorw");
 }
 
-// Tensor unit intrinsics
-
-typedef float mf32x8_t   __attribute__((vector_size(32))); // 8 x f32 registers
-typedef int32_t mi32x8_t __attribute__((vector_size(32))); // 8 x i32 registers
-typedef int16_t mi16x8_t __attribute__((vector_size(16))); // 8 x i16 registers
-typedef int8_t  mi8x8_t  __attribute__((vector_size(8)));  // 8 x i8 registers
-
-inline mf32x8_t vx_mmadd_f32(mf32x8_t a, mf32x8_t b, mf32x8_t c) {
-    mf32x8_t ret;
-
-    register float fa0 __asm__("f0") = a[0];
-    register float fa1 __asm__("f1") = a[1];
-    register float fa2 __asm__("f2") = a[2];
-    register float fa3 __asm__("f3") = a[3];
-    register float fa4 __asm__("f4") = a[4];
-    register float fa5 __asm__("f5") = a[5];
-    register float fa6 __asm__("f6") = a[6];
-    register float fa7 __asm__("f7") = a[7];
-
-    register float fb0 __asm__("f8") = b[0];
-    register float fb1 __asm__("f9") = b[1];
-    register float fb2 __asm__("f10") = b[2];
-    register float fb3 __asm__("f11") = b[3];
-    register float fb4 __asm__("f12") = b[4];
-    register float fb5 __asm__("f13") = b[5];
-    register float fb6 __asm__("f14") = b[6];
-    register float fb7 __asm__("f15") = b[7];
-
-    register float fc0 __asm__("f16") = c[0];
-    register float fc1 __asm__("f17") = c[1];
-    register float fc2 __asm__("f18") = c[2];
-    register float fc3 __asm__("f19") = c[3];
-    register float fc4 __asm__("f20") = c[4];
-    register float fc5 __asm__("f21") = c[5];
-    register float fc6 __asm__("f22") = c[6];
-    register float fc7 __asm__("f23") = c[7];
-
-    register float fd0 __asm__("f24");
-    register float fd1 __asm__("f25");
-    register float fd2 __asm__("f26");
-    register float fd3 __asm__("f27");
-    register float fd4 __asm__("f28");
-    register float fd5 __asm__("f29");
-    register float fd6 __asm__("f30");
-    register float fd7 __asm__("f31");
-
-    __asm__ volatile (
-        ".word %8"
-        : "=f"(fd0), "=f"(fd1), "=f"(fd2), "=f"(fd3), "=f"(fd4), "=f"(fd5), "=f"(fd6), "=f"(fd7)
-        : "i"(RISCV_INSN_R4(RISCV_CUSTOM1, 0, 0, 24, 0, 8, 16)),
-          "f"(fa0), "f"(fa1), "f"(fa2), "f"(fa3), "f"(fa4), "f"(fa5), "f"(fa6), "f"(fa7),
-          "f"(fb0), "f"(fb1), "f"(fb2), "f"(fb3), "f"(fb4), "f"(fb5), "f"(fb6), "f"(fb7),
-          "f"(fc0), "f"(fc1), "f"(fc2), "f"(fc3), "f"(fc4), "f"(fc5), "f"(fc6), "f"(fc7)
-        : "memory"
-    );
-
-    ret[0] = fd0;
-    ret[1] = fd1;
-    ret[2] = fd2;
-    ret[3] = fd3;
-    ret[4] = fd4;
-    ret[5] = fd5;
-    ret[6] = fd6;
-    ret[7] = fd7;
-
+// Returns 1 if every active lane’s predicate is true, 0 otherwise.
+inline int vx_vote_all(int predicate) {
+    int ret;
+    __asm__ volatile (".insn r %1, 0, 1, %0, %2, x0" : "=r"(ret) : "i"(RISCV_CUSTOM0), "r"(predicate));
     return ret;
 }
 
-inline mf32x8_t vx_mload_f32(size_t addr) {
-    mf32x8_t ret;
-
-    register size_t a0 __asm__("a0") = addr;
-
-    register float fd0 __asm__("f0");
-    register float fd1 __asm__("f1");
-    register float fd2 __asm__("f2");
-    register float fd3 __asm__("f3");
-    register float fd4 __asm__("f4");
-    register float fd5 __asm__("f5");
-    register float fd6 __asm__("f6");
-    register float fd7 __asm__("f7");
-
-    __asm__ volatile (
-        ".word %8"
-        : "=f"(fd0), "=f"(fd1), "=f"(fd2), "=f"(fd3), "=f"(fd4), "=f"(fd5), "=f"(fd6), "=f"(fd7)
-        : "i"(RISCV_INSN_R(RISCV_CUSTOM1, 0, 1, 0, 10, 0)),
-          "r"(a0)
-        : "memory"
-    );
-
-    ret[0] = fd0;
-    ret[1] = fd1;
-    ret[2] = fd2;
-    ret[3] = fd3;
-    ret[4] = fd4;
-    ret[5] = fd5;
-    ret[6] = fd6;
-    ret[7] = fd7;
-
+// Returns 1 if any active lane’s predicate is true, 0 if none are true.
+inline int vx_vote_any(int predicate) {
+    int ret;
+    __asm__ volatile (".insn r %1, 1, 1, %0, %2, x0" : "=r"(ret) : "i"(RISCV_CUSTOM0), "r"(predicate));
     return ret;
 }
 
-inline void vx_mstore_f32(size_t addr, mf32x8_t data) {
-    register size_t a0 __asm__("a0") = addr;
+//  Returns 1 if the predicate is uniform across all active lanes.
+inline int vx_vote_uni(int predicate) {
+    int ret;
+    __asm__ volatile (".insn r %1, 2, 1, %0, %2, x0" : "=r"(ret) : "i"(RISCV_CUSTOM0), "r"(predicate));
+    return ret;
+}
 
-    register float fa0 __asm__("f0") = data[0];
-    register float fa1 __asm__("f1") = data[1];
-    register float fa2 __asm__("f2") = data[2];
-    register float fa3 __asm__("f3") = data[3];
-    register float fa4 __asm__("f4") = data[4];
-    register float fa5 __asm__("f5") = data[5];
-    register float fa6 __asm__("f6") = data[6];
-    register float fa7 __asm__("f7") = data[7];
+// Returns a bitmask of the warp, with bit i set if lane i’s predicate is true.
+inline int vx_vote_ballot(int predicate) {
+    int ret;
+    __asm__ volatile (".insn r %1, 3, 1, %0, %2, x0" : "=r"(ret) : "i"(RISCV_CUSTOM0), "r"(predicate));
+    return ret;
+}
 
-    __asm__ volatile (
-        ".word %0"
-        :
-        : "i"(RISCV_INSN_R(RISCV_CUSTOM1, 1, 1, 0, 10, 0)),
-          "r"(a0),
-          "f"(fa0), "f"(fa1), "f"(fa2), "f"(fa3), "f"(fa4), "f"(fa5), "f"(fa6), "f"(fa7)
-        : "memory"
-    );
+// Shift values up by b lanes within each sub-group; out-of-range lanes keep their own value.
+inline int vx_shfl_up(size_t value, int bval, int cval, int mask) {
+    int ret;
+    int bc = (mask << 12) | (cval << 6) | bval;
+    __asm__ volatile (".insn r %1, 4, 1, %0, %2, %3" : "=r"(ret) : "i"(RISCV_CUSTOM0), "r"(value), "r"(bc));
+    return ret;
+}
+
+// Shift values down by b lanes within each sub-group; out-of-range lanes keep their own value.
+inline int vx_shfl_down(size_t value, int bval, int cval, int mask) {
+    int ret;
+    int bc = (mask << 12) | (cval << 6) | bval;
+    __asm__ volatile (".insn r %1, 5, 1, %0, %2, %3" : "=r"(ret) : "i"(RISCV_CUSTOM0), "r"(value), "r"(bc));
+    return ret;
+}
+
+// “Butterfly” exchange using XOR with b as a bit‐mask: each lane swaps with lane ⊕ b.
+inline int vx_shfl_bfly(size_t value, int bval, int cval, int mask) {
+    int ret;
+    int bc = (mask << 12) | (cval << 6) | bval;
+    __asm__ volatile (".insn r %1, 6, 1, %0, %2, %3" : "=r"(ret) : "i"(RISCV_CUSTOM0), "r"(value), "r"(bc));
+    return ret;
+}
+
+// Gather from an explicit index: every lane reads the value from base + idx, where idx = b[i].
+inline int vx_shfl_idx(size_t value, int bval, int cval, int mask) {
+    int ret;
+    int bc = (mask << 12) | (cval << 6) | bval;
+    __asm__ volatile (".insn r %1, 7, 1, %0, %2, %3" : "=r"(ret) : "i"(RISCV_CUSTOM0), "r"(value), "r"(bc));
+    return ret;
 }
 
 #ifdef __cplusplus

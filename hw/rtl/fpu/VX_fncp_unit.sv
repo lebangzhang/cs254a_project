@@ -242,4 +242,5 @@ module VX_fncp_unit import VX_gpu_pkg::*, VX_fpu_pkg::*; #(
     assign fflags = {fflags_NV, 1'b0, 1'b0, 1'b0, 1'b0};
 
 endmodule
+
 `endif

@@ -116,7 +116,7 @@ module VX_afu_wrap import VX_gpu_pkg::*; #(
 	reg vx_reset = 1; // asserted at initialization
 	wire vx_busy;
 
-	wire                          dcr_wr_valid;
+	wire                         dcr_wr_valid;
 	wire [VX_DCR_ADDR_WIDTH-1:0] dcr_wr_addr;
 	wire [VX_DCR_DATA_WIDTH-1:0] dcr_wr_data;
 

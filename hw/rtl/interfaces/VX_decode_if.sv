@@ -13,30 +13,12 @@
 
 `include "VX_define.vh"
 
-interface VX_decode_if import VX_gpu_pkg::*; #(
-    parameter NUM_WARPS = `NUM_WARPS
-);
-    typedef struct packed {
-        logic [UUID_WIDTH-1:0]      uuid;
-        logic [`LOG2UP(NUM_WARPS)-1:0] wid;
-        logic [`NUM_THREADS-1:0]    tmask;
-        logic [PC_BITS-1:0]         PC;
-        logic [EX_BITS-1:0]         ex_type;
-        logic [INST_OP_BITS-1:0]    op_type;
-        op_args_t                   op_args;
-        logic                       wb;
-        logic [NUM_SRC_OPDS-1:0]    used_rs;
-        reg_idx_t                   rd;
-        reg_idx_t                   rs1;
-        reg_idx_t                   rs2;
-        reg_idx_t                   rs3;
-    } data_t;
-
+interface VX_decode_if import VX_gpu_pkg::*; ();
     logic  valid;
-    data_t data;
+    decode_t data;
     logic  ready;
 `ifndef L1_ENABLE
-    wire [NUM_WARPS-1:0] ibuf_pop;
+    wire [`NUM_WARPS-1:0] ibuf_pop;
 `endif
 
     modport master (

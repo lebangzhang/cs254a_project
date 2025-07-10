@@ -317,4 +317,5 @@ module VX_fcvt_unit import VX_gpu_pkg::*, VX_fpu_pkg::*; #(
     );
 
 endmodule
+
 `endif

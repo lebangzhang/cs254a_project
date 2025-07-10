@@ -19,11 +19,15 @@
 #include <stack>
 #include <mem.h>
 #include "types.h"
+#include "instr.h"
 #ifdef EXT_V_ENABLE
 #include "vec_unit.h"
 #endif
 #ifdef EXT_ARA2_ENABLE
 #include "ara_unit.h"
+#endif
+#ifdef EXT_TCU_ENABLE
+#include "tensor_unit.h"
 #endif
 
 namespace vortex {
@@ -53,6 +57,7 @@ struct ipdom_entry_t {
 struct warp_t {
   std::vector<std::vector<Word>>    ireg_file;
   std::vector<std::vector<uint64_t>>freg_file;
+  std::deque<Instr::Ptr>            ibuffer;
   std::stack<ipdom_entry_t>         ipdom_stack;
   ThreadMask                        tmask;
   Word                              PC;
@@ -108,9 +113,11 @@ public:
 
 private:
 
-  std::shared_ptr<Instr> decode(uint32_t code) const;
+  uint32_t fetch(uint32_t wid, uint64_t uuid);
 
-  void execute(const Instr &instr, uint32_t wid, instr_trace_t *trace);
+  void decode(uint32_t code, uint32_t wid, uint64_t uuid);
+
+  instr_trace_t* execute(const Instr &instr, uint32_t wid);
 
   void fetch_registers(std::vector<reg_data_t>& out, uint32_t wid, uint32_t src_index, const RegOpd& reg);
 
@@ -156,6 +163,9 @@ private:
 #endif
 #ifdef EXT_ARA2_ENABLE
   AraUnit::Ptr ara_unit_;
+#endif
+#ifdef EXT_TCU_ENABLE
+  TensorUnit::Ptr tensor_unit_;
 #endif
 
   PoolAllocator<Instr, 64> instr_pool_;

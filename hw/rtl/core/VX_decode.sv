@@ -51,8 +51,7 @@ module VX_decode import VX_gpu_pkg::*; #(
     `UNUSED_VAR (clk)
     `UNUSED_VAR (reset)
 
-    localparam NUM_OPDS = NUM_SRC_OPDS + 1;
-    localparam DATAW = UUID_WIDTH + NW_WIDTH + `NUM_THREADS + PC_BITS + EX_BITS + INST_OP_BITS + INST_ARGS_BITS + NUM_OPDS + (REG_IDX_BITS * NUM_OPDS);
+    localparam OUT_DATAW = $bits(decode_t);
 
     reg [EX_BITS-1:0] ex_type;
     reg [INST_OP_BITS-1:0] op_type;
@@ -113,12 +112,12 @@ module VX_decode import VX_gpu_pkg::*; #(
     reg [INST_BR_BITS-1:0] b_type;
     always @(*) begin
         case (funct3)
-            3'h0: b_type = INST_BR_EQ;
-            3'h1: b_type = INST_BR_NE;
-            3'h4: b_type = INST_BR_LT;
-            3'h5: b_type = INST_BR_GE;
-            3'h6: b_type = INST_BR_LTU;
-            3'h7: b_type = INST_BR_GEU;
+            3'h0: b_type = INST_BR_BEQ;
+            3'h1: b_type = INST_BR_BNE;
+            3'h4: b_type = INST_BR_BLT;
+            3'h5: b_type = INST_BR_BGE;
+            3'h6: b_type = INST_BR_BLTU;
+            3'h7: b_type = INST_BR_BGEU;
             default: b_type = 'x;
         endcase
     end
@@ -207,6 +206,7 @@ module VX_decode import VX_gpu_pkg::*; #(
     `STATIC_ASSERT($bits(lsu_args_t)  == $bits(op_args_t), ("lsu_args_t size mismatch: current=%0d, expected=%0d", $bits(lsu_args_t), $bits(op_args_t)));
     `STATIC_ASSERT($bits(csr_args_t)  == $bits(op_args_t), ("csr_args_t size mismatch: current=%0d, expected=%0d", $bits(csr_args_t), $bits(op_args_t)));
     `STATIC_ASSERT($bits(wctl_args_t) == $bits(op_args_t), ("wctl_args_t size mismatch: current=%0d, expected=%0d", $bits(wctl_args_t), $bits(op_args_t)));
+    `STATIC_ASSERT($bits(tcu_args_t) == $bits(op_args_t), ("tcu_args_t size mismatch: current=%0d, expected=%0d", $bits(tcu_args_t), $bits(op_args_t)));
 
     always @(*) begin
 
@@ -491,7 +491,7 @@ module VX_decode import VX_gpu_pkg::*; #(
                 ex_type = EX_FPU;
                 op_type = INST_OP_BITS'({2'b00, 1'b1, opcode[3]});
                 op_args.fpu.frm = funct3;
-                op_args.fpu.fmt[0] = funct2[0]; // float / double
+                op_args.fpu.fmt[0] = funct2[0]; // float/double
                 op_args.fpu.fmt[1] = opcode[3] ^ opcode[2]; // SUB
                 `USED_FREG (rd);
                 `USED_FREG (rs1);
@@ -501,8 +501,9 @@ module VX_decode import VX_gpu_pkg::*; #(
             INST_FCI: begin
                 ex_type = EX_FPU;
                 op_args.fpu.frm = funct3;
-                op_args.fpu.fmt[0] = funct2[0]; // float / double
-                op_args.fpu.fmt[1] = rs2[1];   // int32 / int64
+                op_args.fpu.fmt[0] = funct2[0]; // float/double
+                op_args.fpu.fmt[1] = rs2[1]; // CVT W/L
+
                 case (funct5)
                     5'b00000, // FADD
                     5'b00001, // FSUB
@@ -633,6 +634,36 @@ module VX_decode import VX_gpu_pkg::*; #(
                             default:;
                         endcase
                     end
+                    7'h01: begin // VOTE, SHFL
+                        ex_type = EX_ALU;
+                        op_args.alu.xtype = ALU_TYPE_OTHER;
+                        use_rd  = 1;
+                        `USED_IREG (rd);
+                        `USED_IREG (rs1);
+                        if (funct3[2]) begin
+                            `USED_IREG (rs2);
+                        end
+                        op_type = INST_OP_BITS'(funct3);
+                    end
+                `ifdef EXT_TCU_ENABLE
+                    7'h02: begin
+                        case (funct3)
+                            3'h0: begin // WMMA
+                                ex_type = EX_TCU;
+                                op_type = INST_OP_BITS'(INST_TCU_WMMA);
+                                op_args.tcu.fmt_s  = rs1[3:0];
+                                op_args.tcu.fmt_d  = rd[3:0];
+                                op_args.tcu.step_m = '0;
+                                op_args.tcu.step_n = '0;
+                                `USED_IREG (rd);
+                                `USED_IREG (rs1);
+                                `USED_IREG (rs2);
+                                `USED_IREG (rs3);
+                            end
+                            default:;
+                        endcase
+                    end
+                `endif
                     default:;
                 endcase
             end
@@ -709,7 +740,7 @@ module VX_decode import VX_gpu_pkg::*; #(
     wire [2:0] used_rs = {use_rs3, use_rs2, use_rs1};
 
     VX_elastic_buffer #(
-        .DATAW (DATAW),
+        .DATAW (OUT_DATAW),
         .SIZE  (0)
     ) req_buf (
         .clk       (clk),
@@ -732,28 +763,6 @@ module VX_decode import VX_gpu_pkg::*; #(
 
 `ifndef L1_ENABLE
     assign fetch_if.ibuf_pop = decode_if.ibuf_pop;
-`endif
-
-`ifdef DBG_TRACE_PIPELINE
-    always @(posedge clk) begin
-        if (decode_if.valid && decode_if.ready) begin
-            `TRACE(1, ("%t: %s: wid=%0d, PC=0x%0h, instr=0x%0h, ex=", $time, INSTANCE_ID, decode_if.data.wid, {decode_if.data.PC, 1'd0}, instr))
-            trace_ex_type(1, decode_if.data.ex_type);
-            `TRACE(1, (", op="))
-            trace_ex_op(1, decode_if.data.ex_type, decode_if.data.op_type, decode_if.data.op_args);
-            `TRACE(1, (", tmask=%b, wb=%b, used_rs=%b, rd=", decode_if.data.tmask, decode_if.data.wb, decode_if.data.used_rs))
-            trace_reg_idx(1, decode_if.data.rd);
-            `TRACE(1, (", rs1="))
-            trace_reg_idx(1, decode_if.data.rs1);
-            `TRACE(1, (", rs2="))
-            trace_reg_idx(1, decode_if.data.rs2);
-            `TRACE(1, (", rs3="))
-            trace_reg_idx(1, decode_if.data.rs3);
-            `TRACE(1, (", "))
-            trace_op_args(1, decode_if.data.ex_type, decode_if.data.op_type, decode_if.data.op_args);
-            `TRACE(1, (" (#%0d)\n", decode_if.data.uuid))
-        end
-    end
 `endif
 
 endmodule

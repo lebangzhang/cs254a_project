@@ -110,36 +110,38 @@ public:
 
 ///////////////////////////////////////////////////////////////////////////////
 
-#ifdef EXT_V_ENABLE
+#ifdef EXT_TCU_ENABLE
 
-class VpuUnit : public FuncUnit {
+class TcuUnit : public FuncUnit {
 public:
-	VpuUnit(const SimContext& ctx, Core*);
+	TcuUnit(const SimContext& ctx, Core*);
 
 	void tick() override;
 };
 
 #endif
 
+///////////////////////////////////////////////////////////////////////////////
 
+#ifdef EXT_V_ENABLE
+class VpuUnit : public FuncUnit {
+public:
+	VpuUnit(const SimContext& ctx, Core*);
 
+	void tick() override;
+};
+#endif
 
 ///////////////////////////////////////////////////////////////////////////////
 
-
 // ara2_note : add ara2 to funcunit
-#ifdef EXT_ARA2_ENABLE 
-
+#ifdef EXT_ARA2_ENABLE
 class Ara2Unit : public FuncUnit {
-
 public:
     Ara2Unit(const SimContext& ctx, Core*);
 
     void tick() override;
-
 };
-
 #endif
-
 
 }

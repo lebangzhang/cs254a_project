@@ -31,14 +31,14 @@ module VX_lsu_slice import VX_gpu_pkg::*; #(
     localparam NUM_LANES    = `NUM_LSU_LANES;
     localparam PID_BITS     = `CLOG2(`NUM_THREADS / NUM_LANES);
     localparam PID_WIDTH    = `UP(PID_BITS);
-    localparam RSP_ARB_DATAW= UUID_WIDTH + VL_WIDTH + NW_WIDTH + NUM_LANES + PC_BITS + 1 + NR_BITS + NUM_LANES * `XLEN + PID_WIDTH +  1 + 1;
+    localparam RSP_ARB_DATAW= UUID_WIDTH + NW_WIDTH + NUM_LANES + PC_BITS + 1 + NUM_REGS_BITS + NUM_LANES * `XLEN + PID_WIDTH +  1 + 1;
     localparam LSUQ_SIZEW   = `LOG2UP(`LSUQ_IN_SIZE);
     localparam REQ_ASHIFT   = `CLOG2(LSU_WORD_SIZE);
     localparam MEM_ASHIFT   = `CLOG2(`MEM_BLOCK_SIZE);
     localparam MEM_ADDRW    = `MEM_ADDR_WIDTH - MEM_ASHIFT;
 
-    // tag_id = lid + wid + PC + wb + rd + op_type + align + pid + pkt_addr + fence
-    localparam TAG_ID_WIDTH = VL_WIDTH + NW_WIDTH + PC_BITS + 1 + NR_BITS + INST_LSU_BITS + (NUM_LANES * REQ_ASHIFT) + PID_WIDTH + LSUQ_SIZEW + 1;
+    // tag_id = wid + PC + wb + rd + op_type + align + pid + pkt_addr + fence
+    localparam TAG_ID_WIDTH = NW_WIDTH + PC_BITS + 1 + NUM_REGS_BITS + INST_LSU_BITS + (NUM_LANES * REQ_ASHIFT) + PID_WIDTH + LSUQ_SIZEW + 1;
 
     // tag = uuid + tag_id
     localparam TAG_WIDTH = UUID_WIDTH + TAG_ID_WIDTH;
@@ -188,7 +188,7 @@ module VX_lsu_slice import VX_gpu_pkg::*; #(
         wire lsu_req_fire = execute_if.valid && execute_if.ready;
         `RUNTIME_ASSERT((~lsu_req_fire || ~execute_if.data.tmask[i] || req_is_fence || (full_addr[i] % (1 << inst_lsu_wsize(execute_if.data.op_type))) == 0),
             ("%t: misaligned memory access, wid=%0d, PC=0x%0h, addr=0x%0h, wsize=%0d! (#%0d)",
-                $time, execute_if.data.wid, {execute_if.data.PC, 1'b0}, full_addr[i], inst_lsu_wsize(execute_if.data.op_type), execute_if.data.uuid))
+                $time, execute_if.data.wid, to_fullPC(execute_if.data.PC), full_addr[i], inst_lsu_wsize(execute_if.data.op_type), execute_if.data.uuid))
     end
 
     // store data formatting
@@ -390,11 +390,10 @@ module VX_lsu_slice import VX_gpu_pkg::*; #(
     assign lsu_mem_if.rsp_ready = lsu_mem_rsp_ready;
 
     wire [UUID_WIDTH-1:0] rsp_uuid;
-    wire [VL_WIDTH-1:0] rsp_lid;
     wire [NW_WIDTH-1:0] rsp_wid;
     wire [PC_BITS-1:0] rsp_pc;
     wire rsp_wb;
-    wire [NR_BITS-1:0] rsp_rd;
+    wire [NUM_REGS_BITS-1:0] rsp_rd;
     wire [INST_LSU_BITS-1:0] rsp_op_type;
     wire [NUM_LANES-1:0][REQ_ASHIFT-1:0] rsp_align;
     wire [PID_WIDTH-1:0] rsp_pid;
@@ -459,29 +458,29 @@ module VX_lsu_slice import VX_gpu_pkg::*; #(
     // result
 
     VX_elastic_buffer #(
-        .DATAW (UUID_WIDTH + VL_WIDTH + NW_WIDTH + NUM_LANES + PC_BITS + 1 + NR_BITS + (NUM_LANES * `XLEN) + PID_WIDTH + 1 + 1),
+        .DATAW (UUID_WIDTH + NW_WIDTH + NUM_LANES + PC_BITS + 1 + NUM_REGS_BITS + (NUM_LANES * `XLEN) + PID_WIDTH + 1 + 1),
         .SIZE  (2)
     ) rsp_buf (
         .clk       (clk),
         .reset     (reset),
         .valid_in  (mem_rsp_valid),
         .ready_in  (mem_rsp_ready),
-        .data_in   ({rsp_uuid,                rsp_lid,                rsp_wid,                mem_rsp_mask,             rsp_pc,                rsp_wb,                rsp_rd,                rsp_data,                rsp_pid,                mem_rsp_sop_pkt,        mem_rsp_eop_pkt}),
-        .data_out  ({result_rsp_if.data.uuid, result_rsp_if.data.lid, result_rsp_if.data.wid, result_rsp_if.data.tmask, result_rsp_if.data.PC, result_rsp_if.data.wb, result_rsp_if.data.rd, result_rsp_if.data.data, result_rsp_if.data.pid, result_rsp_if.data.sop, result_rsp_if.data.eop}),
+        .data_in   ({rsp_uuid,                rsp_wid,                mem_rsp_mask,             rsp_pc,                rsp_wb,                rsp_rd,                rsp_data,                rsp_pid,                mem_rsp_sop_pkt,        mem_rsp_eop_pkt}),
+        .data_out  ({result_rsp_if.data.uuid, result_rsp_if.data.wid, result_rsp_if.data.tmask, result_rsp_if.data.PC, result_rsp_if.data.wb, result_rsp_if.data.rd, result_rsp_if.data.data, result_rsp_if.data.pid, result_rsp_if.data.sop, result_rsp_if.data.eop}),
         .valid_out (result_rsp_if.valid),
         .ready_out (result_rsp_if.ready)
     );
 
     VX_elastic_buffer #(
-        .DATAW (UUID_WIDTH + VL_WIDTH + NW_WIDTH + NUM_LANES + PC_BITS + PID_WIDTH + 1 + 1),
+        .DATAW (UUID_WIDTH + NW_WIDTH + NUM_LANES + PC_BITS + PID_WIDTH + 1 + 1),
         .SIZE  (2)
     ) no_rsp_buf (
         .clk       (clk),
         .reset     (reset),
         .valid_in  (no_rsp_buf_valid),
         .ready_in  (no_rsp_buf_ready),
-        .data_in   ({execute_if.data.uuid,       execute_if.data.lid,       execute_if.data.wid,       execute_if.data.tmask,       execute_if.data.PC,       execute_if.data.pid,       execute_if.data.sop,       execute_if.data.eop}),
-        .data_out  ({result_no_rsp_if.data.uuid, result_no_rsp_if.data.lid, result_no_rsp_if.data.wid, result_no_rsp_if.data.tmask, result_no_rsp_if.data.PC, result_no_rsp_if.data.pid, result_no_rsp_if.data.sop, result_no_rsp_if.data.eop}),
+        .data_in   ({execute_if.data.uuid,       execute_if.data.wid,       execute_if.data.tmask,       execute_if.data.PC,       execute_if.data.pid,       execute_if.data.sop,       execute_if.data.eop}),
+        .data_out  ({result_no_rsp_if.data.uuid, result_no_rsp_if.data.wid, result_no_rsp_if.data.tmask, result_no_rsp_if.data.PC, result_no_rsp_if.data.pid, result_no_rsp_if.data.sop, result_no_rsp_if.data.eop}),
         .valid_out (result_no_rsp_if.valid),
         .ready_out (result_no_rsp_if.ready)
     );
@@ -514,7 +513,7 @@ module VX_lsu_slice import VX_gpu_pkg::*; #(
         end
         if (mem_req_fire) begin
             if (mem_req_rw) begin
-                `TRACE(2, ("%t: %s Wr Req: wid=%0d, PC=0x%0h, tmask=%b, addr=", $time, INSTANCE_ID, execute_if.data.wid, {execute_if.data.PC, 1'b0}, mem_req_mask))
+                `TRACE(2, ("%t: %s Wr Req: wid=%0d, PC=0x%0h, tmask=%b, addr=", $time, INSTANCE_ID, execute_if.data.wid, to_fullPC(execute_if.data.PC), mem_req_mask))
                 `TRACE_ARRAY1D(2, "0x%h", full_addr, NUM_LANES)
                 `TRACE(2, (", flags="))
                 `TRACE_ARRAY1D(2, "%b", mem_req_flags, NUM_LANES)
@@ -522,7 +521,7 @@ module VX_lsu_slice import VX_gpu_pkg::*; #(
                 `TRACE_ARRAY1D(2, "0x%0h", mem_req_data, NUM_LANES)
                 `TRACE(2, (", sop=%b, pid=%0d, eop=%b, tag=0x%0h (#%0d)\n", execute_if.data.pid, execute_if.data.sop, execute_if.data.eop, mem_req_tag, execute_if.data.uuid))
             end else begin
-                `TRACE(2, ("%t: %s Rd Req: wid=%0d, PC=0x%0h, tmask=%b, addr=", $time, INSTANCE_ID, execute_if.data.wid, {execute_if.data.PC, 1'b0}, mem_req_mask))
+                `TRACE(2, ("%t: %s Rd Req: wid=%0d, PC=0x%0h, tmask=%b, addr=", $time, INSTANCE_ID, execute_if.data.wid, to_fullPC(execute_if.data.PC), mem_req_mask))
                 `TRACE_ARRAY1D(2, "0x%h", full_addr, NUM_LANES)
                 `TRACE(2, (", flags="))
                 `TRACE_ARRAY1D(2, "%b", mem_req_flags, NUM_LANES)
@@ -531,7 +530,7 @@ module VX_lsu_slice import VX_gpu_pkg::*; #(
         end
         if (mem_rsp_fire) begin
             `TRACE(2, ("%t: %s Rsp: wid=%0d, PC=0x%0h, tmask=%b, rd=%0d, pid=%0d, sop=%b, eop=%b, data=",
-                $time, INSTANCE_ID, rsp_wid, {rsp_pc, 1'b0}, mem_rsp_mask, rsp_rd, rsp_pid, mem_rsp_sop_pkt, mem_rsp_eop_pkt))
+                $time, INSTANCE_ID, rsp_wid, to_fullPC(rsp_pc), mem_rsp_mask, rsp_rd, rsp_pid, mem_rsp_sop_pkt, mem_rsp_eop_pkt))
             `TRACE_ARRAY1D(2, "0x%0h", mem_rsp_data, NUM_LANES)
             `TRACE(2, (", tag=0x%0h (#%0d)\n", mem_rsp_tag, rsp_uuid))
         end

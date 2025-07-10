@@ -187,7 +187,7 @@ module VX_mem_scheduler #(
     // can accept another request?
     assign core_req_ready = reqq_ready_in && ibuf_ready;
 
-    // request qeueue info
+    // request queue status
     assign req_queue_rw_notify = reqq_valid && reqq_ready && reqq_rw;
     assign req_queue_empty = !reqq_valid && ibuf_empty;
 

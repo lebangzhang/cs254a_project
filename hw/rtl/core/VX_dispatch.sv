@@ -32,14 +32,14 @@ module VX_dispatch import VX_gpu_pkg::*; #(
     `UNUSED_SPARAM (INSTANCE_ID)
     `UNUSED_PARAM (ISSUE_ID)
 
-    localparam DATAW = UUID_WIDTH + VL_WIDTH + ISSUE_WIS_W + SIMD_IDX_W + `SIMD_WIDTH + PC_BITS + INST_OP_BITS + INST_ARGS_BITS + 1 + NR_BITS + (NUM_SRC_OPDS * `SIMD_WIDTH * `XLEN) + 1 + 1;
+    localparam OUT_DATAW = $bits(dispatch_t);
 
     wire [NUM_EX_UNITS-1:0] operands_ready_in;
     assign operands_if.ready = operands_ready_in[operands_if.data.ex_type];
 
     for (genvar i = 0; i < NUM_EX_UNITS; ++i) begin : g_buffers
         VX_elastic_buffer #(
-            .DATAW   (DATAW),
+            .DATAW   (OUT_DATAW),
             .SIZE    (2),
             .OUT_REG (1)
         ) buffer (

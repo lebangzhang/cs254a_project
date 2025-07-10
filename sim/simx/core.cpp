@@ -45,6 +45,9 @@ Core::Core(const SimContext& ctx,
 #ifdef EXT_ARA2_ENABLE
   , ara_unit_(AraUnit::Create("ara", arch, this))
 #endif
+#ifdef EXT_TCU_ENABLE
+  , tensor_unit_(TensorUnit::Create("tcu", arch, this))
+#endif
   , emulator_(arch, dcrs, this)
   , ibuffers_(arch.num_warps(), IBUF_SIZE)
   , scoreboard_(arch_)
@@ -145,6 +148,9 @@ Core::Core(const SimContext& ctx,
 #ifdef EXT_ARA2_ENABLE
   dispatchers_.at((int)FUType::ARA) = SimPlatform::instance().create_object<Dispatcher>(this, 2, NUM_ARA_DISPATCH_BLOCKS, NUM_ARA_DISPATCH_LANES);
 #endif
+#ifdef EXT_TCU_ENABLE
+  dispatchers_.at((int)FUType::TCU) = SimPlatform::instance().create_object<Dispatcher>(this, 2, NUM_TCU_BLOCKS, NUM_TCU_LANES);
+#endif
 
   // initialize execute units
   func_units_.at((int)FUType::ALU) = SimPlatform::instance().create_object<AluUnit>(this);
@@ -157,7 +163,9 @@ Core::Core(const SimContext& ctx,
 #ifdef EXT_ARA2_ENABLE
   func_units_.at((int)FUType::ARA) = SimPlatform::instance().create_object<Ara2Unit>(this);
 #endif
-
+#ifdef EXT_TCU_ENABLE
+  func_units_.at((int)FUType::TCU) = SimPlatform::instance().create_object<TcuUnit>(this);
+#endif
 
   // bind commit arbiters
   for (uint32_t iw = 0; iw < ISSUE_WIDTH; ++iw) {
@@ -311,8 +319,8 @@ void Core::issue() {
     bool has_instrs = false;
     BitVector<> ready_set(PER_ISSUE_WARPS);
     for (uint32_t w = 0; w < PER_ISSUE_WARPS; ++w) {
-      uint32_t ii = iw  * PER_ISSUE_WARPS + w;
-      auto& ibuffer = ibuffers_.at(ii);
+      uint32_t wid = w * ISSUE_WIDTH + iw;
+      auto& ibuffer = ibuffers_.at(wid);
       if (ibuffer.empty())
         continue;
       // check scoreboard
@@ -338,17 +346,10 @@ void Core::issue() {
           case FUType::LSU: ++perf_stats_.scrb_lsu; break;
           case FUType::SFU: {
             ++perf_stats_.scrb_sfu;
-            switch (use.sfu_type) {
-            case SfuType::TMC:
-            case SfuType::WSPAWN:
-            case SfuType::SPLIT:
-            case SfuType::JOIN:
-            case SfuType::BAR:
-            case SfuType::PRED: ++perf_stats_.scrb_wctl; break;
-            case SfuType::CSRRW:
-            case SfuType::CSRRS:
-            case SfuType::CSRRC: ++perf_stats_.scrb_csrs; break;
-            default: assert(false);
+            if (std::get_if<WctlType>(&use.op_type)) {
+              ++perf_stats_.scrb_wctl;
+            } else if (std::get_if<CsrType>(&use.op_type)) {
+              ++perf_stats_.scrb_csrs;
             }
           } break;
         #ifdef EXT_V_ENABLE
@@ -357,7 +358,9 @@ void Core::issue() {
         #ifdef EXT_ARA2_ENABLE
           case FUType::ARA: ++perf_stats_.scrb_vpu; break;
         #endif
-
+        #ifdef EXT_TCU_ENABLE
+          case FUType::TCU: ++perf_stats_.scrb_tcu; break;
+        #endif
           default: assert(false);
           }
         }
@@ -365,21 +368,24 @@ void Core::issue() {
         trace->log_once(false);
         ready_set.set(w); // mark instruction as ready
       }
+      // to operand stage
+      operands_.at(iw)->Input.push(trace, 2);
+      ibuffer.pop();
     }
 
     if (ready_set.any()) {
       // select one instruction from ready set
-      auto g = ibuffer_arbs_.at(iw).grant(ready_set);
-      uint32_t ii = iw * PER_ISSUE_WARPS + g;
-      auto& ibuffer = ibuffers_.at(ii);
+      auto w = ibuffer_arbs_.at(iw).grant(ready_set);
+      uint32_t wid = w * ISSUE_WIDTH + iw;
+      auto& ibuffer = ibuffers_.at(wid);
       auto trace = ibuffer.top();
       // update scoreboard
-      DT(3, "pipeline-scoreboard: " << *trace);
+      DT(3, "pipeline-ibuffer: " << *trace);
       if (trace->wb) {
         scoreboard_.reserve(trace);
       }
       // to operand stage
-      operands_.at(iw)->Input.push(trace, 2);
+      operands_.at(iw)->Input.push(trace, 1);
       ibuffer.pop();
     }
 
@@ -433,15 +439,12 @@ void Core::commit() {
       pending_instrs_.remove(trace);
       if (pending_instrs_.size() != orig_size) {
         perf_stats_.instrs += trace->tmask.count();
-      #ifdef EXT_V_ENABLE
+      #if defined(EXT_V_ENABLE) || defined(EXT_ARA2_ENABLE)
         if (trace->fu_type == FUType::VPU
          || (trace->fu_type == FUType::LSU && (trace->lsu_type == LsuType::VLOAD || trace->lsu_type == LsuType::VSTORE))) {
-          perf_stats_.vinstrs += trace->tmask.count();
-        }
-      #endif
-      #ifdef EXT_ARA2_ENABLE
-        if (trace->fu_type == FUType::ARA
-         || (trace->fu_type == FUType::LSU && (trace->lsu_type == LsuType::VLOAD || trace->lsu_type == LsuType::VSTORE))) {
+        if (std::get_if<VsetType>(&trace->op_type)
+         || std::get_if<VlsType>(&trace->op_type)
+         || std::get_if<VopType>(&trace->op_type)) {
           perf_stats_.vinstrs += trace->tmask.count();
         }
       #endif
@@ -463,7 +466,7 @@ bool Core::running() const {
   if (emulator_.running() || !pending_instrs_.empty()) {
   #ifndef NDEBUG
     for (auto& trace : pending_instrs_) {
-      DT(4, "pipeline-pending: " << *trace);
+      DT(5, "pipeline-pending: " << *trace);
     }
   #endif
     return true;
