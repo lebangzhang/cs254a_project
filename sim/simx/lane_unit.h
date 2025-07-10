@@ -19,7 +19,7 @@
 namespace vortex {
 
 
-// TOFIX : Rename to Ara_Lane_Unit
+// TOFIX_ARA : Rename to Ara_Lane_Unit
 class Lane_Unit : public SimObject<Lane_Unit> {
 
 private: 
@@ -149,7 +149,7 @@ public:
                 VL_count = VL_count / NUM_ARA_LANES; 
                 // TORETURN : For stress testing
                 /*VL_count = 4;*/
-                // TOFIX : Need to fix method for calculating microop
+                // TOFIX_ARA : Need to fix method for calculating microop
                 microop_counter.at(i) = VL_count;
 
                 // Perf Counter 

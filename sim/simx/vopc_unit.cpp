@@ -13,6 +13,7 @@
 
 #include "vopc_unit.h"
 #include "core.h"
+#include "math.h"
 
 using namespace vortex;
 
@@ -61,6 +62,7 @@ void VOpcUnit::tick() {
           ++vector_stalls;
         }
       }
+      total_vgpr_req_count -= 1;
     }
   }
 
@@ -130,3 +132,38 @@ void VOpcUnit::translate(instr_trace_t* trace) {
 void VOpcUnit::writeback(instr_trace_t* /*trace*/) {
   //--
 }
+
+
+
+
+/*****************************************/
+// Notes on Reduction
+//
+// Working example
+  /*
+   * Consider: Layout of VRF bank 0 is [ (T0,T1), (T2,T3), ..... (T30,T31)]
+   * Then:
+   * Reduction Tree Level 0:
+   *  CC0: VRF req  (T0,T1)
+   *  CC1: VRF req  (T2,T3)
+   *  CC2: Send out (T0,T1,T2,T3)     --> SIMD full (T0->T3), rsp buffer empty
+   *  CC3: VRF req  (T4,T5)           --> SIMD (other insn) , rsp buffer 1/2 full (TO->T3)
+   *  CC4: VRF req  (T6,T7)           --> SIMD (other insn) , rsp buffer 1/2 full (TO->T3)
+   *  CC5: Send out (T4,T5,T6,T7)     --> SIMD full (T4->T7), rsp buffer 1/2 full (TO->T3)
+   *  CC6: Wait until rsp buffer full --> SIMD (other insn) , rsp buffer full (TO->T7)
+   *
+   * Reduction Tree Level 1 --> SIMD is now full
+   *  CC0: Repeat same thing
+   * ...Repeat until last level
+   *
+   * Start 2nd batch
+   * CC0: VRF req (T8, T9)
+   * etc
+   * ...Repeat until last level
+   *
+   */
+  // Overall, optimally, it optimizes for 4 VRF req batches
+  // Hence, need to consider 3 different caess, (Only 1 VRF req batch, Only 2 VRF req batch, Only 4)
+  // Note, the total number of batches is assumed to be a power of 2
+
+

@@ -1719,7 +1719,7 @@ AraUnit::AraUnit(const SimContext& ctx,
   , impl_(new Impl(this, arch, core))
 
 
-  // TOFIX : In the scenario all lane units are not the same  
+  // TOFIX_ARA : In the scenario all lane units are not the same  
   /*
   , lane_unit_(NUM_ARA_LANES)
   , lane_req_ports(NUM_ARA_LANES, this)
@@ -1787,7 +1787,7 @@ void AraUnit::tick() {
         // 1. At each CC, only process 1 instruction
         auto trace = input.front();
 
-        // 2. For now, assume all lane units behave the same way <--- TOFIX (Check if there is lane biasing or this is good enough apprx) 
+        // 2. For now, assume all lane units behave the same way <--- TOFIX_ARA (Check if there is lane biasing or this is good enough apprx) 
         // Check if lane is full --> If full, then stall
         auto &lane_0_req = this->lane_req_ports.at(0);
         if(lane_0_req.size() == 8)

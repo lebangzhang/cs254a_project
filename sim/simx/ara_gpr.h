@@ -35,7 +35,7 @@ class Ara_Gpr : public SimObject<Ara_Gpr> {
 private: 
 	uint32_t total_stalls_ = 0;
 
-    // TOFIX : Get this from operand requestor 
+    // TOFIX_ARA : Get this from operand requestor 
     // Also same as the number of ara gpr banks
     uint32_t num_gpr_arbitration_port = NUM_ARA_GPR_PORTS;
 

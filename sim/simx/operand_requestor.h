@@ -26,7 +26,7 @@ struct Ara_microop_Pkt {
 
 
 
-// TOFIX : Rename to ARA_Operand_Requestor 
+// TOFIX_ARA : Rename to ARA_Operand_Requestor 
 class Operand_Requestor : public SimObject<Operand_Requestor> {
 
 private: 
@@ -57,7 +57,7 @@ public:
     std::vector<SimPort<AraGprPkt>> ara_gpr_req_port;
     std::vector<SimPort<AraGprPkt>> ara_gpr_rsp_port;
 
-    // TOFIX : Don't need ara_packet_storage
+    // TOFIX_ARA : Don't need ara_packet_storage
     std::vector<std::vector<AraGprPkt>> ara_packet_storage; 
  
     // GPR Pending Counters
@@ -420,7 +420,7 @@ public:
                 }
 
                 // Construct AraGprPkt requests + Store it 
-                // TOFIX : The concept of EW and VLmul 
+                // TOFIX_ARA : The concept of EW and VLmul 
                 uint32_t gpr_pending_requests = 0;
                 uint32_t VL_count = VLEN/XLEN;
                 VL_count = VL_count / NUM_ARA_LANES; 
@@ -457,7 +457,7 @@ public:
                         }
                     }
                     
-                    // TOFIX : Check whether masking affects the microop 
+                    // TOFIX_ARA : Check whether masking affects the microop 
                     microop_counter += 1;
 
                     // Add gpr_indv_counter to overall block
