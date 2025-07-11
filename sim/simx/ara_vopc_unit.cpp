@@ -57,8 +57,8 @@ void Ara_VOpc_Unit::tick() {
     assert(pending_v_rsps_ == 0);
 
     // capture SIMD counters
-    if (std::get_if<VlsType>(&trace->op_type)
-     || std::get_if<VopType>(&trace->op_type)) {
+    if (std::get_if<VopType>(&trace->op_type)
+     || std::get_if<VsetType>(&trace->op_type)) {
       auto trace_data = std::dynamic_pointer_cast<VecUnit::ExeTraceData>(trace->data);
       active_PC_ = trace->PC;
       if (trace_data->vpu_op != VpuOpType::VSET) {

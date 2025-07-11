@@ -76,7 +76,7 @@ public:
 
   bool fetch_stall;
 
-  uint64_t issue_time ;
+  uint64_t issue_time;
 
   instr_trace_t(uint64_t uuid, const Arch& arch)
     : uuid(uuid)

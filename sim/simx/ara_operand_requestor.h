@@ -181,7 +181,7 @@ public:
 
                 DT(3, "Ara-Microop-ALU: Alu_counter = " << ALU_lanes << " portid = " << microop.port_id << " Index = " << i << " Leftoverdelay = " << microop_alu_queue.at(i).delay);
             }
-            DT(3, "Ara-Debug - 1: Currsize = " << microop_alu_queue.size());
+            DT(4, "Ara-Debug - 1: Currsize = " << microop_alu_queue.size());
         }
 
 
@@ -213,7 +213,7 @@ public:
         // Because we are using based on functional unit,
         // we are guranteed that the micoops that have finished are at the head of the queue
         // Hence, pop the head of the queue, and in the next interation, check the head of the queue
-        DT(3, "Ara-Debug - 2: Currsize = " << microop_alu_queue.size());
+        DT(4, "Ara-Debug - 2: Currsize = " << microop_alu_queue.size());
 
         uint32_t size = microop_alu_queue.size();
         for(uint32_t i = 0; i < size; i++){

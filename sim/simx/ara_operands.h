@@ -46,6 +46,7 @@ public:
 private:
   std::vector<Ara_Opc_Unit::Ptr> sopc_units_;
   std::vector<Ara_VOpc_Unit::Ptr> vopc_units_;
+  std::unordered_map<instr_trace_t*, uint32_t> wb_table_;
   GPR::Ptr  sgpr_unit_;
   VGPR::Ptr vgpr_unit_;
   uint32_t  total_stalls_ = 0;

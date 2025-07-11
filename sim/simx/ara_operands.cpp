@@ -98,6 +98,9 @@ void Operands::tick() {
       if (vopc_units_.at(i)->Input.full())
         continue;
       // assign instruction
+      if (trace->wb) {
+        wb_table_[trace] = i;
+      }
       vopc_units_.at(i)->Input.push(trace);
       Input.pop();
       break;
@@ -115,6 +118,10 @@ void Operands::tick() {
   }
 }
 
-void Operands::writeback(instr_trace_t* /*trace*/) {
-  //--
+void Operands::writeback(instr_trace_t* trace) {
+  auto it = wb_table_.find(trace);
+  if (it != wb_table_.end()) {
+    vopc_units_.at(it->second)->writeback(trace);
+    wb_table_.erase(it);
+  }
 }

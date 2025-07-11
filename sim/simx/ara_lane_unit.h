@@ -120,11 +120,11 @@ public:
             peak_insn_at_once = temp;
         }
 
-        DT(3, "ACTIVE_CYCLES = " << active_cycles);
-        DT(3, "TOTAL INSN    = " << total_insn);
-        DT(3, "IPC           = " << total_insn         / active_cycles);
-        DT(3, "AVG PORT UTIL = " << total_insn_at_once / active_cycles);
-        DT(3, "PEAK PORT UTIL= " << peak_insn_at_once);
+        DT(4, "ACTIVE_CYCLES = " << active_cycles);
+        DT(4, "TOTAL INSN    = " << total_insn);
+        DT(4, "IPC           = " << total_insn         / active_cycles);
+        DT(4, "AVG PORT UTIL = " << total_insn_at_once / active_cycles);
+        DT(4, "PEAK PORT UTIL= " << peak_insn_at_once);
 
 
         // 1a. If request port empty ==> Return
