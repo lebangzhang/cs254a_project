@@ -31,10 +31,6 @@ using namespace vortex;
 
 AraUnit::AraUnit(const SimContext& ctx, Core* core)
 	: FuncUnit(ctx, core, "ara-unit")
-  , Inputs(ISSUE_WIDTH, this)
-  , Outputs(ISSUE_WIDTH, this)
-
-
   // TOFIX_ARA : In the scenario all lane units are not the same
   /*
   , lane_unit_(NUM_ARA_LANES)
