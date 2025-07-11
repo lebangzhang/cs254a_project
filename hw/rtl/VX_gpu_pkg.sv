@@ -1031,6 +1031,7 @@ package VX_gpu_pkg;
     `endif
     endfunction
 
+`ifdef EXT_V_ENABLE
     function automatic logic [NUM_SREGS_BITS-1:0] to_sreg_number(input reg_idx_t reg_idx);
     `ifdef EXT_F_ENABLE
         return {reg_idx.rtype[0], reg_idx.id};
@@ -1042,6 +1043,7 @@ package VX_gpu_pkg;
     function automatic logic [NUM_VREGS_BITS-1:0] to_vreg_number(input reg_idx_t reg_idx);
         return reg_idx.id;
     endfunction
+`endif
 
     function automatic logic [RV_REGS-1:0] to_reg_mask(input reg_idx_t reg_idx);
         return 1 << reg_idx.id;
