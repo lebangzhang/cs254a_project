@@ -36,7 +36,7 @@ module VX_vgpr_unit import VX_gpu_pkg::*; #(
     localparam BANK_SEL_WIDTH = `UP(BANK_SEL_BITS);
     localparam BANK_DATA_WIDTH = `SIMD_WIDTH * `XLEN;
     localparam BANK_DATA_SIZE = BANK_DATA_WIDTH / 8;
-    localparam BANK_SIZE = (PER_ISSUE_WARPS * VL_COUNT * SIMD_COUNT * NUM_V_REGS) / NUM_BANKS;
+    localparam BANK_SIZE = (PER_ISSUE_WARPS * VL_COUNT * SIMD_COUNT * NUM_VREGS) / NUM_BANKS;
     localparam BANK_ADDR_WIDTH = `CLOG2(BANK_SIZE);
     localparam GPR_REQ_DATAW = SRC_OPD_WIDTH + VL_WIDTH + ISSUE_WIS_W + SIMD_IDX_W + RV_REGS_BITS;
     localparam GPR_RSP_DATAW = SRC_OPD_WIDTH + `SIMD_WIDTH * `XLEN;
@@ -101,9 +101,9 @@ module VX_vgpr_unit import VX_gpu_pkg::*; #(
     if (SIMD_IDX_BITS != 0 || PER_BANK_WIS_BITS != 0) begin : g_bank_wr_addr
         wire [SIMD_IDX_BITS + PER_BANK_WIS_BITS-1:0] tmp;
         `CONCAT(tmp, writeback_if.data.sid, writeback_if.data.wis[ISSUE_WIS_W-1:BANKID_WIS_BITS], SIMD_IDX_BITS, PER_BANK_WIS_BITS);
-        assign bank_wr_addr = {tmp, writeback_if.data.rd[NR_V_BITS-1:BANKID_REG_BITS], writeback_if.data.lid};
+        assign bank_wr_addr = {tmp, writeback_if.data.rd[NUM_VREGS_BITS-1:BANKID_REG_BITS], writeback_if.data.lid};
     end else begin : g_bank_wr_addr_reg
-        assign bank_wr_addr = {writeback_if.data.rd[NR_V_BITS-1:BANKID_REG_BITS], writeback_if.data.lid};
+        assign bank_wr_addr = {writeback_if.data.rd[NUM_VREGS_BITS-1:BANKID_REG_BITS], writeback_if.data.lid};
     end
 
     wire [BANK_SEL_WIDTH-1:0] bank_wr_id;

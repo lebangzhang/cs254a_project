@@ -36,25 +36,6 @@ extern "C" {
 #define RISCV_CUSTOM2   0x5B
 #define RISCV_CUSTOM3   0x7B
 
-#define RISCV_INSN_R(opcode7, funct3, funct7, rd, rs1, rs2) ( \
-    ((funct7 & 0x7F) << 25) | \
-    ((rs2 & 0x1F) << 20) | \
-    ((rs1 & 0x1F) << 15) | \
-    ((funct3 & 0x7) << 12) | \
-    ((rd & 0x1F) << 7) | \
-    (opcode7 & 0x7F) \
-)
-
-#define RISCV_INSN_R4(opcode7, funct3, funct2, rd, rs1, rs2, rs3) ( \
-    ((rs3 & 0x1F) << 27) | \
-    ((funct2 & 0x3) << 25) | \
-    ((rs2 & 0x1F) << 20) | \
-    ((rs1 & 0x1F) << 15) | \
-    ((funct3 & 0x7) << 12) | \
-    ((rd & 0x1F) << 7) | \
-    (opcode7 & 0x7F) \
-)
-
 #define csr_read(csr) ({                        \
 	size_t __r;	               		            \
 	__asm__ __volatile__ ("csrr %0, %1" : "=r" (__r) : "i" (csr) : "memory"); \

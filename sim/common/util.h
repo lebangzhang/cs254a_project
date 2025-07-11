@@ -25,8 +25,6 @@
 
 namespace vortex {
 
-namespace vortex {
-
 template <typename... Args>
 void unused(Args &&...) {}
 

@@ -49,7 +49,6 @@ module VX_dispatch import VX_gpu_pkg::*; #(
             .ready_in   (operands_ready_in[i]),
             .data_in    ({
                 operands_if.data.uuid,
-                operands_if.data.lid,
                 operands_if.data.wis,
                 operands_if.data.sid,
                 operands_if.data.tmask,

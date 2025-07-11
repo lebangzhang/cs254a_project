@@ -20,14 +20,11 @@
 #include <mem.h>
 #include "types.h"
 #include "instr.h"
-#ifdef EXT_V_ENABLE
-#include "vec_unit.h"
-#endif
-#ifdef EXT_ARA2_ENABLE
-#include "ara_unit.h"
-#endif
 #ifdef EXT_TCU_ENABLE
 #include "tensor_unit.h"
+#endif
+#ifdef EXT_V_ENABLE
+#include "vec_unit.h"
 #endif
 
 namespace vortex {
@@ -158,14 +155,12 @@ private:
   Word        csr_mscratch_;
   wspawn_t    wspawn_;
 
-#ifdef EXT_V_ENABLE
-  VecUnit::Ptr vec_unit_;
-#endif
-#ifdef EXT_ARA2_ENABLE
-  AraUnit::Ptr ara_unit_;
-#endif
 #ifdef EXT_TCU_ENABLE
   TensorUnit::Ptr tensor_unit_;
+#endif
+
+#ifdef EXT_V_ENABLE
+  VecUnit::Ptr vec_unit_;
 #endif
 
   PoolAllocator<Instr, 64> instr_pool_;

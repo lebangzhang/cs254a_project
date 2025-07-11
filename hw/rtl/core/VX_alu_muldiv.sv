@@ -141,11 +141,11 @@ module VX_alu_muldiv import VX_gpu_pkg::*; #(
     reg [TAG_WIDTH+2-1:0] mul_tag_r;
     always @(posedge clk) begin
         if (mul_valid_in && mul_ready_in) begin
-            mul_tag_r <= {execute_if.data.uuid, execute_if.data.lid, execute_if.data.wid, execute_if.data.tmask, execute_if.data.PC, execute_if.data.rd, execute_if.data.wb, is_mulh_in, is_alu_w, execute_if.data.pid, execute_if.data.sop, execute_if.data.eop};
+            mul_tag_r <= {execute_if.data.uuid, execute_if.data.wid, execute_if.data.tmask, execute_if.data.PC, execute_if.data.rd, execute_if.data.wb, is_mulh_in, is_alu_w, execute_if.data.pid, execute_if.data.sop, execute_if.data.eop};
         end
     end
 
-    assign {mul_uuid_out, mul_lid_out, mul_wid_out, mul_tmask_out, mul_PC_out, mul_rd_out, mul_wb_out, is_mulh_out, is_mul_w_out, mul_pid_out, mul_sop_out, mul_eop_out} = mul_tag_r;
+    assign {mul_uuid_out, mul_wid_out, mul_tmask_out, mul_PC_out, mul_rd_out, mul_wb_out, is_mulh_out, is_mul_w_out, mul_pid_out, mul_sop_out, mul_eop_out} = mul_tag_r;
 
 `else
 
@@ -300,11 +300,11 @@ module VX_alu_muldiv import VX_gpu_pkg::*; #(
     reg [TAG_WIDTH+2-1:0] div_tag_r;
     always @(posedge clk) begin
         if (div_valid_in && div_ready_in) begin
-            div_tag_r <= {execute_if.data.uuid, execute_if.data.lid, execute_if.data.wid, execute_if.data.tmask, execute_if.data.PC, execute_if.data.rd, execute_if.data.wb, is_rem_op, is_alu_w, execute_if.data.pid, execute_if.data.sop, execute_if.data.eop};
+            div_tag_r <= {execute_if.data.uuid, execute_if.data.wid, execute_if.data.tmask, execute_if.data.PC, execute_if.data.rd, execute_if.data.wb, is_rem_op, is_alu_w, execute_if.data.pid, execute_if.data.sop, execute_if.data.eop};
         end
     end
 
-    assign {div_uuid_out, div_lid_out, div_wid_out, div_tmask_out, div_PC_out, div_rd_out, div_wb_out, is_rem_op_out, is_div_w_out, div_pid_out, div_sop_out, div_eop_out} = div_tag_r;
+    assign {div_uuid_out, div_wid_out, div_tmask_out, div_PC_out, div_rd_out, div_wb_out, is_rem_op_out, is_div_w_out, div_pid_out, div_sop_out, div_eop_out} = div_tag_r;
 
     for (genvar i = 0; i < NUM_LANES; ++i) begin : g_div_result_out
     `ifdef XLEN_64

@@ -18,8 +18,8 @@
    } while (false)
 
 const char* kernel_file = "kernel.vxbin";
-uint32_t M = 128;  // Rows (output vector size)
-uint32_t N = 128;  // Columns (input vector size)
+uint32_t M = 1024;  // Rows (output vector size)
+uint32_t N = 1024;  // Columns (input vector size)
 
 vx_device_h device = nullptr;
 vx_buffer_h A_buffer = nullptr;  // Matrix (M x N)

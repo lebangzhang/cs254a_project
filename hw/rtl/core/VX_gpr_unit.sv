@@ -43,7 +43,7 @@ module VX_gpr_unit import VX_gpu_pkg::*; #(
     localparam BANK_SEL_WIDTH = `UP(BANK_SEL_BITS);
     localparam BANK_DATA_WIDTH = `SIMD_WIDTH * `XLEN;
     localparam BANK_DATA_SIZE = BANK_DATA_WIDTH / 8;
-    localparam BANK_SIZE = (PER_ISSUE_WARPS * SIMD_COUNT * NUM_S_REGS) / NUM_BANKS;
+    localparam BANK_SIZE = (PER_ISSUE_WARPS * SIMD_COUNT * NUM_SREGS) / NUM_BANKS;
     localparam BANK_ADDR_WIDTH = `CLOG2(BANK_SIZE);
     localparam GPR_REQ_DATAW = SRC_OPD_WIDTH + ISSUE_WIS_W + SIMD_IDX_W + NR_S_BITS;
     localparam GPR_RSP_DATAW = SRC_OPD_WIDTH + `SIMD_WIDTH * `XLEN;

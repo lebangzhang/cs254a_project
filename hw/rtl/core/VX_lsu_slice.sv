@@ -283,7 +283,6 @@ module VX_lsu_slice import VX_gpu_pkg::*; #(
     // pack memory request tag
     assign mem_req_tag = {
         execute_if.data.uuid,
-        execute_if.data.lid,
         execute_if.data.wid,
         execute_if.data.PC,
         execute_if.data.wb,
@@ -402,7 +401,6 @@ module VX_lsu_slice import VX_gpu_pkg::*; #(
     // unpack memory response tag
     assign {
         rsp_uuid,
-        rsp_lid,
         rsp_wid,
         rsp_pc,
         rsp_wb,

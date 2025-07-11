@@ -34,6 +34,10 @@ module VX_sfu_unit import VX_gpu_pkg::*; #(
     VX_fpu_csr_if.slave     fpu_csr_if [`NUM_FPU_BLOCKS],
 `endif
 
+`ifdef EXT_V_ENABLE
+    VX_vpu_states_if.slave  vpu_states_if,
+`endif
+
     VX_commit_csr_if.slave  commit_csr_if,
     VX_sched_csr_if.slave   sched_csr_if,
 

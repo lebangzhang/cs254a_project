@@ -230,7 +230,7 @@ void LsuUnit::tick() {
 			auto amp_type = std::get<AmoType>(trace->op_type);
 			is_write = (amp_type != AmoType::LR);
 		}
-	#if defined(EXT_V_ENABLE) || defined(EXT_ARA2_ENABLE)
+	#ifdef EXT_V_ENABLE
 		else if (std::get_if<VlsType>(&trace->op_type)) {
 			auto vls_type = std::get<VlsType>(trace->op_type);
 			is_write = (vls_type == VlsType::VS
@@ -265,7 +265,7 @@ void LsuUnit::tick() {
 		if (remain_addrs_ == 0) {
 			pending_addrs_.clear();
 			if (trace->data) {
-			#if defined(EXT_V_ENABLE) || defined(EXT_ARA2_ENABLE)
+			#ifdef EXT_V_ENABLE
 				if (std::get_if<VlsType>(&trace->op_type)) {
 					auto trace_data = std::dynamic_pointer_cast<VecUnit::MemTraceData>(trace->data);
 					for (uint32_t t = 0; t < trace_data->mem_addrs.size(); ++t) {
@@ -408,6 +408,7 @@ void SfuUnit::tick() {
 ///////////////////////////////////////////////////////////////////////////////
 
 #ifdef EXT_V_ENABLE
+
 VpuUnit::VpuUnit(const SimContext& ctx, Core* core)
 	: FuncUnit(ctx, core, "vpu-unit")
 {
@@ -425,20 +426,19 @@ void VpuUnit::tick() {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-#ifdef EXT_ARA2_ENABLE
-Ara2Unit::Ara2Unit(const SimContext& ctx, Core* core)
-	: FuncUnit(ctx, core, "vpu-unit")
+#ifdef EXT_TCU_ENABLE
+
+TcuUnit::TcuUnit(const SimContext& ctx, Core* core)
+	: FuncUnit(ctx, core, "tcu-unit")
 {
-	// bind vector unit
+	// bind tensor unit
 	for (uint32_t iw = 0; iw < ISSUE_WIDTH; ++iw) {
-		this->Inputs.at(iw).bind(&core_->ara_unit()->Inputs.at(iw));
-		core_->ara_unit()->Outputs.at(iw).bind(&this->Outputs.at(iw));
+		this->Inputs.at(iw).bind(&core_->tensor_unit()->Inputs.at(iw));
+		core_->tensor_unit()->Outputs.at(iw).bind(&this->Outputs.at(iw));
 	}
 }
 
-void Ara2Unit::tick() {
-	// use ara_unit
+void TcuUnit::tick() {
+	// use tensor_unit
 }
 #endif
-
-

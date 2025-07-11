@@ -29,17 +29,19 @@ SRCS += $(SRC_DIR)/dcrs.cpp $(SRC_DIR)/types.cpp
 
 # Add V extension sources
 ifneq ($(findstring -DEXT_V_ENABLE, $(CONFIGS)),)
-  	SRCS += $(SRC_DIR)/voperands.cpp
-  	SRCS += $(SRC_DIR)/vopc_unit.cpp
-  	SRCS += $(SRC_DIR)/vec_unit.cpp
-else ifneq ($(findstring -DEXT_ARA2_ENABLE, $(CONFIGS)),)
-  	SRCS += $(SRC_DIR)/ara_operands.cpp
- 	SRCS += $(SRC_DIR)/ara_opc_unit.cpp
-  	SRCS += $(SRC_DIR)/ara_unit.cpp
+  	ifneq ($(findstring -DVPU_ARA2, $(CONFIGS)),)
+		SRCS += $(SRC_DIR)/ara_operands.cpp
+		SRCS += $(SRC_DIR)/ara_opc_unit.cpp
+		SRCS += $(SRC_DIR)/ara_vopc_unit.cpp
+		SRCS += $(SRC_DIR)/ara_unit.cpp
+	else
+		SRCS += $(SRC_DIR)/voperands.cpp
+  		SRCS += $(SRC_DIR)/vopc_unit.cpp
+	endif
+	SRCS += $(SRC_DIR)/vec_unit.cpp
 else
 	SRCS += $(SRC_DIR)/operands.cpp
 endif
-
 # Add TCU extension sources
 ifneq ($(findstring -DEXT_TCU_ENABLE, $(CONFIGS)),)
   	SRCS += $(SRC_DIR)/tensor_unit.cpp

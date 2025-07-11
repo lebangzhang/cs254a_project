@@ -98,10 +98,10 @@ private:
 };
 
 
-// TOFIX : Need to fix this 
+// TOFIX : Need to fix this
 
 /*#if defined(EXT_V_ENABLE) || defined(EXT_ARA2_ENABLE)*/
-typedef GprUnit<(NUM_OPCS + NUM_VOPCS), NUM_GPR_BANKS> GPR;
+typedef GprUnit<(NUM_OPCS + NUM_OPCS), NUM_GPR_BANKS> GPR;
 /*typedef GprUnit<NUM_OPCS, NUM_VGPR_BANKS> VGPR;*/
 /*#else*/
 /*typedef GprUnit<NUM_OPCS, NUM_GPR_BANKS> GPR;*/

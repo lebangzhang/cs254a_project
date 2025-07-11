@@ -16,6 +16,7 @@
 #include "instr_trace.h"
 #include "opc_unit.h"
 #include "ara_opc_unit.h"
+#include "ara_vopc_unit.h"
 #include "gpr_unit.h"
 #include "vgpr_unit.h"
 
@@ -43,8 +44,8 @@ public:
   }
 
 private:
-  std::vector<OpcUnit::Ptr> sopc_units_;
-  std::vector<Ara_Opc_Unit::Ptr> vopc_units_;
+  std::vector<Ara_Opc_Unit::Ptr> sopc_units_;
+  std::vector<Ara_VOpc_Unit::Ptr> vopc_units_;
   GPR::Ptr  sgpr_unit_;
   VGPR::Ptr vgpr_unit_;
   uint32_t  total_stalls_ = 0;

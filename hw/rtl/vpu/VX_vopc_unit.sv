@@ -13,275 +13,144 @@
 
 `include "VX_define.vh"
 
+// reset all GPRs in debug mode
+`ifdef SIMULATION
+`ifndef NDEBUG
+`define GPR_RESET
+`endif
+`endif
+
 module VX_vopc_unit import VX_gpu_pkg::*; #(
     parameter `STRING INSTANCE_ID = "",
-    parameter ISSUE_ID = 0
+    parameter NUM_BANKS = 4,
+    parameter OUT_BUF   = 3
 ) (
     input wire              clk,
     input wire              reset,
 
-    input reg [`NUM_OPCS-1:0] wait_mask,
+`ifdef PERF_ENABLE
+    output wire [PERF_CTR_BITS-1:0] perf_stalls,
+`endif
 
+    VX_writeback_if.slave   writeback_if,
     VX_scoreboard_if.slave  scoreboard_if,
-
-    VX_gpr_if.master        gpr_if,
-
-    VX_vgpr_if.master       vgpr_if,
-
-    VX_vpu_states_if.master vpu_states_if,
-
     VX_operands_if.master   operands_if
 );
     `UNUSED_SPARAM (INSTANCE_ID)
-    `UNUSED_PARAM (ISSUE_ID)
 
-    localparam NUM_OPDS  = NUM_SRC_OPDS + 1;
-    localparam IN_DATAW  = UUID_WIDTH + ISSUE_WIS_W + `NUM_THREADS + PC_BITS + EX_BITS + INST_OP_BITS + INST_ARGS_BITS + NUM_OPDS + (NUM_OPDS * REG_IDX_BITS);
-    localparam OUT_DATAW = UUID_WIDTH + ISSUE_WIS_W + SIMD_IDX_W + VL_WIDTH + `SIMD_WIDTH + PC_BITS + EX_BITS + INST_OP_BITS + INST_ARGS_BITS + 1 + NR_BITS + (NUM_SRC_OPDS * `SIMD_WIDTH * `XLEN) + 1 + 1;
+    localparam REQ_SEL_WIDTH    = SRC_OPD_WIDTH;
+    localparam BANK_SEL_BITS    = `CLOG2(NUM_BANKS);
+    localparam BANK_SEL_WIDTH   = `UP(BANK_SEL_BITS);
+    localparam BANK_DATA_WIDTH  = `XLEN * `SIMD_WIDTH;
+    localparam BANK_DATA_SIZE   = BANK_DATA_WIDTH / 8;
 
-    localparam STATE_IDLE     = 0;
-    localparam STATE_FETCH    = 1;
-    localparam STATE_DECODE   = 2;
-    localparam STATE_DISPATCH = 3;
-    localparam STATE_WIDTH    = 2;
+    localparam PER_OPC_WARPS    = PER_ISSUE_WARPS / `NUM_OPCS;
+    localparam PER_OPC_NW_BITS  = `CLOG2(PER_OPC_WARPS);
+    localparam BANK_SIZE        = (NUM_REGS * SIMD_COUNT * PER_OPC_WARPS) / NUM_BANKS;
+    localparam BANK_ADDR_WIDTH  = `CLOG2(BANK_SIZE);
 
-    VX_scoreboard_if staging_if();
+    localparam REG_REM_BITS     = NUM_REGS_BITS - BANK_SEL_BITS;
 
-    reg [NUM_SRC_OPDS-1:0] gp_opds_needed, gp_opds_needed_n;
-    reg [NUM_SRC_OPDS-1:0] v_opds_needed, v_opds_needed_n;
-    reg [NUM_SRC_OPDS-1:0] gp_opds_busy, gp_opds_busy_n;
-    reg [NUM_SRC_OPDS-1:0] v_opds_busy, v_opds_busy_n;
-    reg [STATE_WIDTH-1:0]  state, state_n;
-    reg [VL_WIDTH-1:0] lane_counter, lane_counter_n;
+    localparam META_DATAW       = UUID_WIDTH + ISSUE_WIS_W + SIMD_IDX_W + `SIMD_WIDTH + PC_BITS + 1 + EX_BITS + INST_OP_BITS + INST_ARGS_BITS + NUM_REGS_BITS + 1 + 1;
+    localparam OUT_DATAW        = $bits(operands_t);
 
-    wire output_ready;
+    `UNUSED_VAR (writeback_if.data.sop)
+
+    wire [NUM_SRC_OPDS-1:0] src_valid;
+    wire [NUM_SRC_OPDS-1:0] req_valid_in, req_ready_in;
+    wire [NUM_SRC_OPDS-1:0][REG_REM_BITS-1:0] req_addr_in;
+    wire [NUM_SRC_OPDS-1:0][BANK_SEL_WIDTH-1:0] req_bank_idx;
+
+    wire [NUM_BANKS-1:0] gpr_rd_valid, gpr_rd_ready;
+    wire [NUM_BANKS-1:0] gpr_rd_valid_st1, gpr_rd_valid_st2;
+    wire [NUM_BANKS-1:0][REG_REM_BITS-1:0] gpr_rd_reg, gpr_rd_reg_st1;
+    wire [NUM_BANKS-1:0][`SIMD_WIDTH-1:0][`XLEN-1:0] gpr_rd_data_st2;
+    wire [NUM_BANKS-1:0][REQ_SEL_WIDTH-1:0] gpr_rd_opd, gpr_rd_opd_st1, gpr_rd_opd_st2;
 
     wire [`SIMD_WIDTH-1:0] simd_out;
     wire [SIMD_IDX_W-1:0] simd_pid;
     wire simd_sop, simd_eop;
 
-    // hold current instruction
-    VX_pipe_buffer #(
-        .DATAW (IN_DATAW)
-    ) stanging_buf (
-        .clk      (clk),
-        .reset    (reset),
-        .valid_in (scoreboard_if.valid),
-        .data_in  (scoreboard_if.data),
-        .ready_in (scoreboard_if.ready),
-        .valid_out(staging_if.valid),
-        .data_out (staging_if.data),
-        .ready_out(staging_if.ready)
-    );
+    wire pipe_ready_in;
+    wire pipe_valid_st1, pipe_ready_st1;
+    wire pipe_valid_st2, pipe_ready_st2;
+    wire [META_DATAW-1:0] pipe_mdata, pipe_mdata_st1, pipe_mdata_st2;
 
-    // next_simd     : Special case of dispatch_fire when last lane
-    // last_dispatch : Special case of next_simd when eop
-    wire dispatch_fire = (state == STATE_DISPATCH) && output_ready;
-    wire next_simd     = dispatch_fire && (lane_counter == VL_BITS'(VL_COUNT));
-    wire last_dispatch = next_simd && simd_eop;
+    reg [NUM_SRC_OPDS-1:0][(`SIMD_WIDTH * `XLEN)-1:0] opd_buffer_st2, opd_buffer_n_st2;
 
-    // pop current instruction
-    assign staging_if.ready = last_dispatch;
+    reg [NUM_SRC_OPDS-1:0] opd_fetched_st1;
 
-    // GP Reg File request and response handshake
-    wire gpr_req_fire = gpr_if.req_valid && gpr_if.req_ready;
-    wire gpr_rsp_fire = gpr_if.rsp_valid;
+    reg has_collision;
+    wire has_collision_st1;
 
-    // Vec Reg File request and response handshake
-    wire vgpr_req_fire = vgpr_if.req_valid && vgpr_if.req_ready;
-    wire vgpr_rsp_fire = vgpr_if.rsp_valid;
+    wire [NUM_SRC_OPDS-1:0][NUM_REGS_BITS-1:0] src_regs;
+    assign src_regs = {to_reg_number(scoreboard_if.data.rs3),
+                       to_reg_number(scoreboard_if.data.rs2),
+                       to_reg_number(scoreboard_if.data.rs1)};
 
-    // calculate register numbers
-    wire [NR_BITS-1:0] stg_rd  = to_reg_number(staging_if.data.rd);
-    wire [NR_BITS-1:0] stg_rs1 = to_reg_number(staging_if.data.rs1);
-    wire [NR_BITS-1:0] stg_rs2 = to_reg_number(staging_if.data.rs2);
-    wire [NR_BITS-1:0] stg_rs3 = to_reg_number(staging_if.data.rs3);
-    wire [NUM_SRC_OPDS-1:0][NR_BITS-1:0] stg_src_regs = {stg_rs3, stg_rs2, stg_rs1};
-    wire [NUM_SRC_OPDS-1:0] stg_rs_is_vec = {staging_if.data.rs3.rtype == 2, staging_if.data.rs2.rtype == 2, staging_if.data.rs1.rtype == 2};
-    wire                    stg_rd_is_vec = {staging_if.data.rd.rtype == 2};
-    `UNUSED_VAR (stg_rd_is_vec)
-
-    // determine source operands to fetch
-    wire [NUM_SRC_OPDS-1:0] opds_to_fetch;
-    for (genvar i = 0; i < NUM_SRC_OPDS; ++i) begin : g_opds_to_fetch
-        assign opds_to_fetch[i] = staging_if.data.used_rs[i] && (stg_src_regs[i] != 0) ;
+    for (genvar i = 0; i < NUM_SRC_OPDS; ++i) begin : g_gpr_rd_reg
+        assign req_addr_in[i] = src_regs[i][NUM_REGS_BITS-1 -: REG_REM_BITS];
     end
 
-    // control state machine
+    for (genvar i = 0; i < NUM_SRC_OPDS; ++i) begin : g_req_bank_idx
+        if (NUM_BANKS != 1) begin : g_bn
+            assign req_bank_idx[i] = src_regs[i][BANK_SEL_BITS-1:0];
+        end else begin : g_b1
+            assign req_bank_idx[i] = '0;
+        end
+    end
+
+    for (genvar i = 0; i < NUM_SRC_OPDS; ++i) begin : g_src_valid
+        assign src_valid[i] = scoreboard_if.data.used_rs[i] && (src_regs[i] != 0) && ~opd_fetched_st1[i];
+    end
+
+    assign req_valid_in = {NUM_SRC_OPDS{scoreboard_if.valid}} & src_valid;
+
+    VX_stream_xbar #(
+        .NUM_INPUTS  (NUM_SRC_OPDS),
+        .NUM_OUTPUTS (NUM_BANKS),
+        .DATAW       (REG_REM_BITS),
+        .ARBITER     ("P"), // use priority arbiter
+        .OUT_BUF     (0)    // no output buffering
+    ) req_xbar (
+        .clk       (clk),
+        .reset     (reset),
+        `UNUSED_PIN(collisions),
+        .valid_in  (req_valid_in),
+        .data_in   (req_addr_in),
+        .sel_in    (req_bank_idx),
+        .ready_in  (req_ready_in),
+        .valid_out (gpr_rd_valid),
+        .data_out  (gpr_rd_reg),
+        .sel_out   (gpr_rd_opd),
+        .ready_out (gpr_rd_ready)
+    );
+
+    assign gpr_rd_ready = {NUM_BANKS{pipe_ready_in}};
+
     always @(*) begin
-        state_n = state;
-        gp_opds_needed_n = gp_opds_needed;
-        gp_opds_busy_n = gp_opds_busy;
-        v_opds_needed_n = v_opds_needed;
-        v_opds_busy_n = v_opds_busy;
-        lane_counter_n = lane_counter;
-
-        case (state)
-        STATE_IDLE: begin
-            if (staging_if.valid) begin
-                gp_opds_needed_n = opds_to_fetch & ~stg_rs_is_vec;
-                gp_opds_busy_n = opds_to_fetch & ~stg_rs_is_vec;
-                v_opds_needed_n = opds_to_fetch & stg_rs_is_vec;
-                v_opds_busy_n = opds_to_fetch & stg_rs_is_vec;
-                if (opds_to_fetch == 0) begin
-                    state_n = STATE_DECODE;
-                end else begin
-                    state_n = STATE_FETCH;
-                end
-            end
-        end
-
-        STATE_FETCH: begin
-            if (gpr_req_fire) begin
-                gp_opds_needed_n[gpr_if.req_data.opd_id] = 0;
-            end
-            if (gpr_rsp_fire) begin
-                gp_opds_busy_n[gpr_if.rsp_data.opd_id] = 0;
-            end
-
-            if (vgpr_req_fire) begin
-                v_opds_needed_n[vgpr_if.req_data.opd_id] = 0;
-            end
-            if (vgpr_rsp_fire) begin
-                v_opds_busy_n[vgpr_if.rsp_data.opd_id] = 0;
-            end
-            if (gp_opds_busy_n == 0 && v_opds_busy_n == 0) begin
-                state_n = STATE_DECODE;
-            end
-        end
-
-        STATE_DECODE: begin
-            // single cycle decode
-            state_n = STATE_DISPATCH;
-        end
-
-        STATE_DISPATCH: begin
-
-            // TOFIX : the slide unit 
-            // if (slide_flag) begin
-            // end else if (output_ready) begin
-
-            if (output_ready) begin
-                if (last_dispatch) begin
-                    state_n = STATE_IDLE;
-                end else if (dispatch_fire) begin
-                    // move to next Lane
-                    if (opds_to_fetch != 0) begin
-                        // reset vector operands
-                        v_opds_needed_n = opds_to_fetch & stg_rs_is_vec;
-                        v_opds_busy_n = opds_to_fetch & stg_rs_is_vec;
-                        if (lane_counter == VL_BITS'(VL_COUNT)) begin
-                            // moving to next SIMD, reset scalar operands
-                            gp_opds_needed_n = opds_to_fetch & ~stg_rs_is_vec;
-                            gp_opds_busy_n = opds_to_fetch & ~stg_rs_is_vec;
-                        end
-                        state_n = STATE_FETCH;
-                    end
-
-                    // TOFIX : Lane Counter + access to vrf
-                    lane_counter_n = lane_counter + 1;
-                end
-            end
-        end
-        endcase
-    end
-
-    // select next scalar operand to fetch
-    wire [SRC_OPD_WIDTH-1:0] gp_opd_id;
-    wire gp_opd_fetch_valid;
-    VX_priority_encoder #(
-        .N (NUM_SRC_OPDS)
-    ) opd_id_sel (
-        .data_in   (gp_opds_needed),
-        .index_out (gp_opd_id),
-        .valid_out (gp_opd_fetch_valid),
-        `UNUSED_PIN (onehot_out)
-    );
-
-    // select next vector operand to fetch
-    wire [SRC_OPD_WIDTH-1:0] v_opd_id;
-    wire v_opd_fetch_valid;
-    VX_priority_encoder #(
-        .N (NUM_SRC_OPDS)
-    ) v_opd_id_sel (
-        .data_in   (v_opds_needed),
-        .index_out (v_opd_id),
-        .valid_out (v_opd_fetch_valid),
-        `UNUSED_PIN (onehot_out)
-    );
-
-    // create GPR request
-    assign gpr_if.req_valid = gp_opd_fetch_valid;
-    assign gpr_if.req_data.opd_id = gp_opd_id;
-    assign gpr_if.req_data.sid = simd_pid;
-    assign gpr_if.req_data.wis = staging_if.data.wis;
-    assign gpr_if.req_data.reg_id = NR_S_BITS'(stg_src_regs[gp_opd_id]);
-
-    // create VGPR request
-    assign vgpr_if.req_valid = v_opd_fetch_valid;
-    assign vgpr_if.req_data.opd_id = v_opd_id;
-    assign vgpr_if.req_data.sid = simd_pid;
-    assign vgpr_if.req_data.wis = staging_if.data.wis;
-    assign vgpr_if.req_data.lid = lane_counter;
-    assign vgpr_if.req_data.reg_id = NR_V_BITS'(stg_src_regs[v_opd_id]);
-
-    // operands buffer
-    reg [NUM_SRC_OPDS-1:0][`SIMD_WIDTH-1:0][`XLEN-1:0] opd_values;
-
-    // TOFIX : Apply packing to vgpr
-    // handle GPR & VGPR responses
-    always @(posedge clk) begin
-        // reset all operands on dispatch
-        if (reset || last_dispatch) begin
-            for (integer i = 0; i < NUM_SRC_OPDS; ++i) begin
-                opd_values[i] <= '0;
-            end
-        end else begin
-            if (gpr_rsp_fire) begin
-                opd_values[gpr_if.rsp_data.opd_id] <= gpr_if.rsp_data.data;
-            end
-            if (vgpr_rsp_fire) begin
-                opd_values[vgpr_if.rsp_data.opd_id] <= vgpr_if.rsp_data.data;
+        has_collision = 0;
+        for (integer i = 0; i < NUM_SRC_OPDS; ++i) begin
+            for (integer j = 1; j < (NUM_SRC_OPDS-i); ++j) begin
+                has_collision |= src_valid[i]
+                              && src_valid[j+i]
+                              && (req_bank_idx[i] == req_bank_idx[j+i]);
             end
         end
     end
 
-    // TOFIX : Get the slide width 
-    // Slide Operation 
-    // reg [NUM_SRC_OPDS-1:0][`SIMD_WIDTH-1:0][`XLEN-1:0] slide_destination;
-    // reg [`XLEN-1:0] slide_width;  // is either rs1 or imm  
-    // wire slide_flag; 
-
-    // state machine update
-    always @(posedge clk) begin
-        if (reset) begin
-            state <= STATE_IDLE;
-            gp_opds_needed <= '0;
-            gp_opds_busy <= '0;
-            v_opds_needed <= '0;
-            v_opds_busy <= '0;
-            lane_counter <= '0;
-        end else begin
-            state <= state_n;
-            gp_opds_needed <= gp_opds_needed_n;
-            gp_opds_busy <= gp_opds_busy_n;
-            v_opds_needed <= v_opds_needed_n;
-            v_opds_busy <= v_opds_busy_n;
-            lane_counter <= lane_counter_n;
-        end
-    end
+    wire opd_last_fetch = pipe_ready_in && ~has_collision;
 
     // simd iterator (skip requests with inactive threads)
     VX_nz_iterator #(
-        .DATAW   (`SIMD_WIDTH),
-        .N       (SIMD_COUNT),
-        .OUT_REG (1)
+        .DATAW (`SIMD_WIDTH),
+        .N     (SIMD_COUNT)
     ) simd_iter (
         .clk     (clk),
         .reset   (reset),
-        .valid_in(staging_if.valid),
-        .data_in (staging_if.data.tmask),
-        .next    (next_simd),
+        .valid_in(scoreboard_if.valid),
+        .data_in (scoreboard_if.data.tmask),
+        .next    (opd_last_fetch),
         `UNUSED_PIN (valid_out),
         .data_out(simd_out),
         .pid     (simd_pid),
@@ -289,93 +158,192 @@ module VX_vopc_unit import VX_gpu_pkg::*; #(
         .eop     (simd_eop)
     );
 
-    instr_data_t instr_orig, instr_decoded;
-    assign instr_orig = {
-        staging_if.data.uuid,
-        lane_counter,
-        staging_if.data.wis,
+    assign pipe_mdata = {
+        scoreboard_if.data.uuid,
+        scoreboard_if.data.wis,
         simd_pid,
         simd_out,
-        staging_if.data.PC,
-        staging_if.data.ex_type,
-        staging_if.data.op_type,
-        staging_if.data.op_args,
-        staging_if.data.wb,
-        stg_rd,
-        opd_values[0],
-        opd_values[1],
-        opd_values[2],
-        (lane_counter == 0) && simd_sop, // sop
-        simd_eop // eop
+        scoreboard_if.data.PC,
+        scoreboard_if.data.wb,
+        scoreboard_if.data.ex_type,
+        scoreboard_if.data.op_type,
+        scoreboard_if.data.op_args,
+        to_reg_number(scoreboard_if.data.rd),
+        simd_sop,
+        simd_eop
     };
 
-    VX_vopc_decoder #(
-        .INSTANCE_ID (`SFORMATF(("%s-decoder", INSTANCE_ID))),
-        .ISSUE_ID (ISSUE_ID)
-    ) decoder (
-        .clk       (clk),
-        .reset     (reset),
-        .vpu_states_if(vpu_states_if),
-        .valid     (state == STATE_DECODE),
-        .instr_in  (instr_orig),
-        .instr_out (instr_decoded)
+    assign scoreboard_if.ready = opd_last_fetch && simd_eop;
+
+    wire pipe_fire_st1 = pipe_valid_st1 && pipe_ready_st1;
+    wire pipe_fire_st2 = pipe_valid_st2 && pipe_ready_st2;
+
+    VX_pipe_buffer #(
+        .DATAW  (NUM_BANKS + META_DATAW + 1 + NUM_BANKS * (REG_REM_BITS + REQ_SEL_WIDTH)),
+        .RESETW (1)
+    ) pipe_reg1 (
+        .clk      (clk),
+        .reset    (reset),
+        .valid_in (scoreboard_if.valid),
+        .ready_in (pipe_ready_in),
+        .data_in  ({gpr_rd_valid,     pipe_mdata,     has_collision,     gpr_rd_reg,     gpr_rd_opd}),
+        .data_out ({gpr_rd_valid_st1, pipe_mdata_st1, has_collision_st1, gpr_rd_reg_st1, gpr_rd_opd_st1}),
+        .valid_out(pipe_valid_st1),
+        .ready_out(pipe_ready_st1)
     );
 
-    // hold dispatch until dependency check is ready
-    wire dep_check_ready = (wait_mask == 0);
-    wire output_ready_w;
-    assign output_ready = output_ready_w && ~dep_check_ready;
-    wire output_valid = (state == STATE_DISPATCH) && ~dep_check_ready;
+    wire [NUM_SRC_OPDS-1:0] req_fire_in = req_valid_in & req_ready_in;
 
-    // Buffer out dispatch response
+    always @(posedge clk) begin
+        if (reset || opd_last_fetch) begin
+            opd_fetched_st1 <= '0;
+        end else begin
+            opd_fetched_st1 <= opd_fetched_st1 | req_fire_in;
+        end
+    end
+
+    wire pipe_valid2_st1 = pipe_valid_st1 && ~has_collision_st1;
+
+    VX_pipe_buffer #(
+        .DATAW  (NUM_BANKS * (1 + REQ_SEL_WIDTH) + META_DATAW),
+        .RESETW (1)
+    ) pipe_reg2 (
+        .clk      (clk),
+        .reset    (reset),
+        .valid_in (pipe_valid2_st1),
+        .ready_in (pipe_ready_st1),
+        .data_in  ({gpr_rd_valid_st1, gpr_rd_opd_st1, pipe_mdata_st1}),
+        .data_out ({gpr_rd_valid_st2, gpr_rd_opd_st2, pipe_mdata_st2}),
+        .valid_out(pipe_valid_st2),
+        .ready_out(pipe_ready_st2)
+    );
+
+    always @(*) begin
+        opd_buffer_n_st2 = opd_buffer_st2;
+        for (integer b = 0; b < NUM_BANKS; ++b) begin
+            if (gpr_rd_valid_st2[b]) begin
+                opd_buffer_n_st2[gpr_rd_opd_st2[b]] = gpr_rd_data_st2[b];
+            end
+        end
+    end
+
+    always @(posedge clk) begin
+        if (reset || pipe_fire_st2) begin
+            opd_buffer_st2 <= '0; // clear on reset or when data is sent out
+        end else begin
+            opd_buffer_st2 <= opd_buffer_n_st2;
+        end
+    end
+
+    wire [BANK_ADDR_WIDTH-1:0] gpr_wr_addr;
+    if (SIMD_COUNT != 1) begin : g_gpr_wr_addr_sid
+        wire [PER_OPC_NW_BITS + REG_REM_BITS-1:0] tmp;
+        `CONCAT(tmp, writeback_if.data.wis[ISSUE_WIS_W-1 -: PER_OPC_NW_BITS],
+              writeback_if.data.rd[NUM_REGS_BITS-1 -: REG_REM_BITS], PER_OPC_NW_BITS, REG_REM_BITS)
+        assign gpr_wr_addr = {writeback_if.data.sid, tmp};
+    end else begin : g_gpr_wr_addr
+        `CONCAT(gpr_wr_addr, writeback_if.data.wis[ISSUE_WIS_W-1 -: PER_OPC_NW_BITS],
+              writeback_if.data.rd[NUM_REGS_BITS-1 -: REG_REM_BITS], PER_OPC_NW_BITS, REG_REM_BITS)
+    end
+
+    wire [BANK_SEL_WIDTH-1:0] gpr_wr_bank_idx;
+    if (NUM_BANKS != 1) begin : g_gpr_wr_bank_idx_bn
+        assign gpr_wr_bank_idx = writeback_if.data.rd[BANK_SEL_BITS-1:0];
+    end else begin : g_gpr_wr_bank_idx_b1
+        assign gpr_wr_bank_idx = '0;
+    end
+
+    wire [BANK_DATA_SIZE-1:0] gpr_wr_byteen;
+    for (genvar i = 0; i < `SIMD_WIDTH; ++i) begin : g_gpr_wr_byteen
+        assign gpr_wr_byteen[i*XLENB+:XLENB] = {XLENB{writeback_if.data.tmask[i]}};
+    end
+
+    // GPR banks
+    for (genvar b = 0; b < NUM_BANKS; ++b) begin : g_gpr_rams
+        wire gpr_wr_enabled;
+        if (BANK_SEL_BITS != 0) begin : g_gpr_wr_enabled_bn
+            assign gpr_wr_enabled = writeback_if.valid && (gpr_wr_bank_idx == BANK_SEL_BITS'(b));
+        end else begin : g_gpr_wr_enabled_b1
+            assign gpr_wr_enabled = writeback_if.valid;
+        end
+
+        wire [BANK_ADDR_WIDTH-1:0] gpr_rd_addr;
+        if (SIMD_COUNT != 1) begin : g_gpr_rd_addr_sid
+            wire [PER_OPC_NW_BITS + REG_REM_BITS-1:0] tmp;
+            `CONCAT(tmp, pipe_mdata_st1[META_DATAW-UUID_WIDTH-1 -: PER_OPC_NW_BITS],
+                gpr_rd_reg_st1[b], PER_OPC_NW_BITS, REG_REM_BITS)
+            assign gpr_rd_addr = {pipe_mdata_st1[META_DATAW-UUID_WIDTH-ISSUE_WIS_W-1 -: SIMD_IDX_W], tmp};
+        end else begin : g_gpr_rd_addr
+            `CONCAT(gpr_rd_addr, pipe_mdata_st1[META_DATAW-UUID_WIDTH-1 -: PER_OPC_NW_BITS],
+                gpr_rd_reg_st1[b], PER_OPC_NW_BITS, REG_REM_BITS)
+        end
+
+        VX_dp_ram #(
+            .DATAW (BANK_DATA_WIDTH),
+            .SIZE  (BANK_SIZE),
+            .WRENW (BANK_DATA_SIZE),
+         `ifdef GPR_RESET
+            .RESET_RAM (1),
+         `endif
+            .OUT_REG (1),
+            .RDW_MODE ("R")
+        ) gpr_ram (
+            .clk   (clk),
+            .reset (reset),
+            .read  (pipe_fire_st1),
+            .wren  (gpr_wr_byteen),
+            .write (gpr_wr_enabled),
+            .waddr (gpr_wr_addr),
+            .wdata (writeback_if.data.data),
+            .raddr (gpr_rd_addr),
+            .rdata (gpr_rd_data_st2[b])
+        );
+    end
+
+    // output buffer
     VX_elastic_buffer #(
         .DATAW   (OUT_DATAW),
-        .SIZE    (0),
-        .OUT_REG (0)
+        .SIZE    (`TO_OUT_BUF_SIZE(OUT_BUF)),
+        .OUT_REG (`TO_OUT_BUF_REG(OUT_BUF))
     ) out_buf (
         .clk      (clk),
         .reset    (reset),
-        .valid_in (output_valid),
-        .data_in  (instr_decoded),
-        .ready_in (output_ready_w),
+        .valid_in (pipe_valid_st2),
+        .ready_in (pipe_ready_st2),
+        .data_in  ({pipe_mdata_st2[META_DATAW-1:2], // remove sop/eop
+                    opd_buffer_n_st2, // operand data
+                    pipe_mdata_st2[1:0]}), // sop/eop
+        .data_out ({
+            operands_if.data.uuid,
+            operands_if.data.wis,
+            operands_if.data.sid,
+            operands_if.data.tmask,
+            operands_if.data.PC,
+            operands_if.data.wb,
+            operands_if.data.ex_type,
+            operands_if.data.op_type,
+            operands_if.data.op_args,
+            operands_if.data.rd,
+            operands_if.data.rs3_data,
+            operands_if.data.rs2_data,
+            operands_if.data.rs1_data,
+            operands_if.data.sop,
+            operands_if.data.eop
+        }),
         .valid_out(operands_if.valid),
-        .data_out (operands_if.data),
         .ready_out(operands_if.ready)
     );
 
-`ifdef DBG_TRACE_PIPELINE
+`ifdef PERF_ENABLE
+    reg [PERF_CTR_BITS-1:0] collisions_r;
     always @(posedge clk) begin
-        if (scoreboard_if.valid && scoreboard_if.ready) begin
-            `TRACE(1, ("%t: %s-input: wid=%0d, PC=0x%0h, ex=", $time, INSTANCE_ID, wis_to_wid(scoreboard_if.data.wis, ISSUE_ID), {scoreboard_if.data.PC, 1'b0}))
-            trace_ex_type(1, scoreboard_if.data.ex_type);
-            `TRACE(1, (", op="))
-            trace_ex_op(1, scoreboard_if.data.ex_type, scoreboard_if.data.op_type, scoreboard_if.data.op_args);
-            `TRACE(1, (", tmask=%b, wb=%b, used_rs=%b, rd=%0d, rs1=%0d, rs2=%0d, rs3=%0d (#%0d)\n", scoreboard_if.data.tmask, scoreboard_if.data.wb, scoreboard_if.data.used_rs, to_reg_number(scoreboard_if.data.rd), to_reg_number(scoreboard_if.data.rs1), to_reg_number(scoreboard_if.data.rs2), to_reg_number(scoreboard_if.data.rs3), scoreboard_if.data.uuid))
-        end
-        if (gpr_if.req_valid && gpr_if.req_ready) begin
-            `TRACE(1, ("%t: %s-gpr-req: opd=%0d, wis=%0d, sid=%0d, reg=%0d\n", $time, INSTANCE_ID, gpr_if.req_data.opd_id, wis_to_wid(gpr_if.req_data.wis, ISSUE_ID), gpr_if.req_data.sid, gpr_if.req_data.reg_id))
-        end
-        if (gpr_if.rsp_valid) begin
-            `TRACE(1, ("%t: %s-gpr-rsp: opd=%0d, data=", $time, INSTANCE_ID, gpr_if.rsp_data.opd_id))
-            `TRACE_ARRAY1D(1, "0x%0h", gpr_if.rsp_data.data, `SIMD_WIDTH)
-            `TRACE(1, ("\n"))
-        end
-        if (operands_if.valid && operands_if.ready) begin
-            `TRACE(1, ("%t: %s-output: wid=%0d, sid=%0d, PC=0x%0h, ex=", $time, INSTANCE_ID, wis_to_wid(operands_if.data.wis, ISSUE_ID), operands_if.data.sid, {operands_if.data.PC, 1'b0}))
-            trace_ex_type(1, operands_if.data.ex_type);
-            `TRACE(1, (", op="))
-            trace_ex_op(1, operands_if.data.ex_type, operands_if.data.op_type, operands_if.data.op_args);
-            `TRACE(1, (", tmask=%b, wb=%b, rd=%0d, rs1_data=", operands_if.data.tmask, operands_if.data.wb, operands_if.data.rd))
-            `TRACE_ARRAY1D(1, "0x%0h", operands_if.data.rs1_data, `SIMD_WIDTH)
-            `TRACE(1, (", rs2_data="))
-            `TRACE_ARRAY1D(1, "0x%0h", operands_if.data.rs2_data, `SIMD_WIDTH)
-            `TRACE(1, (", rs3_data="))
-            `TRACE_ARRAY1D(1, "0x%0h", operands_if.data.rs3_data, `SIMD_WIDTH)
-            `TRACE(1, (", "))
-            trace_op_args(1, operands_if.data.ex_type, operands_if.data.op_type, operands_if.data.op_args);
-            `TRACE(1, (", sop=%b, eop=%b (#%0d)\n", operands_if.data.sop, operands_if.data.eop, operands_if.data.uuid))
+        if (reset) begin
+            collisions_r <= '0;
+        end else begin
+            collisions_r <= collisions_r + PERF_CTR_BITS'(scoreboard_if.valid && pipe_ready_in && has_collision);
         end
     end
+    assign perf_stalls = collisions_r;
 `endif
 
 endmodule

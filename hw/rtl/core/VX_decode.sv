@@ -16,19 +16,16 @@
 `define USED_IREG(x) \
     x``_v.id = ``x; \
     x``_v.rtype = 0; \
-    x``_v.ext = 0; \
     use_``x = 1
 
 `define USED_FREG(x) \
     x``_v.id = ``x; \
     x``_v.rtype = 1; \
-    x``_v.ext = 0; \
     use_``x = 1
 
 `define USED_VREG(x) \
     x``_v.id = ``x; \
     x``_v.rtype = 2; \
-    x``_v.ext = 0; \
     use_``x = 1
 
 module VX_decode import VX_gpu_pkg::*; #(
@@ -161,6 +158,7 @@ module VX_decode import VX_gpu_pkg::*; #(
     wire [7:0]  zimm = instr[27:20];
 
     vpu_states_t [`NUM_WARPS-1:0] vpu_states;
+    `UNUSED_VAR (vpu_states)
 
     always @(posedge clk) begin
         if (reset) begin
@@ -172,12 +170,10 @@ module VX_decode import VX_gpu_pkg::*; #(
         end
     end
 
-    `UNUSED_VAR (vpu_states)
-
     reg [INST_VPU_OP_BITS-1:0] vop_type;
     always @(*) begin
         case (funct6)
-            /*6'd0:  vop_type = INST_OP_BITS'(INST_VPU_VADD);
+            6'd0:  vop_type = INST_OP_BITS'(INST_VPU_VADD);
             6'd2:  vop_type = INST_OP_BITS'(INST_VPU_VSUB);
             6'd4:  vop_type = INST_OP_BITS'(INST_VPU_VMINU);
             6'd5:  vop_type = INST_OP_BITS'(INST_VPU_VMIN);
@@ -193,20 +189,11 @@ module VX_decode import VX_gpu_pkg::*; #(
             6'd28: vop_type = INST_OP_BITS'(INST_VPU_VMSLEU);
             6'd29: vop_type = INST_OP_BITS'(INST_VPU_VMSLE);
             6'd30: vop_type = INST_OP_BITS'(INST_VPU_VMSGTU);
-            6'd31: vop_type = INST_OP_BITS'(INST_VPU_VMSGT);*/
+            6'd31: vop_type = INST_OP_BITS'(INST_VPU_VMSGT);
             default: vop_type = 'x;
         endcase
     end
-
-    `STATIC_ASSERT($bits(vpu_args_t) == $bits(op_args_t), ("vpu_args_t size mismatch: current=%0d, expected=%0d", $bits(vpu_args_t), $bits(op_args_t)));
 `endif
-
-    `STATIC_ASSERT($bits(alu_args_t)  == $bits(op_args_t), ("alu_args_t size mismatch: current=%0d, expected=%0d", $bits(alu_args_t), $bits(op_args_t)));
-    `STATIC_ASSERT($bits(fpu_args_t)  == $bits(op_args_t), ("fpu_args_t size mismatch: current=%0d, expected=%0d", $bits(fpu_args_t), $bits(op_args_t)));
-    `STATIC_ASSERT($bits(lsu_args_t)  == $bits(op_args_t), ("lsu_args_t size mismatch: current=%0d, expected=%0d", $bits(lsu_args_t), $bits(op_args_t)));
-    `STATIC_ASSERT($bits(csr_args_t)  == $bits(op_args_t), ("csr_args_t size mismatch: current=%0d, expected=%0d", $bits(csr_args_t), $bits(op_args_t)));
-    `STATIC_ASSERT($bits(wctl_args_t) == $bits(op_args_t), ("wctl_args_t size mismatch: current=%0d, expected=%0d", $bits(wctl_args_t), $bits(op_args_t)));
-    `STATIC_ASSERT($bits(tcu_args_t) == $bits(op_args_t), ("tcu_args_t size mismatch: current=%0d, expected=%0d", $bits(tcu_args_t), $bits(op_args_t)));
 
     always @(*) begin
 
@@ -401,15 +388,15 @@ module VX_decode import VX_gpu_pkg::*; #(
                 end else begin
                     ex_type = EX_VPU;
                     op_type = INST_OP_BITS'(INST_VPU_VLD);
-                    op_args.vpu.vld.nf = nf;
-                    op_args.vpu.vld.mop = mop;
-                    op_args.vpu.vld.mew = mew;
-                    op_args.vpu.vld.width = funct3;
+                    op_args.vpu.vls.nf = nf;
+                    op_args.vpu.vls.mop = mop;
+                    op_args.vpu.vls.mew = mew;
+                    op_args.vpu.vls.width = funct3;
                     `USED_IREG (rs1);
                     `USED_VREG (rd);
                     case (mop)
                         2'b00: begin
-                            op_args.vpu.vld.lumop = rs2;
+                            op_args.vpu.vls.umop = rs2;
                         end
                         2'b10: begin
                             `USED_IREG (rs2);
@@ -448,15 +435,15 @@ module VX_decode import VX_gpu_pkg::*; #(
                 end else begin
                     ex_type = EX_VPU;
                     op_type = INST_OP_BITS'(INST_VPU_VST);
-                    op_args.vpu.vst.nf = nf;
-                    op_args.vpu.vst.mop = mop;
-                    op_args.vpu.vst.mew = mew;
-                    op_args.vpu.vst.width = funct3;
+                    op_args.vpu.vls.nf = nf;
+                    op_args.vpu.vls.mop = mop;
+                    op_args.vpu.vls.mew = mew;
+                    op_args.vpu.vls.width = funct3;
                     `USED_IREG (rs1);
                     `USED_VREG (rs3);
                     case (mop)
                         2'b00: begin
-                            op_args.vpu.vst.sumop = rs2;
+                            op_args.vpu.vls.umop = rs2;
                         end
                         2'b10: begin
                             `USED_IREG (rs2);
@@ -595,6 +582,69 @@ module VX_decode import VX_gpu_pkg::*; #(
                 endcase
             end
         `endif
+        `ifdef EXT_V_ENABLE
+            INST_V: begin
+                ex_type = EX_VPU;
+                case (funct3)
+                    3'd0, 3'd1, 3'd2: begin // OPIVV, OPFVV, OPMVV
+                        op_type = INST_OP_BITS'(INST_VPU_VOP);
+                        op_args.vpu.vop.op = vop_type;
+                        op_args.vpu.vop.vm = vm;
+                        op_args.vpu.vop.use_imm = 0;
+                        `USED_VREG (rs1);
+                        `USED_VREG (rs2);
+                        `USED_VREG (rd);
+                    end
+                    3'd3: begin // OPIVI
+                        op_type = INST_OP_BITS'(INST_VPU_VOP);
+                        op_args.vpu.vop.op = vop_type;
+                        op_args.vpu.vop.vm = vm;
+                        op_args.vpu.vop.use_imm = 1;
+                        op_args.vpu.vop.imm = rs1;
+                        `USED_VREG (rs2);
+                        `USED_VREG (rd);
+                    end
+                    3'd4, 3'd6: begin // OPIVX, OPIVV
+                        op_type = INST_OP_BITS'(INST_VPU_VOP);
+                        op_args.vpu.vop.op = vop_type;
+                        op_args.vpu.vop.vm = vm;
+                        op_args.vpu.vop.use_imm = 0;
+                        `USED_IREG (rs1);
+                        `USED_VREG (rs2);
+                        `USED_VREG (rd);
+                    end
+                    3'd5: begin // OPFVF
+                        op_type = INST_OP_BITS'(INST_VPU_VOP);
+                        op_args.vpu.vop.op = vop_type;
+                        op_args.vpu.vop.vm = vm;
+                        op_args.vpu.vop.use_imm = 0;
+                        `USED_FREG (rs1);
+                        `USED_VREG (rs2);
+                        `USED_VREG (rd);
+                    end
+                    3'd7: begin // VSETX
+                        op_type = INST_OP_BITS'(INST_VPU_VSET);
+                        op_args.vpu.vset.vset = vset;
+                        op_args.vpu.vset.use_imm = 0;
+                        op_args.vpu.vset.use_zimm = 0;
+                        `USED_IREG (rd);
+                        if(vset == 2'b10) begin
+                            `USED_IREG (rs2);
+                            `USED_IREG (rs1);
+                        end else begin
+                            op_args.vpu.vset.use_zimm = 1;
+                            op_args.vpu.vset.zimm = zimm;
+                            if (vset[0]) begin
+                                op_args.vpu.vset.use_imm = 1;
+                                op_args.vpu.vset.imm = rs1;
+                            end else begin
+                                `USED_IREG (rs1);
+                            end
+                        end
+                    end
+                endcase
+            end
+        `endif
             INST_EXT1: begin
                 case (funct7)
                     7'h00: begin
@@ -667,69 +717,6 @@ module VX_decode import VX_gpu_pkg::*; #(
                     default:;
                 endcase
             end
-        `ifdef EXT_V_ENABLE
-            INST_V: begin
-                ex_type = EX_VPU;
-                case (funct3)
-                    3'd0, 3'd1, 3'd2: begin // OPIVV, OPFVV, OPMVV
-                        op_type = INST_OP_BITS'(INST_VPU_VOP);
-                        op_args.vpu.vop.op = vop_type;
-                        op_args.vpu.vop.vm = vm;
-                        op_args.vpu.vop.use_imm = 0;
-                        `USED_VREG (rs1);
-                        `USED_VREG (rs2);
-                        `USED_VREG (rd);
-                    end
-                    3'd3: begin // OPIVI
-                        op_type = INST_OP_BITS'(INST_VPU_VOP);
-                        op_args.vpu.vop.op = vop_type;
-                        op_args.vpu.vop.vm = vm;
-                        op_args.vpu.vop.use_imm = 1;
-                        op_args.vpu.vop.imm = rs1;
-                        `USED_VREG (rs2);
-                        `USED_VREG (rd);
-                    end
-                    3'd4, 3'd6: begin // OPIVX, OPIVV
-                        op_type = INST_OP_BITS'(INST_VPU_VOP);
-                        op_args.vpu.vop.op = vop_type;
-                        op_args.vpu.vop.vm = vm;
-                        op_args.vpu.vop.use_imm = 0;
-                        `USED_IREG (rs1);
-                        `USED_VREG (rs2);
-                        `USED_VREG (rd);
-                    end
-                    3'd5: begin // OPFVF
-                        op_type = INST_OP_BITS'(INST_VPU_VOP);
-                        op_args.vpu.vop.op = vop_type;
-                        op_args.vpu.vop.vm = vm;
-                        op_args.vpu.vop.use_imm = 0;
-                        `USED_FREG (rs1);
-                        `USED_VREG (rs2);
-                        `USED_VREG (rd);
-                    end
-                    3'd7: begin // VSETX
-                        op_type = INST_OP_BITS'(INST_VPU_VSET);
-                        op_args.vpu.vset.vset = vset;
-                        op_args.vpu.vset.use_imm = 0;
-                        op_args.vpu.vset.use_zimm = 0;
-                        `USED_IREG (rd);
-                        if(vset == 2'b10) begin
-                            `USED_IREG (rs2);
-                            `USED_IREG (rs1);
-                        end else begin
-                            op_args.vpu.vset.use_zimm = 1;
-                            op_args.vpu.vset.zimm = zimm;
-                            if (vset[0]) begin
-                                op_args.vpu.vset.use_imm = 1;
-                                op_args.vpu.vset.imm = rs1;
-                            end else begin
-                                `USED_IREG (rs1);
-                            end
-                        end
-                    end
-                endcase
-            end
-        `endif
             default:;
         endcase
     end

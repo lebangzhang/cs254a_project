@@ -15,7 +15,7 @@
 
 module VX_voperands import VX_gpu_pkg::*; #(
     parameter `STRING INSTANCE_ID = "",
-    parameter ISSUE_ID = 0
+    parameter ISSUE_ID  = 0
 ) (
     input wire              clk,
     input wire              reset,
@@ -23,141 +23,83 @@ module VX_voperands import VX_gpu_pkg::*; #(
 `ifdef PERF_ENABLE
     output wire [PERF_CTR_BITS-1:0] perf_stalls,
 `endif
+
+`ifdef EXT_V_ENABLE
+    VX_vpu_states_if.master vpu_states_if,
+`endif
+
     VX_writeback_if.slave   writeback_if,
     VX_scoreboard_if.slave  scoreboard_if,
-    VX_vpu_states_if.master vpu_states_if,
     VX_operands_if.master   operands_if
 );
-    localparam NUM_OPDS  = NUM_SRC_OPDS + 1;
-    localparam SCB_DATAW = UUID_WIDTH + ISSUE_WIS_W + `NUM_THREADS + PC_BITS + EX_BITS + INST_OP_BITS + INST_ARGS_BITS + NUM_OPDS + (REG_IDX_BITS * NUM_OPDS);
-    localparam OPD_DATAW = UUID_WIDTH + VL_WIDTH + ISSUE_WIS_W + SIMD_IDX_W + `SIMD_WIDTH + PC_BITS + EX_BITS + INST_OP_BITS + INST_ARGS_BITS + 1 + NR_BITS + (NUM_SRC_OPDS * `SIMD_WIDTH * `XLEN) + 1 + 1;
+    `UNUSED_SPARAM (ISSUE_ID)
 
-    VX_scoreboard_if per_opc_scoreboard_if[`NUM_OPCS]();
+    localparam OUT_DATAW = $bits(operands_t);
+
+    // LSU cannot handle partial requests from multiple warps at the same time
+    // this ensure that OPCs are dispatched atomically
+    localparam OUT_ARB_STICKY = (`NUM_OPCS != 1) && (SIMD_COUNT != 1);
+
+`ifdef PERF_ENABLE
+    wire [`NUM_OPCS-1:0][PERF_CTR_BITS-1:0] per_opc_perf_stalls;
+`endif
+
     VX_operands_if per_opc_operands_if[`NUM_OPCS]();
-    VX_gpr_if per_opc_gpr_if[`NUM_OPCS]();
-    VX_vgpr_if vgpr_if[1]();
 
-    wire [OPC_WIDTH-1:0] enqueue_opc, dequeue_opc;
-    wire [`NUM_OPCS-1:0][`NUM_OPCS-1:0] per_opc_wait_mask;
-    wire [`NUM_OPCS-1:0] per_opc_busy;
-
-    wire operands_fire = operands_if.valid && operands_if.ready;
-    wire operands_eop_fire = operands_fire && operands_if.data.eop;
-
-    VX_opc_sched #(
-        .INSTANCE_ID (`SFORMATF(("%s-sched", INSTANCE_ID))),
-        .ISSUE_ID    (ISSUE_ID)
-    ) opc_sched (
-        .clk          (clk),
-        .reset        (reset),
-        .enqueue_if   (scoreboard_if),
-        .dequeue      (operands_eop_fire),
-        .enqueue_opc  (enqueue_opc),
-        .dequeue_opc  (dequeue_opc),
-        .opc_wait_mask(per_opc_wait_mask),
-        .opc_busy     (per_opc_busy)
-    );
-
-`IGNORE_UNOPTFLAT_BEGIN
-    `AOS_TO_ITF (per_opc_scoreboard, per_opc_scoreboard_if, `NUM_OPCS, SCB_DATAW)
-`IGNORE_UNOPTFLAT_END
-
-    // collector unit selection
-
-    reg [`NUM_OPCS-1:0] select_opcs;
-    always @(*) begin
-        select_opcs = ~per_opc_busy;
-        if (operands_if.data.ex_type != EX_VPU) begin
-            select_opcs = ~0; // collector unit 0 is exclusively for VPU instructions
-        end
+    wire [NUM_OPCS_W-1:0] sb_opc, wb_opc;
+    if (`NUM_OPCS != 1) begin : g_wis_opc
+        assign sb_opc = scoreboard_if.data.wis[NUM_OPCS_W-1:0];
+        assign wb_opc = writeback_if.data.wis[NUM_OPCS_W-1:0];
+    end else begin : g_wis_opc
+        assign sb_opc = 0;
+        assign wb_opc = 0;
     end
 
-    VX_stream_arb #(
-        .NUM_INPUTS  (1),
-        .NUM_OUTPUTS (`NUM_OPCS),
-        .DATAW       (SCB_DATAW),
-        .ARBITER     ("P"),
-        .OUT_BUF     (0)
-    ) input_arb (
-        .clk       (clk),
-        .reset     (reset),
-        .valid_in  (scoreboard_if.valid),
-        .data_in   (scoreboard_if.data),
-        .ready_in  (scoreboard_if.ready),
-        .valid_out (per_opc_scoreboard_valid),
-        .data_out  (per_opc_scoreboard_data),
-        .ready_out (select_opcs),
-        .sel_out   (enqueue_opc)
-    );
-    `UNUSED_VAR (per_opc_scoreboard_ready)
+    // vpu states
+    assign vpu_states_if.valid = 0;
+    assign vpu_states_if.wid   = '0;
+    assign vpu_states_if.data  = 'x;
 
-    for (genvar i = 0; i < `NUM_OPCS; ++i) begin : g_collectors
-        if (i == 0) begin : g_vector
-            VX_vopc_unit #(
-                .INSTANCE_ID (`SFORMATF(("%s-collector%0d", INSTANCE_ID, i))),
-                .ISSUE_ID (ISSUE_ID)
-            ) vopc_unit (
-                .clk          (clk),
-                .reset        (reset),
-                .wait_mask    (per_opc_wait_mask[i]),
-                .scoreboard_if(per_opc_scoreboard_if[i]),
-                .gpr_if       (per_opc_gpr_if[i]),
-                .vgpr_if      (vgpr_if[0]),
-                .vpu_states_if(vpu_states_if),
-                .operands_if  (per_opc_operands_if[i])
-            );
-        end else begin : g_scalar
-            VX_opc_unit #(
-                .INSTANCE_ID (`SFORMATF(("%s-collector%0d", INSTANCE_ID, i))),
-                .ISSUE_ID (ISSUE_ID)
-            ) opc_unit (
-                .clk          (clk),
-                .reset        (reset),
-                .wait_mask    (per_opc_wait_mask[i]),
-                .scoreboard_if(per_opc_scoreboard_if[i]),
-                .gpr_if       (per_opc_gpr_if[i]),
-                .operands_if  (per_opc_operands_if[i])
-            );
+    wire [`NUM_OPCS-1:0] scoreboard_ready_in;
+    assign scoreboard_if.ready = scoreboard_ready_in[sb_opc];
 
-        end
+    for (genvar i = 0; i < `NUM_OPCS; i++) begin : g_collectors
+        // select scoreboard interface
+        VX_scoreboard_if opc_scoreboard_if();
+        assign opc_scoreboard_if.valid = scoreboard_if.valid && (sb_opc == i);
+        assign opc_scoreboard_if.data  = scoreboard_if.data;
+        assign scoreboard_ready_in[i]  = opc_scoreboard_if.ready;
+
+        // select writeback interface
+        VX_writeback_if opc_writeback_if();
+        assign opc_writeback_if.valid = writeback_if.valid && (wb_opc == i);
+        assign opc_writeback_if.data  = writeback_if.data;
+
+        VX_vopc_unit #(
+            .INSTANCE_ID  (`SFORMATF(("%s-collector%0d", INSTANCE_ID, i))),
+            .NUM_BANKS    (`NUM_GPR_BANKS),
+            .OUT_BUF      (3)
+        ) vopc_unit (
+            .clk          (clk),
+            .reset        (reset),
+        `ifdef PERF_ENABLE
+            .perf_stalls  (per_opc_perf_stalls[i]),
+        `endif
+            .writeback_if (opc_writeback_if),
+            .scoreboard_if(opc_scoreboard_if),
+            .operands_if  (per_opc_operands_if[i])
+        );
     end
 
-    VX_gpr_unit #(
-        .INSTANCE_ID (`SFORMATF(("%s-gpr", INSTANCE_ID))),
-        .NUM_REQS    (`NUM_OPCS),
-        .NUM_BANKS   (`NUM_GPR_BANKS)
-    ) gpr_unit (
-        .clk          (clk),
-        .reset        (reset),
-    `ifdef PERF_ENABLE
-        .perf_stalls  (perf_stalls),
-    `endif
-        .writeback_if (writeback_if),
-        .gpr_if       (per_opc_gpr_if)
-    );
-
-    VX_vgpr_unit #(
-        .INSTANCE_ID (`SFORMATF(("%s-vgpr", INSTANCE_ID))),
-        .NUM_REQS    (1),
-        .NUM_BANKS   (1)
-    ) vgpr_unit (
-        .clk          (clk),
-        .reset        (reset),
-    `ifdef PERF_ENABLE
-        `UNUSED_PIN (perf_stalls),
-    `endif
-        .writeback_if (writeback_if),
-        .vgpr_if      (vgpr_if)
-    );
-
-    `ITF_TO_AOS (per_opc_operands, per_opc_operands_if, `NUM_OPCS, OPD_DATAW)
+    `ITF_TO_AOS (per_opc_operands, per_opc_operands_if, `NUM_OPCS, OUT_DATAW)
 
     VX_stream_arb #(
         .NUM_INPUTS  (`NUM_OPCS),
         .NUM_OUTPUTS (1),
-        .DATAW       (OPD_DATAW),
-        .ARBITER     ("R"),
-        .OUT_BUF     (3)
+        .DATAW       (OUT_DATAW),
+        .ARBITER     ("P"),
+        .STICKY      (OUT_ARB_STICKY),
+        .OUT_BUF     ((`NUM_OPCS > 1) ? 3 : 0)
     ) output_arb (
         .clk       (clk),
         .reset     (reset),
@@ -167,7 +109,20 @@ module VX_voperands import VX_gpu_pkg::*; #(
         .valid_out (operands_if.valid),
         .data_out  (operands_if.data),
         .ready_out (operands_if.ready),
-        .sel_out   (dequeue_opc)
+        `UNUSED_PIN (sel_out)
     );
+
+`ifdef PERF_ENABLE
+    wire [PERF_CTR_BITS-1:0] perf_stalls_w;
+    VX_reduce_tree #(
+        .DATAW_IN (PERF_CTR_BITS),
+        .N  (`NUM_OPCS),
+        .OP ("+")
+    ) perf_stalls_reduce (
+        .data_in  (per_opc_perf_stalls),
+        .data_out (perf_stalls_w)
+    );
+    `BUFFER(perf_stalls, perf_stalls_w);
+`endif
 
 endmodule

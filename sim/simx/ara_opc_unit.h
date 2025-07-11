@@ -15,7 +15,6 @@
 
 #include "instr_trace.h"
 #include "gpr_unit.h"
-#include "vgpr_unit.h"
 
 namespace vortex {
 
@@ -23,14 +22,11 @@ class Core;
 
 class Ara_Opc_Unit : public SimObject<Ara_Opc_Unit> {
 public:
-  SimPort<instr_trace_t*> Input;
-  SimPort<instr_trace_t*> Output;
+  SimPort<instr_trace_t *> Input;
+  SimPort<instr_trace_t *> Output;
 
   SimPort<GprReq> gpr_req_ports;
   SimPort<GprRsp> gpr_rsp_ports;
-
-  SimPort<VgprReq> vgpr_req_ports;
-  SimPort<VgprRsp> vgpr_rsp_ports;
 
   Ara_Opc_Unit(const SimContext &ctx, Core* core);
 
@@ -47,33 +43,10 @@ public:
   }
 
 private:
-
-  bool schedule(instr_trace_t* trace);
-
-  bool fused_schedule(instr_trace_t* trace);
-
-  void decode(instr_trace_t* trace);
-
-  void lsu_flush(instr_trace_t* trace);
-
-  Core* core_;
-  std::bitset<NUM_SRC_REGS> vopd_to_fetch_ = 0;
-  uint32_t pending_s_rsps_ = 0;
-  uint32_t pending_v_rsps_ = 0;
-  uint32_t vl_counter_ = 0;
-  uint32_t vlmul_counter_ = 0;
-  uint32_t red_counter_ = 0;
-  uint32_t wb_counter_ = 0;
-  uint32_t vs2_opd_ = -1;
-  Word     active_PC_;
+  uint32_t pending_rsps_ = 0;
   bool     instr_pending_ = false;
-  bool     is_reduction_ = false;
-  bool     lsu_flush_ = false;
   uint32_t total_stalls_ = 0;
-
-
-  // Modification Note : 
-  uint32_t total_vgpr_requests = 0; 
+  Core*    core_;
 };
 
 } // namespace vortex

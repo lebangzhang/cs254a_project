@@ -41,7 +41,7 @@ module VX_vredopc_unit import VX_gpu_pkg::*; #(
 
     localparam NUM_OPDS  = NUM_SRC_OPDS + 1;
     localparam SCB_DATAW = UUID_WIDTH + ISSUE_WIS_W + `NUM_THREADS + PC_BITS + EX_BITS + INST_OP_BITS + INST_ARGS_BITS + NUM_OPDS + (NUM_OPDS * REG_IDX_BITS);
-    localparam OUT_DATAW = UUID_WIDTH + ISSUE_WIS_W + SIMD_IDX_W + VL_WIDTH + `SIMD_WIDTH + PC_BITS + EX_BITS + INST_OP_BITS + INST_ARGS_BITS + 1 + NR_BITS + (NUM_SRC_OPDS * `SIMD_WIDTH * `XLEN) + 1 + 1;
+    localparam OUT_DATAW = UUID_WIDTH + ISSUE_WIS_W + SIMD_IDX_W + VL_WIDTH + `SIMD_WIDTH + PC_BITS + EX_BITS + INST_OP_BITS + INST_ARGS_BITS + 1 + NUM_REGS_BITS + (NUM_SRC_OPDS * `SIMD_WIDTH * `XLEN) + 1 + 1;
 
     localparam STATE_IDLE      = 0;
     localparam STATE_FETCH     = 1;
@@ -71,9 +71,9 @@ module VX_vredopc_unit import VX_gpu_pkg::*; #(
     );
 
     // Calculate Register Numbers
-    wire [NR_BITS-1:0] stg_rd  = to_reg_number(staging_if.data.rd);
-    wire [NR_BITS-1:0] stg_rs1 = to_reg_number(staging_if.data.rs1);
-    wire [NR_BITS-1:0] stg_rs2 = to_reg_number(staging_if.data.rs2);
+    wire [NUM_REGS_BITS-1:0] stg_rd  = to_reg_number(staging_if.data.rd);
+    wire [NUM_REGS_BITS-1:0] stg_rs1 = to_reg_number(staging_if.data.rs1);
+    wire [NUM_REGS_BITS-1:0] stg_rs2 = to_reg_number(staging_if.data.rs2);
 
     // Determine source operands to fetch
     wire opds_to_fetch_rs1 = staging_if.data.used_rs[0] && (stg_rs1 != 0) ;
@@ -354,8 +354,7 @@ module VX_vredopc_unit import VX_gpu_pkg::*; #(
     assign vgpr_if.req_data.sid = simd_pid;
     assign vgpr_if.req_data.wis = staging_if.data.wis;
 
-    assign vgpr_if.req_data.lid = lane_counter;
-    assign vgpr_if.req_data.reg_id = NR_V_BITS'(stg_src_regs[v_opd_id]);
+    assign vgpr_if.req_data.reg_id = NUM_VREGS_BITS'(stg_src_regs[v_opd_id]);
 
     // For the following sections
     reg [NUM_SRC_OPDS-1:0][`SIMD_WIDTH-1:0][`XLEN-1:0] opd_values;

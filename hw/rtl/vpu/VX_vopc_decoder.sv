@@ -40,7 +40,7 @@ module VX_vopc_decoder import VX_gpu_pkg::*; #(
     logic [INST_OP_BITS-1:0]           op_type_r, op_type_n;
     op_args_t                          op_args_r, op_args_n;
     logic                              wb_r, wb_n;
-    logic [NR_BITS-1:0]                rd_r, rd_n;
+    logic [NUM_REGS_BITS-1:0]                rd_r, rd_n;
     logic [`SIMD_WIDTH-1:0][`XLEN-1:0] rs1_data_r, rs1_data_n;
     logic [`SIMD_WIDTH-1:0][`XLEN-1:0] rs2_data_r, rs2_data_n;
     logic [`SIMD_WIDTH-1:0][`XLEN-1:0] rs3_data_r, rs3_data_n;
@@ -83,7 +83,6 @@ module VX_vopc_decoder import VX_gpu_pkg::*; #(
 
     // decoded instruction
     assign instr_out.uuid       = instr_in.uuid;
-    assign instr_out.lid        = instr_in.lid;
     assign instr_out.wis        = instr_in.wis;
     assign instr_out.sid        = instr_in.sid;
     assign instr_out.tmask      = instr_in.tmask;

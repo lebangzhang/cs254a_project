@@ -32,12 +32,12 @@ module VX_opc_sched import VX_gpu_pkg::*; #(
 
     wire enqueue = enqueue_if.valid && enqueue_if.ready;
 
-    wire [NR_BITS-1:0] scb_rd  = to_reg_number(enqueue_if.data.rd);
-    wire [NR_BITS-1:0] scb_rs1 = to_reg_number(enqueue_if.data.rs1);
-    wire [NR_BITS-1:0] scb_rs2 = to_reg_number(enqueue_if.data.rs2);
-    wire [NR_BITS-1:0] scb_rs3 = to_reg_number(enqueue_if.data.rs3);
+    wire [NUM_REGS_BITS-1:0] scb_rd  = to_reg_number(enqueue_if.data.rd);
+    wire [NUM_REGS_BITS-1:0] scb_rs1 = to_reg_number(enqueue_if.data.rs1);
+    wire [NUM_REGS_BITS-1:0] scb_rs2 = to_reg_number(enqueue_if.data.rs2);
+    wire [NUM_REGS_BITS-1:0] scb_rs3 = to_reg_number(enqueue_if.data.rs3);
 
-    wire [NUM_SRC_OPDS-1:0][NR_BITS-1:0] scb_src_regs = {scb_rs3, scb_rs2, scb_rs1};
+    wire [NUM_SRC_OPDS-1:0][NUM_REGS_BITS-1:0] scb_src_regs = {scb_rs3, scb_rs2, scb_rs1};
 
     reg [NUM_REGS-1:0] scb_pending_regs;
     always @(*) begin

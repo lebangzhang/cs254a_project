@@ -80,7 +80,7 @@ enum class RegType {
   None,
   Integer,
   Float,
-#if defined(EXT_V_ENABLE) || defined(EXT_ARA2_ENABLE)
+#ifdef EXT_V_ENABLE
   Vector,
 #endif
   Count
@@ -91,7 +91,7 @@ inline std::ostream &operator<<(std::ostream &os, const RegType& type) {
   case RegType::None: break;
   case RegType::Integer: os << "x"; break;
   case RegType::Float:   os << "f"; break;
-#if defined(EXT_V_ENABLE) || defined(EXT_ARA2_ENABLE)
+#ifdef EXT_V_ENABLE
   case RegType::Vector:  os << "v"; break;
 #endif
   default: assert(false);
@@ -104,7 +104,6 @@ inline std::ostream &operator<<(std::ostream &os, const RegType& type) {
 struct RegOpd {
   RegType type = RegType::None;
   uint32_t idx = 0;
-  uint32_t ext = 0; // register group extend
 
   uint32_t id() const {
     if (type == RegType::None)
@@ -113,16 +112,8 @@ struct RegOpd {
     return (((int)(type)-1) << LOG_NUM_REGS) | idx;
   }
 
-  uint32_t group_size() const {
-    return (1 << ext);
-  }
-
   friend std::ostream &operator<<(std::ostream &os, const RegOpd& reg) {
-    if (reg.ext != 0) {
-      os << reg.type << reg.idx << "..." << (reg.idx + ((1 << reg.ext)-1));
-    } else {
-      os << reg.type << reg.idx;
-    }
+    os << reg.type << reg.idx;
     return os;
   }
 
@@ -139,8 +130,8 @@ enum class FUType {
 #ifdef EXT_V_ENABLE
   VPU,
 #endif
-#ifdef EXT_ARA2_ENABLE
-  ARA,
+#ifdef EXT_TCU_ENABLE
+  TCU,
 #endif
   Count
 };
@@ -154,11 +145,11 @@ inline std::ostream &operator<<(std::ostream &os, const FUType& type) {
 #ifdef EXT_V_ENABLE
   case FUType::VPU: os << "VPU"; break;
 #endif
-#ifdef EXT_ARA2_ENABLE
-  case FUType::ARA: os << "VPU"; break;
+#ifdef EXT_TCU_ENABLE
+  case FUType::TCU: os << "TCU"; break;
 #endif
-
-  default: assert(false);
+  default:
+    assert(false);
   }
   return os;
 }

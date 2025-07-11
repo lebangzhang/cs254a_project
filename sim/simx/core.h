@@ -23,13 +23,13 @@
 #include "ibuffer.h"
 #include "scoreboard.h"
 
-
-// TOFIX : This is definitely not correct, we need to fix this
-
-#if definef(EXT_V_ENABLE)
-  #include "voperands.h"
-#elif definef(EXT_ARA2_ENABLE)
+#ifdef EXT_V_ENABLE
+#ifdef VPU_ARA2
   #include "ara_operands.h"
+  #include "ara_unit.h"
+#else
+  #include "voperands.h"
+#endif
 #else
   #include "operands.h"
 #endif
@@ -61,7 +61,7 @@ public:
     uint64_t scrb_sfu;
     uint64_t scrb_csrs;
     uint64_t scrb_wctl;
-  #if defined(EXT_V_ENABLE) || defined(EXT_ARA2_ENABLE)
+  #ifdef EXT_V_ENABLE
     uint64_t vinstrs;
     uint64_t scrb_vpu;
   #endif
@@ -88,7 +88,7 @@ public:
       , scrb_sfu(0)
       , scrb_csrs(0)
       , scrb_wctl(0)
-    #if defined(EXT_V_ENABLE) || defined(EXT_ARA2_ENABLE)
+    #ifdef EXT_V_ENABLE
       , vinstrs(0)
       , scrb_vpu(0)
     #endif
@@ -175,22 +175,6 @@ public:
   }
 #endif
 
-#ifdef EXT_ARA2_ENABLE
-  AraUnit::Ptr& ara_unit() {
-    return ara_unit_;
-  }
-#endif
-
-  auto& trace_pool() {
-    return trace_pool_;
-  }
-
-  const PerfStats& perf_stats() const;
-
-  void dcache_write(const void* data, uint64_t addr, uint32_t size) {
-    return emulator_.dcache_write(data, addr, size);
-  }
-
   auto& trace_pool() {
     return trace_pool_;
   }
@@ -212,14 +196,12 @@ private:
   Socket* socket_;
   const Arch& arch_;
 
-#ifdef EXT_V_ENABLE
-  VecUnit::Ptr vec_unit_;
-#endif
-#ifdef EXT_ARA2_ENABLE
-  AraUnit::Ptr ara_unit_;
-#endif
 #ifdef EXT_TCU_ENABLE
   TensorUnit::Ptr tensor_unit_;
+#endif
+
+#ifdef EXT_V_ENABLE
+  VecUnit::Ptr vec_unit_;
 #endif
 
   Emulator emulator_;

@@ -21,7 +21,7 @@ struct AraGprPkt {
   uint32_t rid;         // The vector id  (E.g: v0, v1 v2)
   uint32_t vr_id;       // The subvector register id (E.g: v00 --> 0, v01 --> 1, v02 --> 2 )
 
-  friend std::ostream& operator<<(std::ostream& os, const AraGprPkt& req) {
+  friend std::ostream& operator<<(std::ostream& os, const AraGprPkt& /*req*/) {
     os << "123123";
     return os;
   }
@@ -32,16 +32,16 @@ struct AraGprPkt {
 
 class Ara_Gpr : public SimObject<Ara_Gpr> {
 
-private: 
+private:
 	uint32_t total_stalls_ = 0;
 
-    // TOFIX_ARA : Get this from operand requestor 
+    // TOFIX_ARA : Get this from operand requestor
     // Also same as the number of ara gpr banks
     uint32_t num_gpr_arbitration_port = NUM_ARA_GPR_PORTS;
 
 public:
 
-    // Take in the inputs 
+    // Take in the inputs
     SimPort<instr_trace_t*> Input;
     SimPort<instr_trace_t*> Output;
 
@@ -68,7 +68,7 @@ public:
 	}
 
     virtual void tick() {
-    
+
         /*DT(3, "----- Entered Ara-Gpr Unit -----");*/
 
         // 2. Simulate bank conflicts and response
@@ -80,8 +80,8 @@ public:
 
             uint32_t i = 0;
             while (i < packet_collector.size()) {
-                
-                // Calculate bank following barber shift formula 
+
+                // Calculate bank following barber shift formula
                 AraGprPkt gpr_rsp = packet_collector.at(i);
                 uint32_t bank_x = (gpr_rsp.rid + gpr_rsp.vr_id) % num_gpr_arbitration_port;
 
@@ -97,32 +97,32 @@ public:
         }
 
         // 1. Put all packets into packet_collector
-        for(int i = 0; i < num_gpr_arbitration_port; i++){ 
+        for(uint32_t i = 0; i < num_gpr_arbitration_port; i++){
 
-            // 1a. Check if request port is empty 
+            // 1a. Check if request port is empty
             if(!ara_gpr_req_port.at(i).empty()) {
 
-                // Put requests into collector 
+                // Put requests into collector
                 AraGprPkt gpr_req = ara_gpr_req_port.at(i).front();
                 packet_collector.push_back(gpr_req);
-            
+
                 // Pop from request port
                 DT(3, "Ara-Reg-File : gpr port num = " << i << " port_id " << gpr_req.port_id );
                 ara_gpr_req_port.at(i).pop();
             }
         }
 
-        // Temporary Fix (If needed, the following code can be used as replacement for debug) 
+        // Temporary Fix (If needed, the following code can be used as replacement for debug)
         /*
-        for(int i = 0; i < num_gpr_arbitration_port; i++){ 
+        for(int i = 0; i < num_gpr_arbitration_port; i++){
 
-            // 1a. Check if request port is empty 
+            // 1a. Check if request port is empty
             if(!ara_gpr_req_port.at(i).empty()) {
 
-                // Send Response back 
+                // Send Response back
                 AraGprPkt gpr_rsp = ara_gpr_req_port.at(i).front();
                 ara_gpr_rsp_port.at(i).push(gpr_rsp, 1);
-            
+
                 // Pop from request port
                 DT(3, "Ara-Reg-File : gpr port num = " << i << " port_id " << gpr_rsp.port_id );
                 ara_gpr_req_port.at(i).pop();

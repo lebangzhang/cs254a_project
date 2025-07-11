@@ -79,14 +79,11 @@ Emulator::Emulator(const Arch &arch, const DCRS &dcrs, Core* core)
     , warps_(arch.num_warps(), arch.num_threads())
     , barriers_(arch.num_barriers(), 0)
     , ipdom_size_(arch.num_threads()-1)
-  #ifdef EXT_V_ENABLE
-    , vec_unit_(core->vec_unit())
-  #endif
-  #ifdef EXT_ARA2_ENABLE
-    , ara_unit_(core->ara_unit())
-  #endif
   #ifdef EXT_TCU_ENABLE
     , tensor_unit_(core->tensor_unit())
+  #endif
+  #ifdef EXT_V_ENABLE
+    , vec_unit_(core->vec_unit())
   #endif
 {
   std::srand(50);
@@ -118,9 +115,6 @@ void Emulator::reset() {
 
 #ifdef EXT_V_ENABLE
   vec_unit_->reset();
-#endif
-#ifdef EXT_ARA2_ENABLE
-  ara_unit_->reset();
 #endif
 
   csr_mscratch_ = startup_arg;
@@ -477,11 +471,6 @@ Word Emulator::get_csr(uint32_t addr, uint32_t wid, uint32_t tid) {
     if (vec_unit_->get_csr(addr, wid, tid, &value))
       return value;
   #endif
-  #ifdef EXT_ARA2_ENABLE
-    Word value = 0;
-    if (ara_unit_->get_csr(addr, wid, tid, &value))
-      return value;
-  #endif
     if ((addr >= VX_CSR_MPM_BASE && addr < (VX_CSR_MPM_BASE + 32))
      || (addr >= VX_CSR_MPM_BASE_H && addr < (VX_CSR_MPM_BASE_H + 32))) {
       // user-defined MPM CSRs
@@ -564,30 +553,6 @@ Word Emulator::get_csr(uint32_t addr, uint32_t wid, uint32_t tid) {
         CSR_READ_64(VX_CSR_MPM_LMEM_BANK_ST, lmem_perf.bank_stalls);
         }
       } break;
-    #ifdef EXT_V_ENABLE
-      case VX_DCR_MPM_CLASS_VEC: {
-        VecUnit::PerfStats vec_perf_stats;
-        vec_perf_stats += vec_unit_->perf_stats();
-        switch (addr) {
-        CSR_READ_64(VX_CSR_MPM_VEC_READS, vec_perf_stats.reads);
-        CSR_READ_64(VX_CSR_MPM_VEC_WRITES, vec_perf_stats.writes);
-        CSR_READ_64(VX_CSR_MPM_VEC_LAT, vec_perf_stats.latency);
-        CSR_READ_64(VX_CSR_MPM_VEC_ST, vec_perf_stats.stalls);
-        }
-      } break;
-    #endif
-    #ifdef EXT_ARA2_ENABLE
-      case VX_DCR_MPM_CLASS_VEC: {
-        AraUnit::PerfStats ara_perf_stats;
-        ara_perf_stats += ara_unit_->perf_stats();
-        switch (addr) {
-        CSR_READ_64(VX_CSR_MPM_VEC_READS, ara_perf_stats.reads);
-        CSR_READ_64(VX_CSR_MPM_VEC_WRITES, ara_perf_stats.writes);
-        CSR_READ_64(VX_CSR_MPM_VEC_LAT, ara_perf_stats.latency);
-        CSR_READ_64(VX_CSR_MPM_VEC_ST, ara_perf_stats.stalls);
-        }
-      } break;
-    #endif
       default:
         std::cerr << "Error: invalid MPM CLASS: value=" << perf_class << std::endl;
         std::abort();
@@ -637,11 +602,6 @@ void Emulator::set_csr(uint32_t addr, Word value, uint32_t wid, uint32_t tid) {
       if (vec_unit_->set_csr(addr, wid, tid, value))
         return;
     #endif
-    #ifdef EXT_ARA2_ENABLE
-      if (ara_unit_->set_csr(addr, wid, tid, value))
-        return;
-    #endif
-
       std::cerr << "Error: invalid CSR write addr=0x" << std::hex << addr << ", value=0x" << value << std::dec << std::endl;
       std::flush(std::cout);
       std::abort();

@@ -430,6 +430,7 @@ public:
       object->do_tick();
       this->fire_immediate_events();
     }
+
     // realize objects
     for (auto it = pop_list_.begin(); it != pop_list_.end();) {
       it->do_pop();

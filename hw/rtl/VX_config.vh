@@ -30,8 +30,6 @@
 `define UP(x)   (((x) != 0) ? (x) : 1)
 `endif
 
-`define RESET_DELAY 8
-
 ///////////////////////////////////////////////////////////////////////////////
 
 `ifndef EXT_M_DISABLE
@@ -88,22 +86,9 @@
 `endif
 `endif
 
-`ifdef EXT_V_ENABLE
-    `ifndef VLEN
-        `define VLEN (4 * `XLEN)
-    `endif
-`else
-    `ifdef EXT_ARA2_ENABLE
-        `ifndef VLEN
-            `define VLEN (4 * `XLEN)
-        `endif
-    `else
-        `define VLEN `XLEN
-    `endif
-`else
-    `define VLEN `XLEN
+`ifndef VLEN
+`define VLEN (4 * `XLEN)
 `endif
-
 
 `ifndef NUM_CLUSTERS
 `define NUM_CLUSTERS 1
@@ -303,49 +288,49 @@
 `endif
 
 // Virtual Memory Configuration ///////////////////////////////////////////////
-
 `ifdef VM_ENABLE
-`ifdef XLEN_32
-    `ifndef VM_ADDR_MODE
-    `define VM_ADDR_MODE SV32  //or BARE
+    `ifdef XLEN_32
+        `ifndef VM_ADDR_MODE
+        `define VM_ADDR_MODE SV32  //or BARE
+        `endif
+        `ifndef PT_LEVEL
+        `define PT_LEVEL (2)
+        `endif
+        `ifndef PTE_SIZE
+        `define PTE_SIZE (4)
+        `endif
+        `ifndef NUM_PTE_ENTRY
+        `define NUM_PTE_ENTRY (1024)
+        `endif
+        `ifndef PT_SIZE_LIMIT
+        `define PT_SIZE_LIMIT (1<<23)
+        `endif
+    `else
+        `ifndef VM_ADDR_MODE
+        `define VM_ADDR_MODE SV39 //or BARE
+        `endif
+        `ifndef PT_LEVEL
+        `define PT_LEVEL (3)
+        `endif
+        `ifndef PTE_SIZE
+        `define PTE_SIZE (8)
+        `endif
+        `ifndef NUM_PTE_ENTRY
+        `define NUM_PTE_ENTRY (512)
+        `endif
+        `ifndef PT_SIZE_LIMIT
+        `define PT_SIZE_LIMIT (1<<25)
+        `endif
     `endif
-    `ifndef PT_LEVEL
-    `define PT_LEVEL (2)
-    `endif
-    `ifndef PTE_SIZE
-    `define PTE_SIZE (4)
-    `endif
-    `ifndef NUM_PTE_ENTRY
-    `define NUM_PTE_ENTRY (1024)
-    `endif
-    `ifndef PT_SIZE_LIMIT
-    `define PT_SIZE_LIMIT (1<<23)
-    `endif
-`else
-    `ifndef VM_ADDR_MODE
-    `define VM_ADDR_MODE SV39 //or BARE
-    `endif
-    `ifndef PT_LEVEL
-    `define PT_LEVEL (3)
-    `endif
-    `ifndef PTE_SIZE
-    `define PTE_SIZE (8)
-    `endif
-    `ifndef NUM_PTE_ENTRY
-    `define NUM_PTE_ENTRY (512)
-    `endif
-    `ifndef PT_SIZE_LIMIT
-    `define PT_SIZE_LIMIT (1<<25)
-    `endif
-`endif
 
-`ifndef PT_SIZE
-`define PT_SIZE MEM_PAGE_SIZE
-`endif
+    `ifndef PT_SIZE
+    `define PT_SIZE MEM_PAGE_SIZE
+    `endif
 
-`ifndef TLB_SIZE
-`define TLB_SIZE (32)
-`endif
+    `ifndef TLB_SIZE
+    `define TLB_SIZE (32)
+    `endif
+
 `endif
 
 // Pipeline Configuration /////////////////////////////////////////////////////
@@ -410,12 +395,12 @@
 `define NUM_VPU_BLOCKS  `ISSUE_WIDTH
 `endif
 
-// Number of ARA2 units
-`ifndef NUM_ARA_DISPATCH_LANES
-`define NUM_ARA_DISPATCH_LANES   `SIMD_WIDTH
+// Number of ARA units
+`ifndef NUM_ARA_LANES
+`define NUM_ARA_LANES   `SIMD_WIDTH
 `endif
-`ifndef NUM_ARA_DISPATCH_BLOCKS
-`define NUM_ARA_DISPATCH_BLOCKS  `ISSUE_WIDTH
+`ifndef NUM_ARA_BLOCKS
+`define NUM_ARA_BLOCKS  `ISSUE_WIDTH
 `endif
 `ifndef NUM_ARA_LANES
 `define NUM_ARA_LANES 1
@@ -426,6 +411,7 @@
 `endif
 `ifndef NUM_ARA_GPR_PORTS
 `define NUM_ARA_GPR_PORTS 8
+`endif
 `ifndef NUM_ARA_ALU_LANES
 `define NUM_ARA_ALU_LANES 1
 `endif
@@ -565,12 +551,6 @@
 // FNCP Bandwidth ratio
 `ifndef FNCP_PE_RATIO
 `define FNCP_PE_RATIO 2
-`endif
-
-// Tensore Units //////////////////////////////////////////////////////////////
-
-`ifndef NUM_TENSOR_CORES
-`define NUM_TENSOR_CORES `ISSUE_WIDTH
 `endif
 
 // Icache Configurable Knobs //////////////////////////////////////////////////

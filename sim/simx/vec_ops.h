@@ -1133,7 +1133,7 @@ public:
 
 ///////////////////////////////////////////////////////////////////////////////
 
-bool isMasked(const VRF_t& vreg_file, uint32_t maskVreg, uint32_t byteI, uint32_t vmask) {
+inline bool isMasked(const VRF_t& vreg_file, uint32_t maskVreg, uint32_t byteI, uint32_t vmask) {
   if (vmask == 1)
     return false; // unmasked
   auto& mask = vreg_file.at(maskVreg);

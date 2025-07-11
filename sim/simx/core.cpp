@@ -39,14 +39,11 @@ Core::Core(const SimContext& ctx,
   , core_id_(core_id)
   , socket_(socket)
   , arch_(arch)
-#ifdef EXT_V_ENABLE
-  , vec_unit_(VecUnit::Create("vpu", arch, this))
-#endif
-#ifdef EXT_ARA2_ENABLE
-  , ara_unit_(AraUnit::Create("ara", arch, this))
-#endif
 #ifdef EXT_TCU_ENABLE
   , tensor_unit_(TensorUnit::Create("tcu", arch, this))
+#endif
+#ifdef EXT_V_ENABLE
+  , vec_unit_(VecUnit::Create("vpu", arch, this))
 #endif
   , emulator_(arch, dcrs, this)
   , ibuffers_(arch.num_warps(), IBUF_SIZE)
@@ -145,9 +142,6 @@ Core::Core(const SimContext& ctx,
 #ifdef EXT_V_ENABLE
   dispatchers_.at((int)FUType::VPU) = SimPlatform::instance().create_object<Dispatcher>(this, 2, NUM_VPU_BLOCKS, NUM_VPU_LANES);
 #endif
-#ifdef EXT_ARA2_ENABLE
-  dispatchers_.at((int)FUType::ARA) = SimPlatform::instance().create_object<Dispatcher>(this, 2, NUM_ARA_DISPATCH_BLOCKS, NUM_ARA_DISPATCH_LANES);
-#endif
 #ifdef EXT_TCU_ENABLE
   dispatchers_.at((int)FUType::TCU) = SimPlatform::instance().create_object<Dispatcher>(this, 2, NUM_TCU_BLOCKS, NUM_TCU_LANES);
 #endif
@@ -158,10 +152,11 @@ Core::Core(const SimContext& ctx,
   func_units_.at((int)FUType::LSU) = SimPlatform::instance().create_object<LsuUnit>(this);
   func_units_.at((int)FUType::SFU) = SimPlatform::instance().create_object<SfuUnit>(this);
 #ifdef EXT_V_ENABLE
+#ifdef VPU_ARA2
+  func_units_.at((int)FUType::VPU) = SimPlatform::instance().create_object<AraUnit>(this);
+#else
   func_units_.at((int)FUType::VPU) = SimPlatform::instance().create_object<VpuUnit>(this);
 #endif
-#ifdef EXT_ARA2_ENABLE
-  func_units_.at((int)FUType::ARA) = SimPlatform::instance().create_object<Ara2Unit>(this);
 #endif
 #ifdef EXT_TCU_ENABLE
   func_units_.at((int)FUType::TCU) = SimPlatform::instance().create_object<TcuUnit>(this);
@@ -355,9 +350,6 @@ void Core::issue() {
         #ifdef EXT_V_ENABLE
           case FUType::VPU: ++perf_stats_.scrb_vpu; break;
         #endif
-        #ifdef EXT_ARA2_ENABLE
-          case FUType::ARA: ++perf_stats_.scrb_vpu; break;
-        #endif
         #ifdef EXT_TCU_ENABLE
           case FUType::TCU: ++perf_stats_.scrb_tcu; break;
         #endif
@@ -368,9 +360,6 @@ void Core::issue() {
         trace->log_once(false);
         ready_set.set(w); // mark instruction as ready
       }
-      // to operand stage
-      operands_.at(iw)->Input.push(trace, 2);
-      ibuffer.pop();
     }
 
     if (ready_set.any()) {
@@ -419,14 +408,7 @@ void Core::commit() {
     auto trace = commit_arb->Outputs.at(0).front().data;
 
     // advance to commit stage
-    auto latency = SimPlatform::instance().cycles() - trace->issue_time;
-    static uint32_t max_latency = 0;
-    if (latency > max_latency) {
-      DT(3, "pipeline-commit: latency=" << latency <<  " (max), " << *trace);
-      max_latency = latency;
-    } else {
-      DT(3, "pipeline-commit: latency=" << latency << ", " << *trace);
-    }
+    DT(3, "pipeline-commit: " << *trace);
     assert(trace->cid == core_id_);
 
     // update scoreboard
@@ -439,9 +421,7 @@ void Core::commit() {
       pending_instrs_.remove(trace);
       if (pending_instrs_.size() != orig_size) {
         perf_stats_.instrs += trace->tmask.count();
-      #if defined(EXT_V_ENABLE) || defined(EXT_ARA2_ENABLE)
-        if (trace->fu_type == FUType::VPU
-         || (trace->fu_type == FUType::LSU && (trace->lsu_type == LsuType::VLOAD || trace->lsu_type == LsuType::VSTORE))) {
+      #ifdef EXT_V_ENABLE
         if (std::get_if<VsetType>(&trace->op_type)
          || std::get_if<VlsType>(&trace->op_type)
          || std::get_if<VopType>(&trace->op_type)) {

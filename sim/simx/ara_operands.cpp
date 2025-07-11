@@ -21,18 +21,18 @@ Operands::Operands(const SimContext &ctx, Core* core)
     , Input(this)
     , Output(this)
     , sopc_units_(NUM_OPCS)
-    , vopc_units_(NUM_VOPCS)
+    , vopc_units_(NUM_OPCS)
     , sgpr_unit_(GPR::Create())
     , vgpr_unit_(VGPR::Create())
-    , out_arb_(ArbiterType::RoundRobin, NUM_OPCS + NUM_VOPCS) {
+    , out_arb_(ArbiterType::RoundRobin, NUM_OPCS + NUM_OPCS) {
   // create OPC units
   for (uint32_t i = 0; i < NUM_OPCS; i++) {
-    sopc_units_.at(i) = OpcUnit::Create(core);
+    sopc_units_.at(i) = Ara_Opc_Unit::Create(core);
   }
 
   // create VOPC units
-  for (uint32_t i = 0; i < NUM_VOPCS; i++) {
-    vopc_units_.at(i) = Ara_Opc_Unit::Create(core);
+  for (uint32_t i = 0; i < NUM_OPCS; i++) {
+    vopc_units_.at(i) = Ara_VOpc_Unit::Create(core);
   }
 
   // connect OPC to GPR
@@ -42,7 +42,7 @@ Operands::Operands(const SimContext &ctx, Core* core)
   }
 
   // connect VOPC to GPR and VGPR
-  for (uint32_t i = 0; i < NUM_VOPCS; i++) {
+  for (uint32_t i = 0; i < NUM_OPCS; i++) {
     vopc_units_.at(i)->gpr_req_ports.bind(&sgpr_unit_->ReqIn.at(NUM_OPCS + i));
     sgpr_unit_->RspOut.at(NUM_OPCS + i).bind(&vopc_units_.at(i)->gpr_rsp_ports);
     vopc_units_.at(i)->vgpr_req_ports.bind(&vgpr_unit_->ReqIn.at(i));
@@ -63,11 +63,11 @@ void Operands::reset() {
 void Operands::tick() {
   // process outgoing instructions
   {
-    BitVector<> valid_set(NUM_OPCS + NUM_VOPCS);
+    BitVector<> valid_set(NUM_OPCS + NUM_OPCS);
     for (uint32_t i = 0; i < NUM_OPCS; i++) {
       valid_set.set(i, !sopc_units_.at(i)->Output.empty());
     }
-    for (uint32_t i = 0; i < NUM_VOPCS; i++) {
+    for (uint32_t i = 0; i < NUM_OPCS; i++) {
       valid_set.set(NUM_OPCS + i, !vopc_units_.at(i)->Output.empty());
     }
     if (valid_set.any()) {
@@ -90,14 +90,14 @@ void Operands::tick() {
   if (Input.empty())
     return;
   auto trace = this->Input.front();
-  if (trace->fu_type == FUType::ARA
-    || (trace->fu_type == FUType::LSU && (trace->lsu_type == LsuType::VLOAD || trace->lsu_type == LsuType::VSTORE))) {
-    for (uint32_t i = 0; i < NUM_VOPCS; i++) {
+  if (std::get_if<VsetType>(&trace->op_type)
+   || std::get_if<VlsType>(&trace->op_type)
+   || std::get_if<VopType>(&trace->op_type)) {
+    for (uint32_t i = 0; i < NUM_OPCS; i++) {
       // skip if busy
       if (vopc_units_.at(i)->Input.full())
         continue;
       // assign instruction
-      trace->vopc = i;
       vopc_units_.at(i)->Input.push(trace);
       Input.pop();
       break;
@@ -108,7 +108,6 @@ void Operands::tick() {
       if (sopc_units_.at(i)->Input.full())
         continue;
       // assign instruction
-      trace->vopc = -1;
       sopc_units_.at(i)->Input.push(trace);
       Input.pop();
       break;
@@ -116,8 +115,6 @@ void Operands::tick() {
   }
 }
 
-void Operands::writeback(instr_trace_t* trace) {
-  if (trace->vopc != -1) {
-    vopc_units_.at(trace->vopc)->writeback(trace);
-  }
+void Operands::writeback(instr_trace_t* /*trace*/) {
+  //--
 }

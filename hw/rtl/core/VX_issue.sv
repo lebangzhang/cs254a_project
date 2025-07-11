@@ -79,6 +79,9 @@ module VX_issue import VX_gpu_pkg::*; #(
         `ifdef PERF_ENABLE
             .issue_perf   (per_issue_perf[issue_id]),
         `endif
+        `ifdef EXT_V_ENABLE
+            .vpu_states_if(vpu_states_if),
+        `endif
             .decode_if    (slice_decode_if),
             .writeback_if (writeback_if[issue_id]),
             .dispatch_if  (per_issue_dispatch_if),

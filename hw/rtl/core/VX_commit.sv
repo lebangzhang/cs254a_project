@@ -163,7 +163,6 @@ module VX_commit import VX_gpu_pkg::*; #(
     for (genvar i = 0; i < `ISSUE_WIDTH; ++i) begin : g_writeback
         assign writeback_if[i].valid     = commit_arb_if[i].valid && commit_arb_if[i].data.wb;
         assign writeback_if[i].data.uuid = commit_arb_if[i].data.uuid;
-        assign writeback_if[i].data.lid  = commit_arb_if[i].data.lid;
         assign writeback_if[i].data.wis  = wid_to_wis(commit_arb_if[i].data.wid);
         assign writeback_if[i].data.sid  = commit_arb_if[i].data.sid;
         assign writeback_if[i].data.PC   = commit_arb_if[i].data.PC;
