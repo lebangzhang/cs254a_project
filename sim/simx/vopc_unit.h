@@ -40,23 +40,26 @@ public:
 
 private:
 
-  void vector_std_arith_insn(instr_trace_t* trace);
-  void vector_final_insn(instr_trace_t* trace);
-  uint32_t compute_vector_stalls(instr_trace_t* trace);
+  void vector_std_trace(instr_trace_t* trace);
+  void vector_final_trace(instr_trace_t* trace);
+  uint32_t compute_vector_stalls(instr_trace_t* trace, uint32_t vlmul_index);
   uint32_t compute_scalar_stalls(instr_trace_t* trace);
+  uint32_t compute_total_vgpr_requests(instr_trace_t* trace);
   void translate(instr_trace_t* trace);
   void lsu_flush(instr_trace_t* trace);
 
   Core*    core_;
   uint32_t total_stalls_ = 0;
-  uint32_t total_iterations = 3;
-  uint32_t curr_iterations = 0;
+  uint32_t total_vgpr_requests = 3;
+  uint32_t curr_vgpr_requests = 0;
   uint32_t scalar_stalls = 0;
   uint32_t vector_stalls = 0; 
 
   uint32_t vl_counter_ = 0;
   uint32_t vlmul_counter_ = 0; 
   uint32_t curr_vlmul_counter = 0;
+
+  Word     active_PC_;
 
   bool     instr_pending_ = false;
   bool     lsu_flush_ = false;

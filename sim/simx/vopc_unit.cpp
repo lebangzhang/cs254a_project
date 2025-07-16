@@ -33,8 +33,8 @@ void VOpcUnit::reset() {
   vector_stalls = 0; 
 
   // VRF variables
-  total_iterations = 3;
-  curr_iterations = 0;
+  total_vgpr_requests = 3;
+  curr_vgpr_requests = 0;
 
   // Vlmul and Vl
   vl_counter_ = 0; 
@@ -47,6 +47,8 @@ void VOpcUnit::reset() {
   is_reduction_ = false;
 }
 
+
+
 void VOpcUnit::tick() {
 
   // process incoming instructions
@@ -57,22 +59,25 @@ void VOpcUnit::tick() {
   // First Entry initialization
   if(!instr_pending_) {
 
-    // Calculate total iterations to RF needed
-    curr_iterations = 0;
-    total_iterations = 3;
+    // Calculate total vgpr_requests to RF needed
+    curr_vgpr_requests = 0;
+    total_vgpr_requests = compute_total_vgpr_requests(trace);
 
     // Calculate Expected RF stalls 
     scalar_stalls = this->compute_scalar_stalls(trace);
-    vector_stalls = this->compute_vector_stalls(trace);
+    vector_stalls = this->compute_vector_stalls(trace, 0);
     
-    // Reduction and Vlmul  
+    // Check if vector insn -> Then compute Reduction and Vlmul parameters
     if (trace->fu_type == FUType::VPU) {
       auto trace_data = std::dynamic_pointer_cast<VecUnit::ExeTraceData>(trace->data);
       auto vpu_op = trace_data->vpu_op;
       is_reduction_ = (vpu_op >= VpuOpType::ARITH_R);
+      
+      active_PC_ = trace->PC;
 
       vl_counter_ = trace_data->vl;
       vlmul_counter_ = trace_data->vlmul;
+      curr_vlmul_counter = 0;
     }
 
     // Remove first entry in next CC
@@ -90,32 +95,56 @@ void VOpcUnit::tick() {
   // Vector instruction
   } else {
 
-    // Standard Arithmetic operation 
+    // Standard Vector Arithmetic operation 
     if(!is_reduction_){
 
-      vector_stalls = this->compute_vector_stalls(trace);
-      
-      // Perform standard Arithmetic operation 
-      if (curr_iterations < total_iterations) {
-        this->vector_std_arith_insn(trace);
-        curr_iterations += 1;
-      } else {
-        // Final Vector Trace 
-        this->vector_final_insn(trace);
-      }
+      // If not last vlmul iteration ==> Do regular arith instruction
+      if (curr_vlmul_counter != vlmul_counter_){
+        this->vector_std_trace(trace);
+        curr_vgpr_requests += 1;
 
+        // VRF iteration has finished ==> next vlmul
+        if(curr_vgpr_requests == total_vgpr_requests){
+          // Reset VRF iteration for next vlmul 
+          curr_vgpr_requests = 0;
+          curr_vlmul_counter += 1; 
+
+          // Recompute stalls for each vlmul
+          vector_stalls = this->compute_vector_stalls(trace, curr_vlmul_counter);
+        }
+      
+      // last vlmul iteration
+      } else {
+         
+        // Not last VRF iteration ==> Perform regular arith insn
+        if(curr_vgpr_requests != total_vgpr_requests){
+          this->vector_std_trace(trace);
+          curr_vgpr_requests += 1;
+        
+        // Last VRF iteration and last vlmul iteration ==> Last trace
+        } else {
+          this->vector_final_trace(trace);
+        }
+      }
     // Reduction and Slide instruction
     } else {
-       this->vector_final_insn(trace);
+       this->vector_final_trace(trace);
     }
   }
 }
 
-void VOpcUnit::vector_std_arith_insn(instr_trace_t* trace) {
+
+
+/*void VOpcUnit::reduction_level_0(instr_trace_t* trace) {*/
+/*}*/
+
+
+
+void VOpcUnit::vector_std_trace(instr_trace_t* trace) {
 
   // Only account for scalar_stalls in first iteration, otherwise stalls is due to VRF 
   uint32_t stalls  = 0; 
-  if(curr_iterations == 0){
+  if(curr_vgpr_requests == 0){
     stalls = std::max(scalar_stalls, vector_stalls);
   } else {
     stalls = vector_stalls;
@@ -136,11 +165,12 @@ void VOpcUnit::vector_std_arith_insn(instr_trace_t* trace) {
 
   // Send trace to Execution
   this->Output.push(new_trace, 2 + stalls); 
-  DT(3, "*** VOPC_issued_trace: curr_iter=" << curr_iterations << ", total_iter=" << total_iterations << ", " << *new_trace);
+  DT(3, "*** VOPC_issued_trace: curr_iter=" << curr_vgpr_requests << ", total_iter=" << total_vgpr_requests << ", vlmul=" << vlmul_counter_ << ", " << *new_trace);
 }
 
 
-void VOpcUnit::vector_final_insn(instr_trace_t* trace) {
+
+void VOpcUnit::vector_final_trace(instr_trace_t* trace) {
 
   uint32_t stalls = vector_stalls;
 
@@ -159,8 +189,8 @@ void VOpcUnit::vector_final_insn(instr_trace_t* trace) {
 
   // Reset Parameters for next insn
   total_stalls_ = 0;
-  total_iterations = 3;
-  curr_iterations = 0;
+  total_vgpr_requests = 3;
+  curr_vgpr_requests = 0;
   scalar_stalls = 0;
   vector_stalls = 0; 
 
@@ -175,7 +205,7 @@ void VOpcUnit::vector_final_insn(instr_trace_t* trace) {
 
 
 
-uint32_t VOpcUnit::compute_vector_stalls(instr_trace_t* trace) {
+uint32_t VOpcUnit::compute_vector_stalls(instr_trace_t* trace, uint32_t vlmul_index) {
 
   uint32_t vector_stalls = 0;
 
@@ -189,8 +219,8 @@ uint32_t VOpcUnit::compute_vector_stalls(instr_trace_t* trace) {
           continue; // skip x0
         
       // bank conflict
-      uint32_t bank_i = trace->src_regs[i].idx % NUM_GPR_BANKS;
-      uint32_t bank_j = trace->src_regs[j].idx % NUM_GPR_BANKS;
+      uint32_t bank_i = (trace->src_regs[i].idx + vlmul_index) % NUM_GPR_BANKS;
+      uint32_t bank_j = (trace->src_regs[j].idx + vlmul_index) % NUM_GPR_BANKS;
       if (bank_i == bank_j) {
         if (trace->src_regs[i].type == RegType::Vector
           && trace->src_regs[j].type == RegType::Vector) {
@@ -237,6 +267,49 @@ uint32_t VOpcUnit::compute_scalar_stalls(instr_trace_t* trace) {
   return scalar_stalls;
 }
 
+
+
+uint32_t VOpcUnit::compute_total_vgpr_requests(instr_trace_t* trace) {
+
+  // Calculate how many requests made to vrf
+
+  // TODO : Modify this for mixed width precision
+  uint32_t VL_count = VLEN/XLEN;
+  uint32_t max_threads_per_req = 0;
+  uint32_t vgpr_requests_per_thread = 0;
+  uint32_t nz_iterator_req = 0;
+
+  // Assuming SIMD_WIDTH, VL_count are powers of 2 
+  // Case 1 : SIMD_WIDTH > VL_count 
+  // ==> Each SIMD_WIDTH has 2 or more thread ==> Meaning NZ iterator works at granularity of SIMD_WIDTH / VL_count
+  if(SIMD_WIDTH > VL_count) {
+    max_threads_per_req = SIMD_WIDTH / VL_count;
+    vgpr_requests_per_thread = 1;
+
+    auto temp_tmask = trace->tmask;
+    for(uint32_t tid_base = 0; tid_base < NUM_THREADS; tid_base += max_threads_per_req){
+      int flag = 0;
+        
+      for(uint32_t tid_offset = 0; tid_offset < max_threads_per_req; tid_offset++) {
+        if(temp_tmask.test(tid_base + tid_offset)){
+          flag = 1;
+        }
+      }
+      nz_iterator_req += flag;
+    }
+  }
+  // Case 2 : SIMD_WIDTH < VL_count 
+  // ==> Meaning each SIMD_WIDTH only has half a thread ==> Meaning Nz iterator can work at granularity of each thread
+  else {
+    max_threads_per_req = 1;
+    vgpr_requests_per_thread = VL_count / SIMD_WIDTH;
+    nz_iterator_req = trace->tmask.count();
+  }
+
+  uint32_t total_requests = (max_threads_per_req) * vgpr_requests_per_thread * nz_iterator_req;
+
+  return total_requests;
+}
 
 
 
@@ -300,6 +373,49 @@ void VOpcUnit::lsu_flush(instr_trace_t* trace) {
 
 
 
-void VOpcUnit::writeback(instr_trace_t* /*trace*/) {
-  //--
+void VOpcUnit::writeback(instr_trace_t* trace) {
+  // only notify writeback for the currently active reduction instructions
+  if (instr_pending_ && trace->PC == active_PC_) {
+    DT(3, "VOPC_Writeback_Received" << ", " << *trace);
+  }
 }
+
+
+
+/*****************************************/
+// Notes on Reduction 
+//
+// Working example 
+  /*
+   * Consider: Layout of VRF bank 0 is [ (T0,T1), (T2,T3), ..... (T30,T31)] 
+   * Then: 
+   * Reduction Tree Level 0:
+   *  Idea: 
+   *  1. Get 2 VRF (T0,T1 | T2,T3) --> Send out 
+   *  2. Get 2 VRF (T4,T5 | T6,T7) --> Send out 
+   *  3. Continue to perform reduction on these 
+   *
+   *  Example below:
+   *  CC0: VRF req  (T0,T1)
+   *  CC1: VRF req  (T2,T3)                     
+   *  CC2: Send out (T0,T1,T2,T3)     --> SIMD full (T0->T3), rsp buffer empty
+   *  CC3: VRF req  (T4,T5)           --> SIMD (other insn) , rsp buffer 1/2 full (TO->T3) 
+   *  CC4: VRF req  (T6,T7)           --> SIMD (other insn) , rsp buffer 1/2 full (TO->T3) 
+   *  CC5: Send out (T4,T5,T6,T7)     --> SIMD full (T4->T7), rsp buffer 1/2 full (TO->T3)
+   *  CC6: Wait until rsp buffer full --> SIMD (other insn) , rsp buffer full (TO->T7) 
+   *
+   * Reduction Tree Level 1 --> SIMD is now full
+   *  CC0: Repeat same thing
+   * ...Repeat until last level
+   *
+   * Start 2nd batch 
+   * CC0: VRF req (T8, T9)
+   * etc
+   * ...Repeat until last level
+   *
+   */
+  // Overall, optimally, it optimizes for 4 VRF req batches
+  // Hence, need to consider 3 different caess, (Only 1 VRF req batch, Only 2 VRF req batch, Only 4)
+  // Note, the total number of batches is assumed to be a power of 2
+
+
