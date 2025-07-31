@@ -712,7 +712,6 @@ package VX_gpu_pkg;
         tcu_args_t  tcu;
     `endif
     } op_args_t;
-
     `PACKAGE_ASSERT($bits(op_args_t) == INST_ARGS_BITS)
 
     //////////////////////////// Pipeline Data Types //////////////////////////
