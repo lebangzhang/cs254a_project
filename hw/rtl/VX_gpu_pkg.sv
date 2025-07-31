@@ -447,6 +447,9 @@ package VX_gpu_pkg;
     localparam VL_WIDTH = `UP(VL_BITS);
     localparam VL_MAX_W = `CLOG2(`VLEN + 1);
 
+    localparam VT_COUNT = `SIMD_WIDTH / VL_COUNT;
+    `PACKAGE_ASSERT(VT_COUNT >= 1)
+
     localparam INST_VPU_VL =        4'b0000;
     localparam INST_VPU_VLS =       4'b0001;
     localparam INST_VPU_VLX =       4'b0010;
@@ -605,14 +608,14 @@ package VX_gpu_pkg;
         logic [ALU_TYPE_BITS-1:0] xtype;
         logic [`XLEN-1:0] imm;
     } alu_args_t;
-    `SIZE_ASSERT($bits(alu_args_t), INST_ARGS_BITS)
+    `PACKAGE_ASSERT($bits(alu_args_t) == INST_ARGS_BITS)
 
     typedef struct packed {
         logic [(INST_ARGS_BITS-INST_FRM_BITS-INST_FMT_BITS)-1:0] __padding;
         logic [INST_FRM_BITS-1:0] frm;
         logic [INST_FMT_BITS-1:0] fmt;
     } fpu_args_t;
-    `SIZE_ASSERT($bits(fpu_args_t), INST_ARGS_BITS)
+    `PACKAGE_ASSERT($bits(fpu_args_t) == INST_ARGS_BITS)
 
     typedef struct packed {
         logic [(INST_ARGS_BITS-1-1-OFFSET_BITS)-1:0] __padding;
@@ -620,7 +623,7 @@ package VX_gpu_pkg;
         logic is_float;
         logic [OFFSET_BITS-1:0] offset;
     } lsu_args_t;
-    `SIZE_ASSERT($bits(lsu_args_t), INST_ARGS_BITS)
+    `PACKAGE_ASSERT($bits(lsu_args_t) == INST_ARGS_BITS)
 
     typedef struct packed {
         logic [(INST_ARGS_BITS-1-`VX_CSR_ADDR_BITS-5)-1:0] __padding;
@@ -628,13 +631,13 @@ package VX_gpu_pkg;
         logic [`VX_CSR_ADDR_BITS-1:0] addr;
         logic [4:0] imm;
     } csr_args_t;
-    `SIZE_ASSERT($bits(csr_args_t), INST_ARGS_BITS)
+    `PACKAGE_ASSERT($bits(csr_args_t) == INST_ARGS_BITS)
 
     typedef struct packed {
         logic [(INST_ARGS_BITS-1)-1:0] __padding;
         logic is_neg;
     } wctl_args_t;
-    `SIZE_ASSERT($bits(wctl_args_t), INST_ARGS_BITS)
+    `PACKAGE_ASSERT($bits(wctl_args_t) == INST_ARGS_BITS)
 
  `ifdef EXT_V_ENABLE
     typedef struct packed {
@@ -646,7 +649,7 @@ package VX_gpu_pkg;
         logic [4:0] umop;
         logic [2:0] width;
     } vpu_args_ls_t;
-    `SIZE_ASSERT($bits(vpu_args_ls_t), INST_ARGS_BITS)
+    `PACKAGE_ASSERT($bits(vpu_args_ls_t) == INST_ARGS_BITS)
 
     typedef struct packed {
         logic [(INST_ARGS_BITS-4-1-1-5)-1:0] __padding;
@@ -655,7 +658,7 @@ package VX_gpu_pkg;
         logic       use_imm;
         logic [4:0] imm;
     } vpu_args_vop_t;
-    `SIZE_ASSERT($bits(vpu_args_vop_t), INST_ARGS_BITS)
+    `PACKAGE_ASSERT($bits(vpu_args_vop_t) == INST_ARGS_BITS)
 
     typedef struct packed {
         logic [(INST_ARGS_BITS-1-1-5-2-8)-1:0] __padding;
@@ -665,14 +668,14 @@ package VX_gpu_pkg;
         logic [1:0]  vset;
         vpu_zimm_t   zimm;
     } vpu_args_vset_t;
-    `SIZE_ASSERT($bits(vpu_args_vset_t), INST_ARGS_BITS)
+    `PACKAGE_ASSERT($bits(vpu_args_vset_t) == INST_ARGS_BITS)
 
     typedef union packed {
         vpu_args_ls_t   vls;
         vpu_args_vop_t  vop;
         vpu_args_vset_t vset;
     } vpu_args_t;
-    `SIZE_ASSERT($bits(vpu_args_t), INST_ARGS_BITS)
+    `PACKAGE_ASSERT($bits(vpu_args_t) == INST_ARGS_BITS)
 `endif
 
  `ifdef EXT_TCU_ENABLE
@@ -683,7 +686,7 @@ package VX_gpu_pkg;
         logic [3:0] step_n;
         logic [3:0] step_m;
     } tcu_args_t;
-    `SIZE_ASSERT($bits(tcu_args_t), INST_ARGS_BITS)
+    `PACKAGE_ASSERT($bits(tcu_args_t) == INST_ARGS_BITS)
 `endif
 
     typedef union packed {
@@ -700,7 +703,7 @@ package VX_gpu_pkg;
     `endif
     } op_args_t;
 
-    `SIZE_ASSERT($bits(op_args_t), INST_ARGS_BITS)
+    `PACKAGE_ASSERT($bits(op_args_t) == INST_ARGS_BITS)
 
     //////////////////////////// Pipeline Data Types //////////////////////////
 
