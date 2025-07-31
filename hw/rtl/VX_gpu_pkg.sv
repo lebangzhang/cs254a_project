@@ -450,6 +450,16 @@ package VX_gpu_pkg;
     localparam VT_COUNT = `SIMD_WIDTH / VL_COUNT;
     `PACKAGE_ASSERT(VT_COUNT >= 1)
 
+    localparam VSIMD_COUNT = `NUM_THREADS / VT_COUNT;
+    localparam VSIMD_IDX_BITS = `CLOG2(VSIMD_COUNT);
+    localparam VSIMD_IDX_W = `UP(VSIMD_IDX_BITS);
+
+`ifdef EXT_V_ENABLE
+    localparam XSIMD_IDX_W = `MAX(SIMD_IDX_W, VSIMD_IDX_W);
+`else
+    localparam XSIMD_IDX_W = SIMD_IDX_W;
+`endif
+
     localparam INST_VPU_VL =        4'b0000;
     localparam INST_VPU_VLS =       4'b0001;
     localparam INST_VPU_VLX =       4'b0010;
@@ -765,7 +775,7 @@ package VX_gpu_pkg;
     typedef struct packed {
         logic [UUID_WIDTH-1:0]              uuid;
         logic [ISSUE_WIS_W-1:0]             wis;
-        logic [SIMD_IDX_W-1:0]              sid;
+        logic [XSIMD_IDX_W-1:0]             sid;
         logic [`SIMD_WIDTH-1:0]             tmask;
         logic [PC_BITS-1:0]                 PC;
         logic [EX_BITS-1:0]                 ex_type;
@@ -784,7 +794,7 @@ package VX_gpu_pkg;
     typedef struct packed {
         logic [UUID_WIDTH-1:0]              uuid;
         logic [ISSUE_WIS_W-1:0]             wis;
-        logic [SIMD_IDX_W-1:0]              sid;
+        logic [XSIMD_IDX_W-1:0]             sid;
         logic [`SIMD_WIDTH-1:0]             tmask;
         logic [PC_BITS-1:0]                 PC;
         logic [INST_ALU_BITS-1:0]           op_type;
@@ -801,7 +811,7 @@ package VX_gpu_pkg;
     typedef struct packed {
         logic [UUID_WIDTH-1:0]              uuid;
         logic [NW_WIDTH-1:0]                wid;
-        logic [SIMD_IDX_W-1:0]              sid;
+        logic [XSIMD_IDX_W-1:0]             sid;
         logic [`SIMD_WIDTH-1:0]             tmask;
         logic [PC_BITS-1:0]                 PC;
         logic                               wb;
@@ -814,7 +824,7 @@ package VX_gpu_pkg;
     typedef struct packed {
         logic [UUID_WIDTH-1:0]              uuid;
         logic [ISSUE_WIS_W-1:0]             wis;
-        logic [SIMD_IDX_W-1:0]              sid;
+        logic [XSIMD_IDX_W-1:0]             sid;
         logic [`SIMD_WIDTH-1:0]             tmask;
         logic [PC_BITS-1:0]                 PC;
         logic [NUM_REGS_BITS-1:0]           rd;
