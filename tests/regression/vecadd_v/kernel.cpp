@@ -42,17 +42,17 @@ void kernel_body(kernel_arg_t* __UNIFORM__ arg) {
     */
 
     // Recognizable
-    TYPE A[10];
-    for(uint32_t i = 0; i < vec_len_per_thread; i++){
+    /*TYPE A[10];*/
+    /*for(uint32_t i = 0; i < vec_len_per_thread; i++){*/
 
-        auto a = src0_ptr[initial_index+i];
-        auto b = src1_ptr[initial_index+i];
-        A[i] = a + b;
-    }
+        /*auto a = src0_ptr[initial_index+i];*/
+        /*auto b = src1_ptr[initial_index+i];*/
+        /*A[i] = a + b;*/
+    /*}*/
 
-    for(uint32_t i = 0; i < vec_len_per_thread; i++){
-        dst_ptr[initial_index+i] = A[i];
-    }
+    /*for(uint32_t i = 0; i < vec_len_per_thread; i++){*/
+        /*dst_ptr[initial_index+i] = A[i];*/
+    /*}*/
 
     // Attempt ??? 
     /*
@@ -91,14 +91,13 @@ void kernel_body(kernel_arg_t* __UNIFORM__ arg) {
 
 
     // Using instrinsics
-    /*
     uint32_t vl;
     uint32_t index = initial_index;
 
     for(auto avl = vec_len_per_thread; avl > 0; avl -= (vl)) {
 
         // 1. Query next vl 
-        __asm__ __volatile__("vsetvli %[vl], %[avl], e32, m8, ta, ma"
+        __asm__ __volatile__("vsetvli %[vl], %[avl], e32, m1, ta, ma"
                         : [vl] "=r"(vl)
                         : [avl] "r"(avl));
 
@@ -118,9 +117,6 @@ void kernel_body(kernel_arg_t* __UNIFORM__ arg) {
         // 5. Increment index
         index += vl;
     }
-    */
-
-    // NEED TO FIX THE OTHER 'GENERAL CASE + FLOAT' REQUIREMENETS
 }
 
 int main() {
