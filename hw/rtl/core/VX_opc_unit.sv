@@ -65,11 +65,9 @@ module VX_opc_unit import VX_gpu_pkg::*; #(
     wire [GPR_ADDR_WIDTH-1:0] gpr_wb_addr;
     wire [GPR_DATA_SIZE-1:0] gpr_wb_byteen;
 
-    reg_idx_t [NUM_SRC_OPDS-1:0] src_regs;
-    assign src_regs = {scoreboard_if.data.rs3, scoreboard_if.data.rs2, scoreboard_if.data.rs1};
+    assign gpr_req_rid = {scoreboard_if.data.rs3, scoreboard_if.data.rs2, scoreboard_if.data.rs1};
 
-    for (genvar i = 0; i < NUM_SRC_OPDS; ++i) begin : g_src_valid
-        assign gpr_req_rid[i] = to_reg_number(src_regs[i]);
+    for (genvar i = 0; i < NUM_SRC_OPDS; ++i) begin : g_inused
         assign gpr_req_inused[i] = scoreboard_if.data.used_rs[i] && (gpr_req_rid[i] != 0);
     end
 
