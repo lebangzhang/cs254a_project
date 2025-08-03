@@ -68,7 +68,6 @@ module VX_operands import VX_gpu_pkg::*; #(
 
         VX_opc_unit #(
             .INSTANCE_ID  (`SFORMATF(("%s-collector%0d", INSTANCE_ID, i))),
-            .NUM_BANKS    (`NUM_GPR_BANKS),
             .OUT_BUF      (3)
         ) opc_unit (
             .clk          (clk),

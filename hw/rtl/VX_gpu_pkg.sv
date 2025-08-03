@@ -30,28 +30,46 @@ package VX_gpu_pkg;
 	localparam NT_WIDTH = `UP(NT_BITS);
 	localparam NB_WIDTH = `UP(NB_BITS);
 
-    localparam XLENB    = `XLEN / 8;
+    localparam XLENB = `XLEN / 8;
 
 	localparam RV_REGS = 32;
 	localparam RV_REGS_BITS = 5;
 
-`ifdef EXT_V_ENABLE
-    localparam REG_TYPES = 3;
-    localparam NUM_SREGS = 2 * RV_REGS;
-    localparam NUM_VREGS = 1 * RV_REGS;
-    localparam NUM_SREGS_BITS = `CLOG2(NUM_SREGS);
-    localparam NUM_VREGS_BITS = `CLOG2(NUM_VREGS);
-`elsif EXT_F_ENABLE
-	localparam REG_TYPES = 2;
+`ifdef EXT_F_ENABLE
+	localparam REG_STYPES = 2;
 `else
-	localparam REG_TYPES = 1;
+	localparam REG_STYPES = 1;
 `endif
 
+`ifdef EXT_V_ENABLE
+    localparam VLENB    = `VLEN / 8;
+    localparam VL_COUNT = `VLEN / `XLEN;
+    localparam VL_BITS  = `CLOG2(VL_COUNT);
+    localparam VL_WIDTH = `UP(VL_BITS);
+    localparam VL_MAX_W = `CLOG2(`VLEN + 1);
+
+    localparam VT_COUNT = `SIMD_WIDTH / VL_COUNT;
+    `PACKAGE_ASSERT(VT_COUNT >= 1)
+
+    localparam VSIMD_COUNT = `NUM_THREADS / VT_COUNT;
+    localparam VSIMD_IDX_BITS = `CLOG2(VSIMD_COUNT);
+    localparam VSIMD_IDX_W = `UP(VSIMD_IDX_BITS);
+    localparam XSIMD_IDX_W = `MAX(SIMD_IDX_W, VSIMD_IDX_W);
+
+    localparam NUM_VREGS_BITS = `CLOG2(NUM_VREGS);
+    localparam NUM_VREGS = RV_REGS;
+    localparam REG_TYPES = REG_STYPES + 1;
+`else
+	localparam REG_TYPES = REG_STYPES;
+    localparam XSIMD_IDX_W = SIMD_IDX_W;
+`endif
+
+    localparam NUM_SREGS = REG_STYPES * RV_REGS;
+    localparam NUM_SREGS_BITS = `CLOG2(NUM_SREGS);
+
 	localparam NUM_REGS = (REG_TYPES * RV_REGS);
-
-	localparam REG_TYPE_BITS = `LOG2UP(REG_TYPES);
-
 	localparam NUM_REGS_BITS = `CLOG2(NUM_REGS);
+    localparam REG_TYPE_BITS = `LOG2UP(REG_TYPES);
 
 	localparam DV_STACK_SIZE = `UP(`NUM_THREADS-1);
 	localparam DV_STACK_SIZEW = `UP(`CLOG2(DV_STACK_SIZE));
@@ -101,9 +119,9 @@ package VX_gpu_pkg;
 
 	localparam NUM_SOCKETS = `UP(`NUM_CORES / `SOCKET_SIZE);
 
-    localparam MEM_REQ_FLAG_FLUSH =  0;
-    localparam MEM_REQ_FLAG_IO =     1;
-    localparam MEM_REQ_FLAG_LOCAL =  2; // shoud be last since optional
+    localparam MEM_REQ_FLAG_FLUSH = 0;
+    localparam MEM_REQ_FLAG_IO =    1;
+    localparam MEM_REQ_FLAG_LOCAL = 2; // shoud be last since optional
     localparam MEM_FLAGS_WIDTH = (MEM_REQ_FLAG_LOCAL + `LMEM_ENABLED);
 
     localparam VX_DCR_ADDR_WIDTH = `VX_DCR_ADDR_BITS;
@@ -441,24 +459,7 @@ package VX_gpu_pkg;
 
     //////////////////////////////// Vector ISA ///////////////////////////////
 
-    localparam VLENB    = `VLEN / 8;
-    localparam VL_COUNT = `VLEN / `XLEN;
-    localparam VL_BITS  = `CLOG2(VL_COUNT);
-    localparam VL_WIDTH = `UP(VL_BITS);
-    localparam VL_MAX_W = `CLOG2(`VLEN + 1);
-
-    localparam VT_COUNT = `SIMD_WIDTH / VL_COUNT;
-    `PACKAGE_ASSERT(VT_COUNT >= 1)
-
-    localparam VSIMD_COUNT = `NUM_THREADS / VT_COUNT;
-    localparam VSIMD_IDX_BITS = `CLOG2(VSIMD_COUNT);
-    localparam VSIMD_IDX_W = `UP(VSIMD_IDX_BITS);
-
 `ifdef EXT_V_ENABLE
-    localparam XSIMD_IDX_W = `MAX(SIMD_IDX_W, VSIMD_IDX_W);
-`else
-    localparam XSIMD_IDX_W = SIMD_IDX_W;
-`endif
 
     localparam INST_VPU_VL =        4'b0000;
     localparam INST_VPU_VLS =       4'b0001;
@@ -550,6 +551,8 @@ package VX_gpu_pkg;
         logic [2:0] vsew;
         logic [2:0] vlmul;
      } vpu_zimm_t;
+
+`endif
 
     /////////////////////////////// TENSOR UNIT ///////////////////////////////
 
