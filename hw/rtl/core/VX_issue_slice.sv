@@ -27,7 +27,7 @@ module VX_issue_slice import VX_gpu_pkg::*; #(
 `endif
 
 `ifdef EXT_V_ENABLE
-    VX_vpu_states_if.master vpu_states_if,
+    VX_vpu_seq_csr_if.master vpu_seq_csr_if [PER_ISSUE_WARPS],
 `endif
 
     VX_decode_if.slave      decode_if,
@@ -41,15 +41,23 @@ module VX_issue_slice import VX_gpu_pkg::*; #(
     VX_scoreboard_if scoreboard_if();
     VX_operands_if operands_if();
 
+`ifdef EXT_V_ENABLE
+    VX_vpu_seq_opc_if vpu_seq_opc_if[`NUM_OPCS]();
+`endif
+
     VX_ibuffer #(
         .INSTANCE_ID (`SFORMATF(("%s-ibuffer", INSTANCE_ID))),
         .ISSUE_ID (ISSUE_ID)
     ) ibuffer (
         .clk            (clk),
         .reset          (reset),
-     `ifdef PERF_ENABLE
+    `ifdef PERF_ENABLE
         .perf_stalls    (issue_perf.ibf_stalls),
-     `endif
+    `endif
+    `ifdef EXT_V_ENABLE
+        .vpu_seq_csr_if (vpu_seq_csr_if),
+        .vpu_seq_opc_if (vpu_seq_opc_if),
+    `endif
         .decode_if      (decode_if),
         .ibuffer_if     (ibuffer_if)
     );
@@ -81,9 +89,11 @@ module VX_issue_slice import VX_gpu_pkg::*; #(
      `ifdef PERF_ENABLE
         .perf_stalls    (issue_perf.opd_stalls),
      `endif
+    `ifdef EXT_V_ENABLE
+        .vpu_seq_opc_if (vpu_seq_opc_if),
+    `endif
         .writeback_if   (writeback_if),
         .scoreboard_if  (scoreboard_if),
-        .vpu_states_if  (vpu_states_if),
         .operands_if    (operands_if)
     );
 

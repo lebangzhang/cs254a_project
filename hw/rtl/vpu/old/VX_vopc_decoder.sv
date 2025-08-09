@@ -20,7 +20,7 @@ module VX_vopc_decoder import VX_gpu_pkg::*; #(
     input wire          clk,
     input wire          reset,
 
-    VX_vpu_states_if.master vpu_states_if,
+    VX_vpu_seq_csr_if.master vpu_seq_csr_if,
 
     input wire          valid,
 
@@ -77,9 +77,9 @@ module VX_vopc_decoder import VX_gpu_pkg::*; #(
     end
 
     // vpu states
-    assign vpu_states_if.valid = valid_r && is_vset_r;
-    assign vpu_states_if.wid   = wis_to_wid(instr_in.wis, ISSUE_ID);
-    assign vpu_states_if.data  = vpu_states[instr_in.wis];
+    assign vpu_seq_csr_if.valid = valid_r && is_vset_r;
+    assign vpu_seq_csr_if.wid   = wis_to_wid(instr_in.wis, ISSUE_ID);
+    assign vpu_seq_csr_if.data  = vpu_states[instr_in.wis];
 
     // decoded instruction
     assign instr_out.uuid       = instr_in.uuid;

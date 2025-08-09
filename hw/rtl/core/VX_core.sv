@@ -78,7 +78,7 @@ module VX_core import VX_gpu_pkg::*; #(
 `endif
 
 `ifdef EXT_V_ENABLE
-    VX_vpu_states_if vpu_states_if();
+    VX_vpu_seq_csr_if vpu_seq_csr_if[`NUM_WARPS]();
 `endif
 
     base_dcrs_t base_dcrs;
@@ -139,9 +139,6 @@ module VX_core import VX_gpu_pkg::*; #(
         .reset          (reset),
         .fetch_if       (fetch_if),
         .decode_if      (decode_if),
-    `ifdef EXT_V_ENABLE
-        .vpu_states_if  (vpu_states_if),
-    `endif
         .decode_sched_if(decode_sched_if)
     );
 
@@ -158,7 +155,7 @@ module VX_core import VX_gpu_pkg::*; #(
     `endif
 
     `ifdef EXT_V_ENABLE
-        .vpu_states_if  (vpu_states_if),
+        .vpu_seq_csr_if  (vpu_seq_csr_if),
     `endif
 
         .decode_if      (decode_if),
@@ -182,7 +179,7 @@ module VX_core import VX_gpu_pkg::*; #(
     `endif
 
     `ifdef EXT_V_ENABLE
-        .vpu_states_if  (vpu_states_if),
+        .vpu_seq_csr_if  (vpu_seq_csr_if),
     `endif
 
         .base_dcrs      (base_dcrs),

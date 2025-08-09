@@ -11,35 +11,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-`ifndef VX_FPU_PKG_VH
-`define VX_FPU_PKG_VH
-
 `include "VX_define.vh"
 
-package VX_fpu_pkg;
+module VX_vpu_unpack_mask import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
+    parameter NUM_LANES = 1
+) (
+    input  wire [ETW_TYPE_W-1:0]           etw_type,  // 0→8,1→16,2→32,3→64
+    input  wire [ETW_IDX_W-1:0]            etw_idx,   // element index within lane
+    input  wire [NUM_LANES-1:0][`XLEN-1:0] data_in,   // per-lane packed word
+    output wire [NUM_LANES-1:0]            data_out   // per-lane element value
+);
 
-    import VX_gpu_pkg::*;
+    `UNUSED_VAR (etw_type);
+    `UNUSED_VAR (etw_idx);
+    `UNUSED_VAR (data_in);
 
-    typedef struct packed {
-        logic is_normal;
-        logic is_zero;
-        logic is_subnormal;
-        logic is_inf;
-        logic is_nan;
-        logic is_quiet;
-        logic is_signaling;
-    } fclass_t;
+    assign data_out = '0;
 
-    typedef struct packed {
-        logic NV; // 4-Invalid
-        logic DZ; // 3-Divide by zero
-        logic OF; // 2-Overflow
-        logic UF; // 1-Underflow
-        logic NX; // 0-Inexact
-    } fflags_t;
-
-    `DECL_EXECUTE_T (fpu, `NUM_FPU_LANES);
-
-endpackage
-
-`endif // VX_FPU_PKG_VH
+endmodule

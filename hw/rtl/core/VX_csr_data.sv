@@ -26,11 +26,17 @@
         addr+12'h80 : dst = 32'(src[$bits(src)-1:32])
 `endif
 
-module VX_csr_data
-import VX_gpu_pkg::*;
-`ifdef EXT_F_ENABLE
-import VX_fpu_pkg::*;
+module VX_csr_data import
+`ifdef EXT_V_ENABLE
+    VX_vpu_pkg::*,
 `endif
+`ifdef EXT_TCU_ENABLE
+    VX_tcu_pkg::*,
+`endif
+`ifdef EXT_F_ENABLE
+    VX_fpu_pkg::*,
+`endif
+    VX_gpu_pkg::*;
 #(
     parameter `STRING INSTANCE_ID = "",
     parameter CORE_ID = 0
@@ -52,7 +58,7 @@ import VX_fpu_pkg::*;
 `endif
 
 `ifdef EXT_V_ENABLE
-    VX_vpu_states_if.slave              vpu_states_if,
+    VX_vpu_seq_csr_if.slave             vpu_seq_csr_if [`NUM_WARPS],
 `endif
 
     input wire [PERF_CTR_BITS-1:0]      cycles,
@@ -124,19 +130,6 @@ import VX_fpu_pkg::*;
     end
 `endif
 
-`ifdef EXT_V_ENABLE
-
-    vpu_csrs_t [`NUM_WARPS-1:0] vpu_csrs;
-
-    always @(posedge clk) begin
-        if (vpu_states_if.valid) begin
-            vpu_csrs[vpu_states_if.wid].vtype <= vpu_states_if.data.vtype;
-            vpu_csrs[vpu_states_if.wid].vl <= vpu_states_if.data.vl;
-        end
-    end
-
-`endif
-
     always @(posedge clk) begin
         if (reset) begin
             mscratch <= base_dcrs.startup_arg;
@@ -163,20 +156,6 @@ import VX_fpu_pkg::*;
                 `VX_CSR_MSCRATCH: begin
                     mscratch <= write_data;
                 end
-            `ifdef EXT_V_ENABLE
-                `VX_CSR_VSTART: begin
-                    vpu_csrs[write_wid].vstart <= write_data[VL_BITS-1:0];
-                end
-                `VX_CSR_VXSAT: begin
-                    vpu_csrs[write_wid].vxsat <= write_data[0];
-                end
-                `VX_CSR_VXRM: begin
-                    vpu_csrs[write_wid].vxrm <= write_data[1:0];
-                end
-                `VX_CSR_VCSR: begin
-                    {vpu_csrs[write_wid].vxrm, vpu_csrs[write_wid].vxsat} <= write_data[2:0];
-                end
-            `endif
                 default: begin
                     `ASSERT(0, ("%t: *** %s invalid CSR write address: %0h (#%0d)", $time, INSTANCE_ID, write_addr, write_uuid));
                 end
@@ -189,6 +168,14 @@ import VX_fpu_pkg::*;
     reg [`XLEN-1:0] read_data_ro_w;
     reg [`XLEN-1:0] read_data_rw_w;
     reg read_addr_valid_w;
+
+
+ `ifdef EXT_V_ENABLE
+    vpu_csrs_t [`NUM_WARPS-1:0] vpu_seq_csr_data;
+    for (genvar i = 0; i < `NUM_WARPS; ++i) begin : g_vpu_seq_csr_data
+        assign vpu_seq_csr_data[i] = vpu_seq_csr_if[i].data;
+    end
+`endif
 
     always @(*) begin
         read_data_ro_w    = '0;
@@ -234,12 +221,12 @@ import VX_fpu_pkg::*;
             `VX_CSR_PMPADDR0 : read_data_ro_w = `XLEN'(0);
 
         `ifdef EXT_V_ENABLE
-            `VX_CSR_VSTART:read_data_rw_w = `XLEN'(vpu_csrs[read_wid].vstart);
-            `VX_CSR_VXSAT: read_data_rw_w = `XLEN'(vpu_csrs[read_wid].vxsat);
-            `VX_CSR_VXRM:  read_data_rw_w = `XLEN'(vpu_csrs[read_wid].vxrm);
-            `VX_CSR_VCSR:  read_data_rw_w = `XLEN'({vpu_csrs[read_wid].vxrm, vpu_csrs[read_wid].vxsat});
-            `VX_CSR_VL:    read_data_rw_w = `XLEN'(vpu_csrs[read_wid].vl);
-            `VX_CSR_VTYPE: read_data_rw_w = `XLEN'(vpu_csrs[read_wid].vtype);
+            `VX_CSR_VSTART:read_data_rw_w = `XLEN'(vpu_seq_csr_data[read_wid].vstart);
+            `VX_CSR_VXSAT: read_data_rw_w = `XLEN'(vpu_seq_csr_data[read_wid].vxsat);
+            `VX_CSR_VXRM:  read_data_rw_w = `XLEN'(vpu_seq_csr_data[read_wid].vxrm);
+            `VX_CSR_VCSR:  read_data_rw_w = `XLEN'({vpu_seq_csr_data[read_wid].vxrm, vpu_seq_csr_data[read_wid].vxsat});
+            `VX_CSR_VL:    read_data_rw_w = `XLEN'(vpu_seq_csr_data[read_wid].vl);
+            `VX_CSR_VTYPE: read_data_rw_w = `XLEN'(vpu_seq_csr_data[read_wid].vtype);
             `VX_CSR_VLENB: read_data_rw_w = `XLEN'(VLENB);
         `endif
 

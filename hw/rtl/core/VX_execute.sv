@@ -44,7 +44,7 @@ module VX_execute import VX_gpu_pkg::*; #(
     VX_warp_ctl_if.master   warp_ctl_if,
 
 `ifdef EXT_V_ENABLE
-    VX_vpu_states_if.slave  vpu_states_if,
+    VX_vpu_seq_csr_if.slave  vpu_seq_csr_if [`NUM_WARPS],
 `endif
 
     // commit interface
@@ -118,7 +118,7 @@ module VX_execute import VX_gpu_pkg::*; #(
         .fpu_csr_if     (fpu_csr_if),
     `endif
     `ifdef EXT_V_ENABLE
-        .vpu_states_if  (vpu_states_if),
+        .vpu_seq_csr_if  (vpu_seq_csr_if),
     `endif
         .commit_csr_if  (commit_csr_if),
         .sched_csr_if   (sched_csr_if),

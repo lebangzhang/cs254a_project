@@ -35,7 +35,7 @@ module VX_sfu_unit import VX_gpu_pkg::*; #(
 `endif
 
 `ifdef EXT_V_ENABLE
-    VX_vpu_states_if.slave  vpu_states_if,
+    VX_vpu_seq_csr_if.slave  vpu_seq_csr_if [`NUM_WARPS],
 `endif
 
     VX_commit_csr_if.slave  commit_csr_if,
@@ -136,7 +136,7 @@ module VX_sfu_unit import VX_gpu_pkg::*; #(
     `endif
 
     `ifdef EXT_V_ENABLE
-        .vpu_states_if  (vpu_states_if),
+        .vpu_seq_csr_if  (vpu_seq_csr_if),
     `endif
 
         .sched_csr_if   (sched_csr_if),

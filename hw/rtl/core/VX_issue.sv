@@ -26,7 +26,7 @@ module VX_issue import VX_gpu_pkg::*; #(
 `endif
 
 `ifdef EXT_V_ENABLE
-    VX_vpu_states_if.master vpu_states_if,
+    VX_vpu_seq_csr_if.master vpu_seq_csr_if [`NUM_WARPS],
 `endif
 
     VX_decode_if.slave      decode_if,
@@ -80,7 +80,7 @@ module VX_issue import VX_gpu_pkg::*; #(
             .issue_perf   (per_issue_perf[issue_id]),
         `endif
         `ifdef EXT_V_ENABLE
-            .vpu_states_if(vpu_states_if),
+            .vpu_seq_csr_if(vpu_seq_csr_if[issue_id * PER_ISSUE_WARPS +: PER_ISSUE_WARPS]),
         `endif
             .decode_if    (slice_decode_if),
             .writeback_if (writeback_if[issue_id]),

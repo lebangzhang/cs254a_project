@@ -52,11 +52,14 @@ module VX_dispatch import VX_gpu_pkg::*; #(
                 operands_if.data.wis,
                 operands_if.data.sid,
                 operands_if.data.tmask,
+            `ifdef EXT_V_ENABLE
+                operands_if.data.etw,
+            `endif
                 operands_if.data.PC,
-                operands_if.data.op_type,
-                operands_if.data.op_args,
                 operands_if.data.wb,
                 operands_if.data.rd,
+                operands_if.data.op_type,
+                operands_if.data.op_args,
                 operands_if.data.rs1_data,
                 operands_if.data.rs2_data,
                 operands_if.data.rs3_data,

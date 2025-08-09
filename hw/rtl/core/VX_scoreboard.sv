@@ -273,6 +273,9 @@ module VX_scoreboard import VX_gpu_pkg::*; #(
             scoreboard_if.data.ex_type,
             scoreboard_if.data.op_type,
             scoreboard_if.data.op_args,
+        `ifdef EXT_V_ENABLE
+            scoreboard_if.data.is_rvv,
+        `endif
             scoreboard_if.data.wb,
             scoreboard_if.data.used_rs,
             scoreboard_if.data.rd,

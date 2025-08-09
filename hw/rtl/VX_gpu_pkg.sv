@@ -32,8 +32,25 @@ package VX_gpu_pkg;
 
     localparam XLENB = `XLEN / 8;
 
+	localparam PERF_CTR_BITS = 44;
+
+	localparam DV_STACK_SIZE = `UP(`NUM_THREADS-1);
+	localparam DV_STACK_SIZEW = `UP(`CLOG2(DV_STACK_SIZE));
+
+    localparam NUM_OPCS_BITS = `CLOG2(`NUM_OPCS);
+    localparam NUM_OPCS_W = `UP(NUM_OPCS_BITS);
+
 	localparam RV_REGS = 32;
 	localparam RV_REGS_BITS = 5;
+
+    localparam RV_RD  = 0;
+    localparam RV_RS1 = 1;
+    localparam RV_RS2 = 2;
+    localparam RV_RS3 = 3;
+
+    localparam NUM_SRC_OPDS  = 3;
+    localparam SRC_OPD_BITS  = `CLOG2(NUM_SRC_OPDS);
+    localparam SRC_OPD_WIDTH = `UP(SRC_OPD_BITS);
 
     localparam REG_TYPE_I = 0;
     localparam REG_TYPE_F = 1;
@@ -44,48 +61,6 @@ package VX_gpu_pkg;
 	localparam REG_STYPES = 1;
 `endif
 
-`ifdef EXT_V_ENABLE
-    localparam VLENB    = `VLEN / 8;
-    localparam VL_COUNT = `VLEN / `XLEN;
-    localparam VL_BITS  = `CLOG2(VL_COUNT);
-    localparam VL_WIDTH = `UP(VL_BITS);
-    localparam VL_MAX_W = `CLOG2(`VLEN + 1);
-
-    localparam VT_COUNT = `SIMD_WIDTH / VL_COUNT;
-    `PACKAGE_ASSERT(VT_COUNT >= 1)
-
-    localparam VSIMD_COUNT = `NUM_THREADS / VT_COUNT;
-    localparam VSIMD_IDX_BITS = `CLOG2(VSIMD_COUNT);
-    localparam VSIMD_IDX_W = `UP(VSIMD_IDX_BITS);
-    localparam XSIMD_IDX_W = `MAX(SIMD_IDX_W, VSIMD_IDX_W);
-
-    localparam NUM_VREGS_BITS = `CLOG2(NUM_VREGS);
-    localparam NUM_VREGS = RV_REGS;
-    localparam REG_TYPES = REG_STYPES + 1;
-`else
-	localparam REG_TYPES = REG_STYPES;
-    localparam XSIMD_IDX_W = SIMD_IDX_W;
-`endif
-
-    localparam NUM_SREGS = REG_STYPES * RV_REGS;
-    localparam NUM_SREGS_BITS = `CLOG2(NUM_SREGS);
-
-	localparam NUM_REGS = (REG_TYPES * RV_REGS);
-	localparam NUM_REGS_BITS = `CLOG2(NUM_REGS);
-    localparam REG_TYPE_BITS = `LOG2UP(REG_TYPES);
-
-	localparam DV_STACK_SIZE = `UP(`NUM_THREADS-1);
-	localparam DV_STACK_SIZEW = `UP(`CLOG2(DV_STACK_SIZE));
-
-	localparam PERF_CTR_BITS = 44;
-
-    localparam SIMD_COUNT = `NUM_THREADS / `SIMD_WIDTH;
-    localparam SIMD_IDX_BITS = `CLOG2(SIMD_COUNT);
-    localparam SIMD_IDX_W = `UP(SIMD_IDX_BITS);
-
-    localparam NUM_OPCS_BITS = `CLOG2(`NUM_OPCS);
-    localparam NUM_OPCS_W = `UP(NUM_OPCS_BITS);
-
 `ifndef NDEBUG
 	localparam UUID_WIDTH = 44;
 `else
@@ -95,6 +70,51 @@ package VX_gpu_pkg;
 	localparam UUID_WIDTH = 1;
 `endif
 `endif
+
+`ifdef EXT_V_ENABLE
+    localparam VLENB    = `VLEN / 8;
+    localparam VL_COUNT = VLENB / XLENB;
+    localparam VL_BITS  = `CLOG2(VL_COUNT);
+    localparam VL_WIDTH = `UP(VL_BITS);
+    localparam VL_MAX_W = `CLOG2(`VLEN + 1);
+
+    localparam VT_COUNT = `SIMD_WIDTH / VL_COUNT;
+    `PACKAGE_ASSERT(VT_COUNT >= 1)
+    `PACKAGE_ASSERT(VT_COUNT <= `NUM_THREADS)
+
+    localparam SSIMD_WIDTH = `MIN(`SIMD_WIDTH, `NUM_THREADS);
+    localparam SSIMD_COUNT = `NUM_THREADS / SSIMD_WIDTH;
+    localparam SSIMD_IDX_BITS = `CLOG2(SSIMD_COUNT);
+    localparam SSIMD_IDX_W = `UP(SSIMD_IDX_BITS);
+
+    localparam VSIMD_WIDTH = `SIMD_WIDTH;
+    localparam VSIMD_COUNT = `NUM_THREADS / (VT_COUNT * SSIMD_COUNT);
+    localparam VSIMD_IDX_BITS = `CLOG2(VSIMD_COUNT);
+    localparam VSIMD_IDX_W = `UP(VSIMD_IDX_BITS);
+
+    localparam SIMD_COUNT = VSIMD_COUNT;
+
+    localparam NUM_VREGS_BITS = `CLOG2(NUM_VREGS);
+    localparam NUM_VREGS  = RV_REGS;
+    localparam REG_TYPES  = REG_STYPES + 1;
+    localparam REG_TYPE_V = REG_STYPES;
+
+    localparam ETW_TYPE_W = 2;
+    localparam ETW_IDX_W  = `CLOG2(XLENB);
+`else
+    localparam SIMD_COUNT = `NUM_THREADS / `SIMD_WIDTH;
+    localparam REG_TYPES  = REG_STYPES;
+`endif
+
+    localparam SIMD_IDX_BITS = `CLOG2(SIMD_COUNT);
+    localparam SIMD_IDX_W = `UP(SIMD_IDX_BITS);
+
+    localparam NUM_SREGS = REG_STYPES * RV_REGS;
+    localparam NUM_SREGS_BITS = `CLOG2(NUM_SREGS);
+
+	localparam NUM_REGS = (REG_TYPES * RV_REGS);
+	localparam NUM_REGS_BITS = `CLOG2(NUM_REGS);
+    localparam REG_TYPE_BITS = `LOG2UP(REG_TYPES);
 
 `ifndef NDEBUG
 	localparam PC_BITS = `XLEN;
@@ -116,10 +136,6 @@ package VX_gpu_pkg;
 
 	localparam OFFSET_BITS = 12;
 
-    localparam NUM_SRC_OPDS = 3;
-    localparam SRC_OPD_BITS = `CLOG2(NUM_SRC_OPDS);
-    localparam SRC_OPD_WIDTH = `UP(SRC_OPD_BITS);
-
 	localparam NUM_SOCKETS = `UP(`NUM_CORES / `SOCKET_SIZE);
 
     localparam MEM_REQ_FLAG_FLUSH = 0;
@@ -138,8 +154,7 @@ package VX_gpu_pkg;
 	localparam EX_LSU = 1;
 	localparam EX_SFU = 2;
 	localparam EX_FPU = (EX_SFU + `EXT_F_ENABLED);
-    localparam EX_VPU = (EX_FPU + `EXT_V_ENABLED);
-    localparam EX_TCU = (EX_VPU + `EXT_TCU_ENABLED);
+    localparam EX_TCU = (EX_FPU + `EXT_TCU_ENABLED);
 
 	localparam NUM_EX_UNITS = EX_TCU + 1;
 	localparam EX_BITS = `CLOG2(NUM_EX_UNITS);
@@ -427,6 +442,9 @@ package VX_gpu_pkg;
     localparam ISSUE_WIS_BITS = `CLOG2(PER_ISSUE_WARPS);
     localparam ISSUE_WIS_W = `UP(ISSUE_WIS_BITS);
 
+    parameter PER_OPC_WARPS = PER_ISSUE_WARPS / `NUM_OPCS;
+    parameter PER_OPC_NW_BITS = `CLOG2(PER_OPC_WARPS);
+
     function automatic logic [NW_WIDTH-1:0] wis_to_wid(
         input logic [ISSUE_WIS_W-1:0] wis,
         input logic [ISSUE_ISW_W-1:0] isw
@@ -460,70 +478,9 @@ package VX_gpu_pkg;
         end
     endfunction
 
-    //////////////////////////////// Vector ISA ///////////////////////////////
+//////////////////////////////// Vector ISA ///////////////////////////////
 
 `ifdef EXT_V_ENABLE
-
-    localparam INST_VPU_VL =        4'b0000;
-    localparam INST_VPU_VLS =       4'b0001;
-    localparam INST_VPU_VLX =       4'b0010;
-
-    localparam INST_VPU_VS =        4'b0100;
-    localparam INST_VPU_VSS =       4'b0101;
-    localparam INST_VPU_VSX =       4'b0110;
-
-    localparam INST_VPU_OPIVV =     4'b1000;
-    localparam INST_VPU_OPFVV =     4'b1001;
-    localparam INST_VPU_OPMVV =     4'b1010;
-    localparam INST_VPU_OPIVI =     4'b1011;
-    localparam INST_VPU_OPIVX =     4'b1100;
-    localparam INST_VPU_OPFVF =     4'b1101;
-    localparam INST_VPU_OPMVX =     4'b1110;
-
-    localparam INST_VPU_VSETVL =    4'b0011;
-    localparam INST_VPU_VSETVLI =   4'b0111;
-    localparam INST_VPU_VSETIVLI =  4'b1111;
-
-    localparam INST_VPU_VADD =      6'b100000;
-    localparam INST_VPU_VSUB =      6'b111111;
-    localparam INST_VPU_VMINU =     6'b111110;
-    localparam INST_VPU_VMIN =      6'b100001;
-    localparam INST_VPU_VMAXU =     6'b100010;
-    localparam INST_VPU_VMAX =      6'b100011;
-    localparam INST_VPU_VMSEQ =     6'b100100;
-    localparam INST_VPU_VMSNE =     6'b100101;
-    localparam INST_VPU_VMSLEU =    6'b100110;
-    localparam INST_VPU_VMSLE =     6'b100111;
-    localparam INST_VPU_VMFNE =     6'b101000;
-    localparam INST_VPU_VFMACC =    6'b101001;
-    localparam INST_VPU_VREDSUM =   6'b101010;
-    localparam INST_VPU_VMV_XS =    6'b101011;
-    localparam INST_VPU_VMV_VI =    6'b101100;
-    localparam INST_VPU_VMANDNOT =  6'b101101;
-    localparam INST_VPU_VMORNOT =   6'b101110;
-    localparam INST_VPU_VMNAND =    6'b101111;
-    localparam INST_VPU_VMNOR =     6'b110000;
-    localparam INST_VPU_VMXNOR =    6'b110001;
-    localparam INST_VPU_VMACC =     6'b110010;
-    localparam INST_VPU_ADDI =      6'b110011;
-    localparam INST_VPU_VMV1R =     6'b110100;
-    localparam INST_VPU_VRSUB =     6'b110101;
-    localparam INST_VPU_VFMV =      6'b110110;
-    localparam INST_VPU_VFMERGE =   6'b110111;
-    localparam INST_VPU_VMSGTU =    6'b111000;
-    localparam INST_VPU_VMSGT =     6'b111001;
-    localparam INST_VPU_VFRSUB =    6'b111010;
-    localparam INST_VPU_VSLIDE1UP = 6'b111011;
-    localparam INST_VPU_VSLIDE1DOWN=6'b111100;
-    localparam INST_VPU_VMV_SX =    6'b111101;
-
-    localparam INST_VPU_OP_BITS = 4;
-
-    localparam INST_VPU_VLD  =      2'b00;
-    localparam INST_VPU_VST  =      2'b01;
-    localparam INST_VPU_VOP  =      2'b10;
-    localparam INST_VPU_VSET =      2'b11;
-    localparam INST_VPU_BITS =      2;
 
     typedef struct packed {
         logic [0:0] vill;       // illegal vtype
@@ -549,11 +506,10 @@ package VX_gpu_pkg;
     } vpu_states_t;
 
     typedef struct packed {
-        logic       vma;
-        logic       vta;
-        logic [2:0] vsew;
-        logic [2:0] vlmul;
-     } vpu_zimm_t;
+        logic [ETW_TYPE_W-1:0] etype;
+        logic [ETW_IDX_W-1:0]  idx;
+        logic                  masked;
+    } vpu_etw_t;
 
 `endif
 
@@ -627,10 +583,17 @@ package VX_gpu_pkg;
     `PACKAGE_ASSERT($bits(fpu_args_t) == INST_ARGS_BITS)
 
     typedef struct packed {
+    `ifdef EXT_V_ENABLE
+        logic [(INST_ARGS_BITS-1-1-OFFSET_BITS-3)-1:0] __padding;
+    `else
         logic [(INST_ARGS_BITS-1-1-OFFSET_BITS)-1:0] __padding;
+    `endif
         logic is_store;
         logic is_float;
         logic [OFFSET_BITS-1:0] offset;
+    `ifdef EXT_V_ENABLE
+        logic [2:0] nf;
+    `endif
     } lsu_args_t;
     `PACKAGE_ASSERT($bits(lsu_args_t) == INST_ARGS_BITS)
 
@@ -642,50 +605,23 @@ package VX_gpu_pkg;
     } csr_args_t;
     `PACKAGE_ASSERT($bits(csr_args_t) == INST_ARGS_BITS)
 
+`ifdef EXT_V_ENABLE
+    typedef struct packed {
+        logic [(INST_ARGS_BITS-1-1-5-8-2)-1:0] __padding;
+        logic       use_imm;
+        logic       use_zimm;
+        logic [4:0] imm;
+        logic [7:0] zimm;
+        logic [1:0] vset;
+    } vset_args_t;
+    `PACKAGE_ASSERT($bits(vset_args_t) == INST_ARGS_BITS)
+`endif
+
     typedef struct packed {
         logic [(INST_ARGS_BITS-1)-1:0] __padding;
         logic is_neg;
     } wctl_args_t;
     `PACKAGE_ASSERT($bits(wctl_args_t) == INST_ARGS_BITS)
-
- `ifdef EXT_V_ENABLE
-    typedef struct packed {
-        logic [(INST_ARGS_BITS-3-1-2-1-5-3)-1:0] __padding;
-        logic [2:0] nf;
-        logic       mew;
-        logic [1:0] mop;
-        logic       vm;
-        logic [4:0] umop;
-        logic [2:0] width;
-    } vpu_args_ls_t;
-    `PACKAGE_ASSERT($bits(vpu_args_ls_t) == INST_ARGS_BITS)
-
-    typedef struct packed {
-        logic [(INST_ARGS_BITS-4-1-1-5)-1:0] __padding;
-        logic [3:0] op;
-        logic       vm;
-        logic       use_imm;
-        logic [4:0] imm;
-    } vpu_args_vop_t;
-    `PACKAGE_ASSERT($bits(vpu_args_vop_t) == INST_ARGS_BITS)
-
-    typedef struct packed {
-        logic [(INST_ARGS_BITS-1-1-5-2-8)-1:0] __padding;
-        logic        use_imm;
-        logic        use_zimm;
-        logic [4:0]  imm;
-        logic [1:0]  vset;
-        vpu_zimm_t   zimm;
-    } vpu_args_vset_t;
-    `PACKAGE_ASSERT($bits(vpu_args_vset_t) == INST_ARGS_BITS)
-
-    typedef union packed {
-        vpu_args_ls_t   vls;
-        vpu_args_vop_t  vop;
-        vpu_args_vset_t vset;
-    } vpu_args_t;
-    `PACKAGE_ASSERT($bits(vpu_args_t) == INST_ARGS_BITS)
-`endif
 
  `ifdef EXT_TCU_ENABLE
     typedef struct packed {
@@ -705,7 +641,7 @@ package VX_gpu_pkg;
         csr_args_t  csr;
         wctl_args_t wctl;
     `ifdef EXT_V_ENABLE
-        vpu_args_t  vpu;
+        vset_args_t vset;
     `endif
     `ifdef EXT_TCU_ENABLE
         tcu_args_t  tcu;
@@ -731,6 +667,9 @@ package VX_gpu_pkg;
         logic [EX_BITS-1:0]         ex_type;
         logic [INST_OP_BITS-1:0]    op_type;
         op_args_t                   op_args;
+    `ifdef EXT_V_ENABLE
+        logic                       is_rvv;
+    `endif
         logic                       wb;
         logic [NUM_SRC_OPDS-1:0]    used_rs;
         logic [NUM_REGS_BITS-1:0]   rd;
@@ -746,6 +685,9 @@ package VX_gpu_pkg;
         logic [EX_BITS-1:0]         ex_type;
         logic [INST_OP_BITS-1:0]    op_type;
         op_args_t                   op_args;
+    `ifdef EXT_V_ENABLE
+        logic                       is_rvv;
+    `endif
         logic                       wb;
         logic [NUM_SRC_OPDS-1:0]    used_rs;
         logic [NUM_REGS_BITS-1:0]   rd;
@@ -762,6 +704,9 @@ package VX_gpu_pkg;
         logic [EX_BITS-1:0]         ex_type;
         logic [INST_OP_BITS-1:0]    op_type;
         op_args_t                   op_args;
+    `ifdef EXT_V_ENABLE
+        logic                       is_rvv;
+    `endif
         logic                       wb;
         logic [NUM_SRC_OPDS-1:0]    used_rs;
         logic [NUM_REGS_BITS-1:0]   rd;
@@ -773,8 +718,11 @@ package VX_gpu_pkg;
     typedef struct packed {
         logic [UUID_WIDTH-1:0]              uuid;
         logic [ISSUE_WIS_W-1:0]             wis;
-        logic [XSIMD_IDX_W-1:0]             sid;
+        logic [SIMD_IDX_W-1:0]              sid;
         logic [`SIMD_WIDTH-1:0]             tmask;
+    `ifdef EXT_V_ENABLE
+        vpu_etw_t                           etw;
+    `endif
         logic [PC_BITS-1:0]                 PC;
         logic [EX_BITS-1:0]                 ex_type;
         logic [INST_OP_BITS-1:0]            op_type;
@@ -792,13 +740,16 @@ package VX_gpu_pkg;
     typedef struct packed {
         logic [UUID_WIDTH-1:0]              uuid;
         logic [ISSUE_WIS_W-1:0]             wis;
-        logic [XSIMD_IDX_W-1:0]             sid;
+        logic [SIMD_IDX_W-1:0]              sid;
         logic [`SIMD_WIDTH-1:0]             tmask;
+    `ifdef EXT_V_ENABLE
+        vpu_etw_t                           etw;
+    `endif
         logic [PC_BITS-1:0]                 PC;
-        logic [INST_ALU_BITS-1:0]           op_type;
-        op_args_t                           op_args;
         logic                               wb;
         logic [NUM_REGS_BITS-1:0]           rd;
+        logic [INST_ALU_BITS-1:0]           op_type;
+        op_args_t                           op_args;
         logic [`SIMD_WIDTH-1:0][`XLEN-1:0]  rs1_data;
         logic [`SIMD_WIDTH-1:0][`XLEN-1:0]  rs2_data;
         logic [`SIMD_WIDTH-1:0][`XLEN-1:0]  rs3_data;
@@ -809,8 +760,11 @@ package VX_gpu_pkg;
     typedef struct packed {
         logic [UUID_WIDTH-1:0]              uuid;
         logic [NW_WIDTH-1:0]                wid;
-        logic [XSIMD_IDX_W-1:0]             sid;
+        logic [SIMD_IDX_W-1:0]              sid;
         logic [`SIMD_WIDTH-1:0]             tmask;
+    `ifdef EXT_V_ENABLE
+        vpu_etw_t                           etw;
+    `endif
         logic [PC_BITS-1:0]                 PC;
         logic                               wb;
         logic [NUM_REGS_BITS-1:0]           rd;
@@ -822,8 +776,11 @@ package VX_gpu_pkg;
     typedef struct packed {
         logic [UUID_WIDTH-1:0]              uuid;
         logic [ISSUE_WIS_W-1:0]             wis;
-        logic [XSIMD_IDX_W-1:0]             sid;
+        logic [SIMD_IDX_W-1:0]              sid;
         logic [`SIMD_WIDTH-1:0]             tmask;
+    `ifdef EXT_V_ENABLE
+        vpu_etw_t                           etw;
+    `endif
         logic [PC_BITS-1:0]                 PC;
         logic [NUM_REGS_BITS-1:0]           rd;
         logic [`SIMD_WIDTH-1:0][`XLEN-1:0]  data;
@@ -838,14 +795,9 @@ package VX_gpu_pkg;
         logic [PC_BITS-1:0]                 PC;
     } schedule_t;
 
-    `DECL_EXECUTE_T (alu_exe_t, `NUM_ALU_LANES);
-    `DECL_RESULT_T  (alu_res_t, `NUM_ALU_LANES);
-
-    `DECL_EXECUTE_T (lsu_exe_t, `NUM_LSU_LANES);
-    `DECL_RESULT_T (lsu_res_t, `NUM_LSU_LANES);
-
-    `DECL_EXECUTE_T (sfu_exe_t, `NUM_SFU_LANES);
-    `DECL_RESULT_T (sfu_res_t, `NUM_SFU_LANES);
+    `DECL_EXECUTE_T (alu, `NUM_ALU_LANES);
+    `DECL_EXECUTE_T (lsu, `NUM_LSU_LANES);
+    `DECL_EXECUTE_T (sfu, `NUM_SFU_LANES);
 
     //////////////////////////// Perf counter types ///////////////////////////
 

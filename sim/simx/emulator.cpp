@@ -492,7 +492,7 @@ Word Emulator::get_csr(uint32_t addr, uint32_t wid, uint32_t tid) {
       #ifdef EXT_TCU_ENABLE
         CSR_READ_64(VX_CSR_MPM_SCRB_TCU, core_perf.scrb_tcu);
       #endif
-      #ifdef EXT_VPU_ENABLE
+      #ifdef EXT_V_ENABLE
         CSR_READ_64(VX_CSR_MPM_SCRB_TCU, core_perf.scrb_vpu);
       #endif
         CSR_READ_64(VX_CSR_MPM_SCRB_CSRS, core_perf.scrb_csrs);

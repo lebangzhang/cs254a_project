@@ -36,6 +36,26 @@
 
 ///////////////////////////////////////////////////////////////////////////////
 
+`define __used_reg_rv_rd  RV_RD
+`define __used_reg_rv_rs1 RV_RS1
+`define __used_reg_rv_rs2 RV_RS2
+`define __used_reg_rv_rs3 RV_RS3
+
+`define USED_REG(t, x) \
+    reg_ids[`__used_reg_rv_``x]  = make_reg_num(REG_TYPE_BITS'(t), RV_REGS_BITS'(``x)); \
+    use_regs[`__used_reg_rv_``x] = 1
+
+`define USED_IREG(x) \
+    `USED_REG(REG_TYPE_I, ``x)
+
+`define USED_FREG(x) \
+    `USED_REG(REG_TYPE_F, ``x)
+
+`define USED_VREG(x) \
+    `USED_REG(REG_TYPE_V, ``x)
+
+///////////////////////////////////////////////////////////////////////////////
+
 `define ITF_TO_AOS(prefix, itf, count, dataw) \
     wire [(count)-1:0] prefix``_valid; \
     wire [(count)-1:0][(dataw)-1:0] prefix``_data; \
@@ -435,36 +455,62 @@
     end \
     /* verilator lint_off GENUNNAMED */
 
+`ifdef EXT_V_ENABLE
+
+// warning: this layout should not be modified without updating VX_dispatch_unit!!!
 `define DECL_EXECUTE_T(__name__, __lanes__) \
     typedef struct packed { \
         logic [UUID_WIDTH-1:0]          uuid; \
         logic [NW_WIDTH-1:0]            wid; \
         logic [__lanes__-1:0]           tmask; \
-        logic [PC_BITS-1:0]             PC; \
-        logic [INST_ALU_BITS-1:0]       op_type; \
-        op_args_t                       op_args; \
-        logic                           wb; \
-        logic [NUM_REGS_BITS-1:0]       rd; \
-        logic [__lanes__-1:0][`XLEN-1:0] rs1_data; \
-        logic [__lanes__-1:0][`XLEN-1:0] rs2_data; \
-        logic [__lanes__-1:0][`XLEN-1:0] rs3_data; \
         logic [`LOG2UP(`NUM_THREADS / __lanes__)-1:0] pid; \
         logic                           sop; \
         logic                           eop; \
-    } __name__
-
-`define DECL_RESULT_T(__name__, __lanes__) \
+        vpu_etw_t                       etw; \
+        logic [PC_BITS-1:0]             PC; \
+        logic                           wb; \
+        logic [NUM_REGS_BITS-1:0]       rd; \
+    } __name__``_hdr_t; \
     typedef struct packed { \
-        logic [UUID_WIDTH-1:0]      uuid; \
-        logic [NW_WIDTH-1:0]        wid; \
-        logic [__lanes__-1:0]       tmask; \
-        logic [PC_BITS-1:0]         PC; \
-        logic                       wb; \
-        logic [NUM_REGS_BITS-1:0]   rd; \
+        __name__``_hdr_t                header; \
+        logic [INST_ALU_BITS-1:0]       op_type; \
+        op_args_t                       op_args; \
+        logic [__lanes__-1:0][`XLEN-1:0] rs1_data; \
+        logic [__lanes__-1:0][`XLEN-1:0] rs2_data; \
+        logic [__lanes__-1:0][`XLEN-1:0] rs3_data; \
+    } __name__``_exe_t; \
+    typedef struct packed { \
+        __name__``_hdr_t                header; \
         logic [__lanes__-1:0][`XLEN-1:0] data; \
+    } __name__``_res_t
+
+`else
+
+`define DECL_EXECUTE_T(__name__, __lanes__) \
+    typedef struct packed { \
+        logic [UUID_WIDTH-1:0]          uuid; \
+        logic [NW_WIDTH-1:0]            wid; \
+        logic [__lanes__-1:0]           tmask; \
         logic [`LOG2UP(`NUM_THREADS / __lanes__)-1:0] pid; \
-        logic                       sop; \
-        logic                       eop; \
-    } __name__
+        logic                           sop; \
+        logic                           eop; \
+        logic [PC_BITS-1:0]             PC; \
+        logic                           wb; \
+        logic [NUM_REGS_BITS-1:0]       rd; \
+    } __name__``_hdr_t; \
+    typedef struct packed { \
+        __name__``_hdr_t                header; \
+        logic [INST_ALU_BITS-1:0]       op_type; \
+        op_args_t                       op_args; \
+        logic [__lanes__-1:0][`XLEN-1:0] rs1_data; \
+        logic [__lanes__-1:0][`XLEN-1:0] rs2_data; \
+        logic [__lanes__-1:0][`XLEN-1:0] rs3_data; \
+    } __name__``_exe_t; \
+    typedef struct packed { \
+        __name__``_hdr_t                header; \
+        logic [__lanes__-1:0][`XLEN-1:0] data; \
+    } __name__``_res_t
+
+`endif
 
 `endif // VX_DEFINE_VH

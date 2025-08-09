@@ -110,7 +110,7 @@
 `define UNUSED_VAR(x)   /* verilator lint_off GENUNNAMED */ \
                         if (1) begin \
                             /* verilator lint_off UNUSED */ \
-                            wire [$bits(x)-1:0] __unused = x; \
+                            logic [$bits(x)-1:0] __unused = x; \
                             /* verilator lint_on UNUSED */ \
                         end \
                         /* verilator lint_on GENUNNAMED */
@@ -321,7 +321,8 @@
 `define _REPEAT_31(f,s) `f(30) `s `_REPEAT_30(f,s)
 `define _REPEAT_32(f,s) `f(31) `s `_REPEAT_31(f,s)
 
-`define REPEAT_COMMA ,
-`define REPEAT_SEMICOLON ;
+`define MP_COMMA ,
+`define MP_SEMI  ;
+`define MP_ADD   +
 
 `endif // VX_PLATFORM_VH

@@ -73,10 +73,7 @@ module VX_issue_top import VX_gpu_pkg::*; #(
     VX_issue_sched_if issue_sched_if[`ISSUE_WIDTH]();
 
 `ifdef EXT_V_ENABLE
-    VX_vpu_states_if vpu_states_if();
-    assign vpu_states_if.valid = 1'b0;
-    assign vpu_states_if.wid   = '0;
-    assign vpu_states_if.data  = '0;
+    VX_vpu_seq_csr_if vpu_seq_csr_if[`NUM_WARPS]();
 `endif
 
     assign decode_if.valid = decode_valid;
@@ -155,7 +152,7 @@ module VX_issue_top import VX_gpu_pkg::*; #(
     `endif
 
     `ifdef EXT_V_ENABLE
-        .vpu_states_if  (vpu_states_if),
+        .vpu_seq_csr_if (vpu_seq_csr_if),
     `endif
 
         .decode_if      (decode_if),

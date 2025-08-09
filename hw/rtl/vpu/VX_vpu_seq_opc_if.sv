@@ -11,35 +11,24 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-`ifndef VX_FPU_PKG_VH
-`define VX_FPU_PKG_VH
-
 `include "VX_define.vh"
 
-package VX_fpu_pkg;
+interface VX_vpu_seq_opc_if import VX_gpu_pkg::*, VX_vpu_pkg::*; ();
 
-    import VX_gpu_pkg::*;
+    logic                valid;
+    logic [PER_OPC_NW_BITS-1:0] wis;
+    vpu_states_t         data;
 
-    typedef struct packed {
-        logic is_normal;
-        logic is_zero;
-        logic is_subnormal;
-        logic is_inf;
-        logic is_nan;
-        logic is_quiet;
-        logic is_signaling;
-    } fclass_t;
+    modport master (
+        output valid,
+        output wis,
+        output data
+    );
 
-    typedef struct packed {
-        logic NV; // 4-Invalid
-        logic DZ; // 3-Divide by zero
-        logic OF; // 2-Overflow
-        logic UF; // 1-Underflow
-        logic NX; // 0-Inexact
-    } fflags_t;
+    modport slave (
+        input valid,
+        input wis,
+        input data
+    );
 
-    `DECL_EXECUTE_T (fpu, `NUM_FPU_LANES);
-
-endpackage
-
-`endif // VX_FPU_PKG_VH
+endinterface

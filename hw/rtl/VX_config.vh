@@ -336,7 +336,11 @@
 // Pipeline Configuration /////////////////////////////////////////////////////
 
 `ifndef SIMD_WIDTH
+`ifdef EXT_V_ENABLE
+`define SIMD_WIDTH      `MAX(`NUM_THREADS, (`VLEN / `XLEN))
+`else
 `define SIMD_WIDTH      `MIN(`NUM_THREADS, 16)
+`endif
 `endif
 
 // Issue width
@@ -383,7 +387,7 @@
 
 // Number of SFU units
 `ifndef NUM_SFU_LANES
-`define NUM_SFU_LANES   `SIMD_WIDTH
+`define NUM_SFU_LANES   `MIN(`SIMD_WIDTH, `NUM_THREADS)
 `endif
 `define NUM_SFU_BLOCKS  1
 

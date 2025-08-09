@@ -13,7 +13,7 @@
 
 `include "VX_define.vh"
 
-module VX_voperands import VX_gpu_pkg::*; #(
+module VX_voperands import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
     parameter `STRING INSTANCE_ID = "",
     parameter ISSUE_ID  = 0
 ) (
@@ -25,7 +25,7 @@ module VX_voperands import VX_gpu_pkg::*; #(
 `endif
 
 `ifdef EXT_V_ENABLE
-    VX_vpu_states_if.master vpu_states_if,
+    VX_vpu_seq_opc_if.master vpu_seq_opc_if [`NUM_OPCS],
 `endif
 
     VX_writeback_if.slave   writeback_if,
@@ -55,11 +55,6 @@ module VX_voperands import VX_gpu_pkg::*; #(
         assign wb_opc = 0;
     end
 
-    // vpu states
-    assign vpu_states_if.valid = 0;
-    assign vpu_states_if.wid   = '0;
-    assign vpu_states_if.data  = 'x;
-
     wire [`NUM_OPCS-1:0] scoreboard_ready_in;
     assign scoreboard_if.ready = scoreboard_ready_in[sb_opc];
 
@@ -75,11 +70,16 @@ module VX_voperands import VX_gpu_pkg::*; #(
         assign opc_writeback_if.valid = writeback_if.valid && (wb_opc == i);
         assign opc_writeback_if.data  = writeback_if.data;
 
-        VX_vopc_unit #(
-            .INSTANCE_ID  (`SFORMATF(("%s-collector%0d", INSTANCE_ID, i))),
-            .NUM_BANKS    (`NUM_GPR_BANKS),
+        VX_operands_if sopc_operands_if();
+
+        wire [NUM_SRC_OPDS-1:0][NUM_REGS_BITS-1:0] src_regs;
+        wire [NUM_SRC_OPDS-1:0] used_rs;
+        wire is_rvv;
+
+        VX_sopc_unit #(
+            .INSTANCE_ID  (`SFORMATF(("%s-sopc%0d", INSTANCE_ID, i))),
             .OUT_BUF      (3)
-        ) vopc_unit (
+        ) sopc_unit (
             .clk          (clk),
             .reset        (reset),
         `ifdef PERF_ENABLE
@@ -87,8 +87,44 @@ module VX_voperands import VX_gpu_pkg::*; #(
         `endif
             .writeback_if (opc_writeback_if),
             .scoreboard_if(opc_scoreboard_if),
-            .operands_if  (per_opc_operands_if[i])
+            .src_regs_o   (src_regs),
+            .used_rs_o    (used_rs),
+            .is_rvv_o     (is_rvv),
+            .operands_if  (sopc_operands_if)
         );
+
+        VX_operands_if sopc_operands2_if();
+        VX_operands_if vopc_operands_if();
+
+        assign sopc_operands2_if.valid = sopc_operands_if.valid && is_rvv;
+        assign sopc_operands2_if.data  = sopc_operands_if.data;
+
+        VX_vopc_unit #(
+            .INSTANCE_ID  (`SFORMATF(("%s-vopc%0d", INSTANCE_ID, i))),
+            .OUT_BUF      (3)
+        ) vopc_unit (
+            .clk          (clk),
+            .reset        (reset),
+        `ifdef PERF_ENABLE
+            .perf_stalls  (per_opc_perf_stalls[i]),
+        `endif
+        `ifdef EXT_V_ENABLE
+            .vpu_seq_opc_if(vpu_seq_opc_if[i]),
+        `endif
+            .writeback_if (opc_writeback_if),
+            .src_regs_i   (src_regs),
+            .used_rs_i    (used_rs),
+            .soperands_if (sopc_operands2_if),
+            .voperands_if (vopc_operands_if)
+        );
+
+        // enable scalar bypass only if vopc is not busy
+        assign per_opc_operands_if[i].valid = (sopc_operands_if.valid && ~is_rvv && sopc_operands2_if.ready)
+                                           || vopc_operands_if.valid;
+        assign per_opc_operands_if[i].data = sopc_operands2_if.ready ? sopc_operands_if.data : vopc_operands_if.data;
+        assign sopc_operands_if.ready = per_opc_operands_if[i].ready && sopc_operands2_if.ready;
+        assign vopc_operands_if.ready = per_opc_operands_if[i].ready;
+
     end
 
     `ITF_TO_AOS (per_opc_operands, per_opc_operands_if, `NUM_OPCS, OUT_DATAW)

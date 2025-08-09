@@ -13,7 +13,7 @@
 
 `include "VX_define.vh"
 
-module VX_opc_unit import VX_gpu_pkg::*; #(
+module VX_sopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
     parameter `STRING INSTANCE_ID = "",
     parameter OUT_BUF = 3
 ) (
@@ -26,49 +26,60 @@ module VX_opc_unit import VX_gpu_pkg::*; #(
 
     VX_writeback_if.slave   writeback_if,
     VX_scoreboard_if.slave  scoreboard_if,
+    output wire [NUM_SRC_OPDS-1:0][NUM_REGS_BITS-1:0] src_regs_o,
+    output wire [NUM_SRC_OPDS-1:0] used_rs_o,
+    output wire             is_rvv_o,
     VX_operands_if.master   operands_if
 );
     `UNUSED_SPARAM (INSTANCE_ID)
 
-    localparam GPR_FILE_SIZE  = PER_OPC_WARPS * NUM_REGS * `NUM_THREADS * XLENB;
-    localparam GPR_DATA_SIZE  = `SIMD_WIDTH * XLENB;
+    localparam GPR_FILE_SIZE  = PER_OPC_WARPS * NUM_SREGS * `NUM_THREADS * XLENB;
+    localparam GPR_DATA_SIZE  = SSIMD_WIDTH * XLENB;
     localparam GPR_DATA_WIDTH = GPR_DATA_SIZE * 8;
     localparam GPR_ENTRIES    = GPR_FILE_SIZE / GPR_DATA_SIZE;
-    localparam GPR_ADDR_BITS  = `CLOG2(GPR_ENTRIES / NUM_REGS);
+    localparam GPR_ADDR_BITS  = `CLOG2(GPR_ENTRIES / NUM_SREGS);
     localparam GPR_ADDR_WIDTH = `UP(GPR_ADDR_BITS);
-    localparam GPR_TAG_WIDTH  = UUID_WIDTH + ISSUE_WIS_W + SIMD_IDX_W + `SIMD_WIDTH + PC_BITS + 1 + EX_BITS + INST_OP_BITS + INST_ARGS_BITS + NUM_REGS_BITS + 1 + 1;
-    localparam OUT_DATAW      = $bits(operands_t);
+    localparam GPR_TAG_WIDTH  = UUID_WIDTH + ISSUE_WIS_W + SSIMD_IDX_W + SSIMD_WIDTH + PC_BITS + 1 + EX_BITS + INST_OP_BITS + INST_ARGS_BITS + NUM_REGS_BITS
+                                           + (NUM_SRC_OPDS * NUM_REGS_BITS + NUM_SRC_OPDS) + 1 + 1 + 1;
+    localparam OUT_DATAW      = GPR_TAG_WIDTH + NUM_SRC_OPDS * GPR_DATA_WIDTH;
 
     `UNUSED_VAR (writeback_if.data.sop)
 
-    wire [`SIMD_WIDTH-1:0] simd_out;
-    wire [SIMD_IDX_W-1:0] simd_pid;
+    wire [SSIMD_WIDTH-1:0] simd_out;
+    wire [SSIMD_IDX_W-1:0] simd_pid;
     wire simd_sop, simd_eop;
 
     wire gpr_req_valid, gpr_rsp_valid;
     wire [NUM_SRC_OPDS-1:0] gpr_req_inused;
-    wire [NUM_SRC_OPDS-1:0][NUM_REGS_BITS-1:0] gpr_req_rid;
     wire [PER_OPC_NW_BITS-1:0] gpr_req_wis;
+    wire [NUM_SRC_OPDS-1:0][NUM_SREGS_BITS-1:0] gpr_req_rid;
     wire [GPR_ADDR_WIDTH-1:0] gpr_req_addr;
     wire [GPR_TAG_WIDTH-1:0] gpr_req_tag, gpr_rsp_tag;
     wire [NUM_SRC_OPDS-1:0][GPR_DATA_WIDTH-1:0] gpr_rsp_data;
     wire gpr_req_ready, gpr_rsp_ready;
 
+    wire gpr_wb_valid;
     wire [PER_OPC_NW_BITS-1:0] gpr_wb_wis;
     wire [GPR_ADDR_WIDTH-1:0] gpr_wb_addr;
-    wire [GPR_DATA_SIZE-1:0] gpr_wb_byteen;
+    wire [NUM_SREGS_BITS-1:0] gpr_wb_rid;
+    wire [GPR_DATA_SIZE-1:0]  gpr_wb_byteen;
+    wire [GPR_DATA_WIDTH-1:0] gpr_wb_data;
 
-    assign gpr_req_rid = {scoreboard_if.data.rs3, scoreboard_if.data.rs2, scoreboard_if.data.rs1};
+    wire [NUM_SRC_OPDS-1:0] [NUM_REGS_BITS-1:0] src_regs;
+    assign src_regs = {scoreboard_if.data.rs3, scoreboard_if.data.rs2, scoreboard_if.data.rs1};
 
-    for (genvar i = 0; i < NUM_SRC_OPDS; ++i) begin : g_inused
-        assign gpr_req_inused[i] = scoreboard_if.data.used_rs[i] && (gpr_req_rid[i] != 0);
+    for (genvar i = 0; i < NUM_SRC_OPDS; ++i) begin : g_src_valid
+        assign gpr_req_rid[i] = to_sreg_number(src_regs[i]);
+        assign gpr_req_inused[i] = scoreboard_if.data.used_rs[i] && (gpr_req_rid[i] != 0) && (get_reg_type(src_regs[i]) != REG_TYPE_V);
     end
+
+    assign gpr_wb_rid = to_sreg_number(writeback_if.data.rd);
 
     assign gpr_req_wis = scoreboard_if.data.wis[ISSUE_WIS_W-1 -: PER_OPC_NW_BITS];
     assign gpr_wb_wis = writeback_if.data.wis[ISSUE_WIS_W-1 -: PER_OPC_NW_BITS];
 
     if (GPR_ADDR_BITS != 0) begin : g_gpr_addr
-        if (SIMD_COUNT != 1) begin : g_gpr_addr_wis_sid
+        if (SSIMD_COUNT != 1) begin : g_gpr_addr_wis_sid
             `CONCAT(gpr_req_addr, gpr_req_wis, simd_pid, PER_OPC_NW_BITS, SIMD_IDX_W)
             `CONCAT(gpr_wb_addr, gpr_wb_wis, writeback_if.data.sid, PER_OPC_NW_BITS, SIMD_IDX_W)
         end else begin : g_gpr_addr_wis
@@ -80,8 +91,9 @@ module VX_opc_unit import VX_gpu_pkg::*; #(
         assign gpr_wb_addr = '0;
     end
 
-    for (genvar i = 0; i < `SIMD_WIDTH; ++i) begin : g_gpr_wr_byteen
+    for (genvar i = 0; i < SSIMD_WIDTH; ++i) begin : g_gpr_wr_byteen
         assign gpr_wb_byteen[i*XLENB+:XLENB] = {XLENB{writeback_if.data.tmask[i]}};
+        assign gpr_wb_data[i*`XLEN+:`XLEN] = writeback_if.data.data[i];
     end
 
     assign gpr_req_tag = {
@@ -95,19 +107,22 @@ module VX_opc_unit import VX_gpu_pkg::*; #(
         scoreboard_if.data.op_type,
         scoreboard_if.data.op_args,
         scoreboard_if.data.rd,
+        src_regs,
+        scoreboard_if.data.used_rs,
+        scoreboard_if.data.is_rvv,
         simd_sop,
         simd_eop
     };
 
     // simd iterator (skip requests with inactive threads)
     VX_nz_iterator #(
-        .DATAW (`SIMD_WIDTH),
-        .N     (SIMD_COUNT)
+        .DATAW (SSIMD_WIDTH),
+        .N     (SSIMD_COUNT)
     ) simd_iter (
         .clk     (clk),
         .reset   (reset),
         .valid_in(scoreboard_if.valid),
-        .data_in (scoreboard_if.data.tmask),
+        .data_in (scoreboard_if.data.tmask[SSIMD_WIDTH-1:0]),
         .next    (gpr_req_ready),
         `UNUSED_PIN (valid_out),
         .data_out(simd_out),
@@ -116,12 +131,14 @@ module VX_opc_unit import VX_gpu_pkg::*; #(
         .eop     (simd_eop)
     );
 
+    assign gpr_wb_valid = writeback_if.valid && (get_reg_type(writeback_if.data.rd) != REG_TYPE_V);
+
     assign gpr_req_valid = scoreboard_if.valid;
     assign scoreboard_if.ready = gpr_req_ready && simd_eop;
 
     VX_gpr_file #(
         .FILE_SIZE (GPR_FILE_SIZE),
-        .REG_COUNT (NUM_REGS),
+        .REG_COUNT (NUM_SREGS),
         .NUM_REQS  (NUM_SRC_OPDS),
         .NUM_BANKS (`NUM_GPR_BANKS),
         .DATA_SIZE (GPR_DATA_SIZE),
@@ -142,12 +159,16 @@ module VX_opc_unit import VX_gpu_pkg::*; #(
         .rsp_rd_data  (gpr_rsp_data),
         .rsp_rd_tag   (gpr_rsp_tag),
         .rsp_rd_ready (gpr_rsp_ready),
-        .req_wr_valid (writeback_if.valid),
+        .req_wr_valid (gpr_wb_valid),
         .req_wr_addr  (gpr_wb_addr),
-        .req_wr_rid   (writeback_if.data.rd),
+        .req_wr_rid   (gpr_wb_rid),
         .req_wr_mask  (gpr_wb_byteen),
-        .req_wr_data  (writeback_if.data.data)
+        .req_wr_data  (gpr_wb_data)
     );
+
+    wire [NUM_SRC_OPDS-1:0][GPR_DATA_WIDTH-1:0] operands_rs_data;
+    wire [SSIMD_WIDTH-1:0] operands_tmask;
+    wire [SSIMD_IDX_W-1:0] operands_sid;
 
     // output buffer
     VX_elastic_buffer #(
@@ -165,22 +186,29 @@ module VX_opc_unit import VX_gpu_pkg::*; #(
         .data_out ({
             operands_if.data.uuid,
             operands_if.data.wis,
-            operands_if.data.sid,
-            operands_if.data.tmask,
+            operands_sid,
+            operands_tmask,
             operands_if.data.PC,
             operands_if.data.wb,
             operands_if.data.ex_type,
             operands_if.data.op_type,
             operands_if.data.op_args,
             operands_if.data.rd,
-            operands_if.data.rs3_data,
-            operands_if.data.rs2_data,
-            operands_if.data.rs1_data,
+            src_regs_o,
+            used_rs_o,
+            is_rvv_o,
+            operands_rs_data,
             operands_if.data.sop,
             operands_if.data.eop
         }),
         .valid_out(operands_if.valid),
         .ready_out(operands_if.ready)
     );
+
+    assign operands_if.data.sid      = SIMD_IDX_W'(operands_sid);
+    assign operands_if.data.tmask    = `SIMD_WIDTH'(operands_tmask);
+    assign operands_if.data.rs1_data = (`SIMD_WIDTH * `XLEN)'(operands_rs_data[0]);
+    assign operands_if.data.rs2_data = (`SIMD_WIDTH * `XLEN)'(operands_rs_data[1]);
+    assign operands_if.data.rs3_data = (`SIMD_WIDTH * `XLEN)'(operands_rs_data[2]);
 
 endmodule

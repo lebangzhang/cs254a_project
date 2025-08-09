@@ -13,21 +13,15 @@
 
 `include "VX_define.vh"
 
-interface VX_vpu_states_if import VX_gpu_pkg::*; ();
+interface VX_vpu_seq_csr_if import VX_gpu_pkg::*, VX_vpu_pkg::*; ();
 
-    wire                valid;
-    logic [NW_WIDTH-1:0] wid;
-    vpu_states_t        data;
+    vpu_csrs_t data;
 
     modport master (
-        output valid,
-        output wid,
         output data
     );
 
     modport slave (
-        input valid,
-        input wid,
         input data
     );
 

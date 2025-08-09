@@ -24,6 +24,11 @@ module VX_ibuffer import VX_gpu_pkg::*; #(
     output wire [PERF_CTR_BITS-1:0] perf_stalls,
 `endif
 
+`ifdef EXT_V_ENABLE
+    VX_vpu_seq_csr_if.master vpu_seq_csr_if [PER_ISSUE_WARPS],
+    VX_vpu_seq_opc_if.slave  vpu_seq_opc_if [`NUM_OPCS],
+`endif
+
     // inputs
     VX_decode_if.slave  decode_if,
 
@@ -57,6 +62,9 @@ module VX_ibuffer import VX_gpu_pkg::*; #(
                 decode_if.data.ex_type,
                 decode_if.data.op_type,
                 decode_if.data.op_args,
+            `ifdef EXT_V_ENABLE
+                decode_if.data.is_rvv,
+            `endif
                 decode_if.data.wb,
                 decode_if.data.used_rs,
                 decode_if.data.rd,
@@ -69,13 +77,27 @@ module VX_ibuffer import VX_gpu_pkg::*; #(
             .data_out (uop_sequencer_if.data),
             .ready_out(uop_sequencer_if.ready)
         );
+
     `ifndef L1_ENABLE
         assign decode_if.ibuf_pop[w] = uop_sequencer_if.valid && uop_sequencer_if.ready;
+    `endif
+
+    `ifdef EXT_V_ENABLE
+        VX_vpu_seq_opc_if vpu_seq_opc_tmp_if();
+        localparam opc_idx = w % `NUM_OPCS;
+        localparam opc_wis = w / `NUM_OPCS;
+        assign vpu_seq_opc_tmp_if.valid = vpu_seq_opc_if[opc_idx].valid
+                                       && (vpu_seq_opc_if[opc_idx].wis == PER_OPC_NW_BITS'(opc_wis));
+        assign vpu_seq_opc_tmp_if.data = vpu_seq_opc_if[opc_idx].data;
     `endif
 
         VX_uop_sequencer uop_sequencer (
             .clk       (clk),
             .reset     (reset),
+        `ifdef EXT_V_ENABLE
+            .vpu_seq_csr_if (vpu_seq_csr_if[w]),
+            .vpu_seq_opc_if (vpu_seq_opc_tmp_if),
+        `endif
             .input_if  (uop_sequencer_if),
             .output_if (ibuffer_if[w])
         );

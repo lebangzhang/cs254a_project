@@ -13,18 +13,14 @@
 
 `include "VX_define.vh"
 
-module VX_tcu_uops import
-`ifdef EXT_TCU_ENABLE
-    VX_tcu_pkg::*,
-`endif
-    VX_gpu_pkg::*; (
+module VX_tcu_uops import VX_tcu_pkg::*,  VX_gpu_pkg::*; (
     input clk,
     input reset,
 
-    input  ibuffer_t ibuf_in,
-    output ibuffer_t ibuf_out,
     input  wire      start,
     input  wire      next,
+    input  ibuffer_t ibuf_in,
+    output ibuffer_t ibuf_out,
     output reg       done
 );
     localparam CTR_W = $clog2(TCU_UOPS);
