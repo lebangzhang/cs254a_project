@@ -108,7 +108,7 @@ module VX_gather_unit import VX_gpu_pkg::*; #(
                 assign {commit_sid_w, lpid} = (SIMD_IDX_W+LPID_WIDTH)'(result_tmp_if.data.header.pid);
             end else begin : g_no_simd
                 assign commit_sid_w = '0;
-                assign lpid = result_tmp_if.data.pid;
+                assign lpid = result_tmp_if.data.header.pid;
             end
             always @(*) begin
                 commit_tmask_w = '0;
