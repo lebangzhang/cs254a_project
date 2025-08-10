@@ -87,7 +87,7 @@ module VX_ibuffer import VX_gpu_pkg::*; #(
         localparam opc_idx = w % `NUM_OPCS;
         localparam opc_wis = w / `NUM_OPCS;
         assign vpu_seq_opc_tmp_if.valid = vpu_seq_opc_if[opc_idx].valid
-                                       && (vpu_seq_opc_if[opc_idx].wis == PER_OPC_NW_BITS'(opc_wis));
+                                       && (vpu_seq_opc_if[opc_idx].wis == PER_OPC_NW_W'(opc_wis) || PER_OPC_NW_BITS == 0);
         assign vpu_seq_opc_tmp_if.data = vpu_seq_opc_if[opc_idx].data;
     `endif
 

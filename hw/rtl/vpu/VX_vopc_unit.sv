@@ -58,13 +58,11 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
 
     wire gpr_req_valid, gpr_rsp_valid;
     wire [NUM_SRC_OPDS-1:0] gpr_req_inused;
-    wire [PER_OPC_NW_BITS-1:0] gpr_req_wis;
     wire [NUM_SRC_OPDS-1:0][NUM_VREGS_BITS-1:0] gpr_req_rid;
     wire [VGPR_ADDR_WIDTH-1:0] gpr_req_addr;
     wire [NUM_SRC_OPDS-1:0][VT_COUNT-1:0][VL_COUNT-1:0][`XLEN-1:0] gpr_rsp_data;
 
     wire gpr_wb_valid;
-    wire [PER_OPC_NW_BITS-1:0] gpr_wb_wis;
     wire [NUM_VREGS_BITS-1:0]  gpr_wb_rid;
     wire [VGPR_ADDR_WIDTH-1:0] gpr_wb_addr;
     wire [VT_COUNT-1:0][VL_COUNT-1:0][`XLEN-1:0] gpr_wb_data;
@@ -79,17 +77,9 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
 
     assign gpr_wb_rid = to_vreg_number(writeback_if.data.rd);
 
-    assign gpr_req_wis = scoreboard_if.data.wis[ISSUE_WIS_W-1 -: PER_OPC_NW_BITS];
-    assign gpr_wb_wis = writeback_if.data.wis[ISSUE_WIS_W-1 -: PER_OPC_NW_BITS];
-
     if (VGPR_ADDR_BITS != 0) begin : g_gpr_addr
-        if (VSIMD_COUNT != 1) begin : g_gpr_addr_wis_sid
-            `CONCAT(gpr_req_addr, gpr_req_wis, simd_ctr, PER_OPC_NW_BITS, SIMD_IDX_W)
-            `CONCAT(gpr_wb_addr, gpr_wb_wis, writeback_if.data.sid, PER_OPC_NW_BITS, SIMD_IDX_W)
-        end else begin : g_gpr_addr_wis
-            assign gpr_req_addr = gpr_req_wis;
-            assign gpr_wb_addr = gpr_wb_wis;
-        end
+        `CONCAT(gpr_req_addr, soperands_if.data.wis[ISSUE_WIS_W-1 -: PER_OPC_NW_W], simd_ctr, PER_OPC_NW_BITS, VSIMD_IDX_BITS)
+        `CONCAT(gpr_wb_addr, writeback_if.data.wis[ISSUE_WIS_W-1 -: PER_OPC_NW_W], writeback_if.data.sid, PER_OPC_NW_BITS, VSIMD_IDX_BITS)
     end else begin : g_gpr_addr_0
         assign gpr_req_addr = '0;
         assign gpr_wb_addr = '0;

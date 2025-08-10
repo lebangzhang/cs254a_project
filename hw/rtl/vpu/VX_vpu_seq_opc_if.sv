@@ -16,7 +16,7 @@
 interface VX_vpu_seq_opc_if import VX_gpu_pkg::*, VX_vpu_pkg::*; ();
 
     logic                valid;
-    logic [PER_OPC_NW_BITS-1:0] wis;
+    logic [PER_OPC_NW_W-1:0] wis;
     vpu_states_t         data;
 
     modport master (

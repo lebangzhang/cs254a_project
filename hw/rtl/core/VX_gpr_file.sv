@@ -183,12 +183,7 @@ module VX_gpr_file import VX_gpu_pkg::*; #(
     wire [REGID_REM_BITS-1:0] req_wr_rgm = req_wr_rid[REGID_WIDTH-1 -: REGID_REM_BITS];
 
     wire [BANK_ADDR_WIDTH-1:0] gpr_wr_addr;
-    if (ADDR_BITS != 0) begin : g_gpr_wr_addr
-        `CONCAT(gpr_wr_addr, req_wr_addr, req_wr_rgm, ADDR_BITS, REGID_REM_BITS)
-    end else begin : g_gpr_wr_addr_0
-        `UNUSED_VAR (req_wr_addr)
-        assign gpr_wr_addr = req_wr_rgm;
-    end
+    `CONCAT(gpr_wr_addr, req_wr_addr, req_wr_rgm, ADDR_BITS, REGID_REM_BITS)
 
     // GPR banks
     for (genvar b = 0; b < NUM_BANKS; ++b) begin : g_gpr_rams
@@ -200,12 +195,7 @@ module VX_gpr_file import VX_gpu_pkg::*; #(
         end
 
         wire [BANK_ADDR_WIDTH-1:0] gpr_rd_addr;
-        if (ADDR_BITS != 0) begin : g_gpr_rd_addr
-            `CONCAT(gpr_rd_addr, req_rd_addr_st1, req_rd_rgm_st1[b], ADDR_BITS, REGID_REM_BITS)
-        end else begin : g_gpr_rd_addr_0
-            `UNUSED_VAR (req_rd_addr_st1)
-            assign gpr_rd_addr = req_rd_rgm_st1[b];
-        end
+        `CONCAT(gpr_rd_addr, req_rd_addr_st1, req_rd_rgm_st1[b], ADDR_BITS, REGID_REM_BITS)
 
         VX_dp_ram #(
             .DATAW (DATA_WIDTH),
