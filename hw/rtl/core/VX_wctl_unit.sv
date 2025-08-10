@@ -82,7 +82,7 @@ module VX_wctl_unit import VX_gpu_pkg::*; #(
         wire [2*`NUM_THREADS-1:0] tmask_r = tmask_table[execute_if.data.header.wid];
 
         always @(*) begin
-            {else_tmask, then_tmask} = execute_if.data.headersop ? '0 : tmask_r;
+            {else_tmask, then_tmask} = execute_if.data.header.sop ? '0 : tmask_r;
             then_tmask[execute_if.data.header.pid * NUM_LANES +: NUM_LANES] = taken & execute_if.data.header.tmask;
             else_tmask[execute_if.data.header.pid * NUM_LANES +: NUM_LANES] = ~taken & execute_if.data.header.tmask;
         end

@@ -542,9 +542,9 @@ module VX_lsu_slice import VX_gpu_pkg::*; #(
             full_addr,
             mem_req_byteen,
             mem_req_data,
-            execute_if.data.uuid,
+            execute_if.data.header.uuid,
             rsp_data,
-            rsp_uuid
+            rsp_hdr.uuid
         },
         reset_negedge, 1'b0,	4096
     );
