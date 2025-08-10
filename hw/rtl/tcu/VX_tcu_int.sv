@@ -47,7 +47,7 @@ module VX_tcu_int import VX_gpu_pkg::*, VX_tcu_pkg::*; #(
     wire [3:0] fmt_d = execute_if.data.op_args.tcu.fmt_d;
 
     `UNUSED_VAR ({step_m, step_n, fmt_s, fmt_d});
-    
+
     wire mdata_queue_full;
 
     wire execute_fire = execute_if.valid && execute_if.ready;
@@ -75,7 +75,7 @@ module VX_tcu_int import VX_gpu_pkg::*, VX_tcu_pkg::*; #(
     assign execute_if.ready = ~mdata_queue_full && fedp_enable;
 
     VX_fifo_queue #(
-        .DATAW ($bits(tcu_hdr_t)),
+        .DATAW ($bits(tcu_header_t)),
         .DEPTH (MDATA_QUEUE_DEPTH),
         .OUT_REG (1)
     ) mdata_queue (
@@ -147,5 +147,7 @@ module VX_tcu_int import VX_gpu_pkg::*, VX_tcu_pkg::*; #(
         `endif // DBG_TRACE_TCU
         end
     end
+
+    assign result_if.data.data  = d_val;
 
 endmodule

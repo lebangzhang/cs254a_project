@@ -168,7 +168,7 @@ module VX_csr_unit import VX_gpu_pkg::*; #(
     assign sched_csr_if.unlock_wid = execute_if.data.header.wid;
 
     VX_elastic_buffer #(
-        .DATAW ($bits(sfu_res_t)),
+        .DATAW ($bits(sfu_result_t)),
         .SIZE  (2)
     ) rsp_buf (
         .clk       (clk),

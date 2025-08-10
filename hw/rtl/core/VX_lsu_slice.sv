@@ -38,14 +38,14 @@ module VX_lsu_slice import VX_gpu_pkg::*; #(
     localparam MEM_ADDRW    = `MEM_ADDR_WIDTH - MEM_ASHIFT;
 
     // tag_width = header + op_type + align + pkt_addr + fence
-    localparam TAG_WIDTH = $bits(lsu_hdr_t) + INST_LSU_BITS + (NUM_LANES * REQ_ASHIFT) + LSUQ_SIZEW + 1;
+    localparam TAG_WIDTH = $bits(lsu_header_t) + INST_LSU_BITS + (NUM_LANES * REQ_ASHIFT) + LSUQ_SIZEW + 1;
 
     VX_result_if #(
-        .data_t (lsu_res_t)
+        .data_t (lsu_result_t)
     ) result_rsp_if();
 
     VX_result_if #(
-        .data_t (lsu_res_t)
+        .data_t (lsu_result_t)
     ) result_no_rsp_if();
 
     `UNUSED_VAR (execute_if.data.rs3_data)
@@ -380,7 +380,7 @@ module VX_lsu_slice import VX_gpu_pkg::*; #(
     assign lsu_mem_rsp_tag = lsu_mem_if.rsp_data.tag;
     assign lsu_mem_if.rsp_ready = lsu_mem_rsp_ready;
 
-    lsu_hdr_t rsp_hdr;
+    lsu_header_t rsp_hdr;
     wire [INST_LSU_BITS-1:0] rsp_op_type;
     wire [NUM_LANES-1:0][REQ_ASHIFT-1:0] rsp_align;
     `UNUSED_VAR (rsp_op_type)
@@ -401,7 +401,7 @@ module VX_lsu_slice import VX_gpu_pkg::*; #(
 `ifdef XLEN_64
 `ifdef EXT_F_ENABLE
     // apply nan-boxing to flw outputs
-    wire rsp_is_float = rsp_rd[5];
+    wire rsp_is_float = (get_reg_type(rsp_hdr.rd) == REG_TYPE_F);
 `else
     wire rsp_is_float = 0;
 `endif
@@ -437,7 +437,7 @@ module VX_lsu_slice import VX_gpu_pkg::*; #(
 
     // result
 
-    lsu_hdr_t rsp_hdr2;
+    lsu_header_t rsp_hdr2;
     always @(*) begin
         rsp_hdr2 = rsp_hdr;
         rsp_hdr2.tmask = mem_rsp_mask;
@@ -446,7 +446,7 @@ module VX_lsu_slice import VX_gpu_pkg::*; #(
     end
 
     VX_elastic_buffer #(
-        .DATAW ($bits(lsu_res_t)),
+        .DATAW ($bits(lsu_result_t)),
         .SIZE  (2)
     ) rsp_buf (
         .clk       (clk),
@@ -460,7 +460,7 @@ module VX_lsu_slice import VX_gpu_pkg::*; #(
     );
 
     VX_elastic_buffer #(
-        .DATAW ($bits(lsu_hdr_t)),
+        .DATAW ($bits(lsu_header_t)),
         .SIZE  (2)
     ) no_rsp_buf (
         .clk       (clk),
@@ -476,7 +476,7 @@ module VX_lsu_slice import VX_gpu_pkg::*; #(
 
     VX_stream_arb #(
         .NUM_INPUTS (2),
-        .DATAW      ($bits(pe_res_t)),
+        .DATAW      ($bits(pe_result_t)),
         .ARBITER    ("P"), // prioritize result_rsp_if
         .OUT_BUF    (3)
     ) rsp_arb (

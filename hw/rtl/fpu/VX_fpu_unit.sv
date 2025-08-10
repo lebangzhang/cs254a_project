@@ -34,7 +34,7 @@ module VX_fpu_unit import VX_gpu_pkg::*, VX_fpu_pkg::*; #(
     localparam PARTIAL_BW = (BLOCK_SIZE != `ISSUE_WIDTH) || (NUM_LANES != `SIMD_WIDTH);
 
     VX_execute_if #(
-        .data_t (fpu_exe_t)
+        .data_t (fpu_execute_t)
     ) per_block_execute_if[BLOCK_SIZE]();
 
     VX_dispatch_unit #(
@@ -49,7 +49,7 @@ module VX_fpu_unit import VX_gpu_pkg::*, VX_fpu_pkg::*; #(
     );
 
     VX_result_if #(
-        .data_t (fpu_res_t)
+        .data_t (fpu_result_t)
     ) per_block_result_if[BLOCK_SIZE]();
 
     for (genvar block_idx = 0; block_idx < BLOCK_SIZE; ++block_idx) begin : g_blocks
@@ -60,7 +60,7 @@ module VX_fpu_unit import VX_gpu_pkg::*, VX_fpu_pkg::*; #(
         fflags_t fpu_rsp_fflags;
         wire fpu_rsp_has_fflags;
 
-        fpu_hdr_t fpu_hdr;
+        fpu_header_t fpu_hdr;
 
         wire [TAG_WIDTH-1:0] fpu_req_tag, fpu_rsp_tag;
         wire mdata_full;
@@ -72,7 +72,7 @@ module VX_fpu_unit import VX_gpu_pkg::*, VX_fpu_pkg::*; #(
         wire fpu_rsp_fire = fpu_rsp_valid && fpu_rsp_ready;
 
         VX_index_buffer #(
-            .DATAW  ($bits(fpu_hdr_t)),
+            .DATAW  ($bits(fpu_header_t)),
             .SIZE   (`FPUQ_SIZE)
         ) tag_store (
             .clk          (clk),
@@ -223,7 +223,7 @@ module VX_fpu_unit import VX_gpu_pkg::*, VX_fpu_pkg::*; #(
         // send response
 
         VX_elastic_buffer #(
-            .DATAW ($bits(fpu_hdr_t) + (NUM_LANES * `XLEN)),
+            .DATAW ($bits(fpu_header_t) + (NUM_LANES * `XLEN)),
             .SIZE  (0)
         ) rsp_buf (
             .clk       (clk),

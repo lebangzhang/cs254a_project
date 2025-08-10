@@ -83,7 +83,7 @@ module VX_tcu_fp import VX_gpu_pkg::*, VX_tcu_pkg::*; #(
     assign execute_if.ready = ~mdata_queue_full && fedp_enable;
 
     VX_fifo_queue #(
-        .DATAW ($bits(tcu_hdr_t)),
+        .DATAW ($bits(tcu_header_t)),
         .DEPTH (MDATA_QUEUE_DEPTH),
         .OUT_REG (1)
     ) mdata_queue (
@@ -187,5 +187,7 @@ module VX_tcu_fp import VX_gpu_pkg::*, VX_tcu_pkg::*; #(
         `endif // DBG_TRACE_TCU
         end
     end
+
+    assign result_if.data.data = d_val;
 
 endmodule

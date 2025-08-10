@@ -31,8 +31,8 @@ module VX_pe_switch import VX_gpu_pkg::*; #(
 );
     `DECL_EXECUTE_T (pe, NUM_LANES);
 
-    localparam REQ_DATAW = $bits(pe_exe_t);
-    localparam RSP_DATAW = $bits(pe_res_t);
+    localparam REQ_DATAW = $bits(pe_execute_t);
+    localparam RSP_DATAW = $bits(pe_result_t);
 
     wire [PE_COUNT-1:0] pe_req_valid;
     wire [PE_COUNT-1:0][REQ_DATAW-1:0] pe_req_data;

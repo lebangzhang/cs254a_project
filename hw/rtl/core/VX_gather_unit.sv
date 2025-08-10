@@ -36,7 +36,7 @@ module VX_gather_unit import VX_gpu_pkg::*; #(
     localparam NUM_PACKETS  = `SIMD_WIDTH / NUM_LANES;
     localparam LPID_BITS    = `CLOG2(NUM_PACKETS);
     localparam LPID_WIDTH   = `UP(LPID_BITS);
-    localparam DATAW        = $bits(pe_res_t);
+    localparam DATAW        = $bits(pe_result_t);
     localparam DATA_WIS_OFF = DATAW - (UUID_WIDTH + NW_WIDTH);
 
     wire [BLOCK_SIZE-1:0] result_in_valid;
@@ -80,7 +80,7 @@ module VX_gather_unit import VX_gpu_pkg::*; #(
 
     for (genvar i = 0; i < `ISSUE_WIDTH; ++i) begin: g_out_bufs
         VX_result_if #(
-            .data_t (pe_res_t)
+            .data_t (pe_result_t)
         ) result_tmp_if();
 
         VX_elastic_buffer #(

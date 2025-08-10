@@ -154,7 +154,7 @@ module VX_wctl_unit import VX_gpu_pkg::*; #(
     wire [DV_STACK_SIZEW-1:0] dvstack_ptr;
 
     VX_elastic_buffer #(
-        .DATAW ($bits(sfu_hdr_t) + DV_STACK_SIZEW),
+        .DATAW ($bits(sfu_header_t) + DV_STACK_SIZEW),
         .SIZE  (2)
     ) rsp_buf (
         .clk       (clk),

@@ -32,8 +32,8 @@ module VX_dispatch_unit import VX_gpu_pkg::*; #(
     `STATIC_ASSERT (`IS_DIVISBLE(`SIMD_WIDTH, NUM_LANES), ("invalid parameter"))
 
     `DECL_EXECUTE_T (pe, NUM_LANES);
-    localparam IN_DATAW = $bits(dispatch_t);
-    localparam OUT_DATAW = $bits(pe_exe_t);
+    localparam IN_DATAW     = $bits(dispatch_t);
+    localparam OUT_DATAW    = $bits(pe_execute_t);
 
     localparam BLOCK_SIZE_W = `LOG2UP(BLOCK_SIZE);
     localparam NUM_PACKETS  = `SIMD_WIDTH / NUM_LANES;

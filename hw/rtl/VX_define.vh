@@ -470,19 +470,19 @@
         logic [PC_BITS-1:0]             PC; \
         logic                           wb; \
         logic [NUM_REGS_BITS-1:0]       rd; \
-    } __name__``_hdr_t; \
+    } __name__``_header_t; \
     typedef struct packed { \
-        __name__``_hdr_t                header; \
+        __name__``_header_t                header; \
         logic [INST_ALU_BITS-1:0]       op_type; \
         op_args_t                       op_args; \
         logic [__lanes__-1:0][`XLEN-1:0] rs1_data; \
         logic [__lanes__-1:0][`XLEN-1:0] rs2_data; \
         logic [__lanes__-1:0][`XLEN-1:0] rs3_data; \
-    } __name__``_exe_t; \
+    } __name__``_execute_t; \
     typedef struct packed { \
-        __name__``_hdr_t                header; \
+        __name__``_header_t                header; \
         logic [__lanes__-1:0][`XLEN-1:0] data; \
-    } __name__``_res_t
+    } __name__``_result_t
 
 `else
 
@@ -497,19 +497,19 @@
         logic [PC_BITS-1:0]             PC; \
         logic                           wb; \
         logic [NUM_REGS_BITS-1:0]       rd; \
-    } __name__``_hdr_t; \
+    } __name__``_header_t; \
     typedef struct packed { \
-        __name__``_hdr_t                header; \
+        __name__``_header_t                header; \
         logic [INST_ALU_BITS-1:0]       op_type; \
         op_args_t                       op_args; \
         logic [__lanes__-1:0][`XLEN-1:0] rs1_data; \
         logic [__lanes__-1:0][`XLEN-1:0] rs2_data; \
         logic [__lanes__-1:0][`XLEN-1:0] rs3_data; \
-    } __name__``_exe_t; \
+    } __name__``_execute_t; \
     typedef struct packed { \
-        __name__``_hdr_t                header; \
+        __name__``_header_t                header; \
         logic [__lanes__-1:0][`XLEN-1:0] data; \
-    } __name__``_res_t
+    } __name__``_result_t
 
 `endif
 
