@@ -133,7 +133,9 @@ public:
   ~BitVector() {}
 
   void set(size_t pos) {
-    if (pos >= size_) throw std::out_of_range("Index out of range");
+    if (pos >= size_) {
+      throw std::out_of_range("Index out of range");
+    }
     if (size_ <= BITS_PER_WORD) {
       single_word_ |= this->wordOffset(pos);
     } else {
@@ -160,7 +162,9 @@ public:
   }
 
   void reset(size_t pos) {
-    if (pos >= size_) throw std::out_of_range("Index out of range");
+    if (pos >= size_) {
+      throw std::out_of_range("Index out of range");
+    }
     if (size_ <= BITS_PER_WORD) {
       single_word_ &= ~this->wordOffset(pos);
     } else {
@@ -170,7 +174,9 @@ public:
   }
 
   bool test(size_t pos) const {
-    if (pos >= size_) throw std::out_of_range("Index out of range");
+    if (pos >= size_) {
+      throw std::out_of_range("Index out of range");
+    }
     if (size_ <= BITS_PER_WORD) {
       return single_word_ & this->wordOffset(pos);
     } else {

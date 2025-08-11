@@ -55,7 +55,7 @@ void Dispatcher::tick() {
 
     // check if trace should be split
     auto new_trace = trace;
-    if (num_packets_ != 1) {
+    if (num_packets_ > 1) {
       auto block_pid = block_pids_.at(b);
       // check if current block has already been processed
       if (block_pid == -1) {
