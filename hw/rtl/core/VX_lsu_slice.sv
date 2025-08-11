@@ -28,14 +28,12 @@ module VX_lsu_slice import VX_gpu_pkg::*; #(
     VX_result_if.master     result_if,
     VX_lsu_mem_if.master    lsu_mem_if
 );
-    localparam NUM_LANES = `NUM_LSU_LANES;
-    `DECL_EXECUTE_T (pe, NUM_LANES);
-
-    localparam PID_BITS     = `CLOG2(`NUM_THREADS / NUM_LANES);
-    localparam LSUQ_SIZEW   = `LOG2UP(`LSUQ_IN_SIZE);
-    localparam REQ_ASHIFT   = `CLOG2(LSU_WORD_SIZE);
-    localparam MEM_ASHIFT   = `CLOG2(`MEM_BLOCK_SIZE);
-    localparam MEM_ADDRW    = `MEM_ADDR_WIDTH - MEM_ASHIFT;
+    localparam NUM_LANES  = `NUM_LSU_LANES;
+    localparam PID_BITS   = `CLOG2(`NUM_THREADS / NUM_LANES);
+    localparam LSUQ_SIZEW = `LOG2UP(`LSUQ_IN_SIZE);
+    localparam REQ_ASHIFT = `CLOG2(LSU_WORD_SIZE);
+    localparam MEM_ASHIFT = `CLOG2(`MEM_BLOCK_SIZE);
+    localparam MEM_ADDRW  = `MEM_ADDR_WIDTH - MEM_ASHIFT;
 
     // tag_width = header + op_type + align + pkt_addr + fence
     localparam TAG_WIDTH = $bits(lsu_header_t) + INST_LSU_BITS + (NUM_LANES * REQ_ASHIFT) + LSUQ_SIZEW + 1;
@@ -476,7 +474,7 @@ module VX_lsu_slice import VX_gpu_pkg::*; #(
 
     VX_stream_arb #(
         .NUM_INPUTS (2),
-        .DATAW      ($bits(pe_result_t)),
+        .DATAW      ($bits(lsu_result_t)),
         .ARBITER    ("P"), // prioritize result_rsp_if
         .OUT_BUF    (3)
     ) rsp_arb (

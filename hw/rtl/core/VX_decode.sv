@@ -301,13 +301,10 @@ module VX_decode import
                     op_type = INST_OP_BITS'(inst_sfu_csr(funct3));
                     op_args.csr.addr = u_12;
                     op_args.csr.use_imm = funct3[2];
+                    op_args.csr.imm = rs1;
                     is_wstall = is_fpu_csr; // only stall for FPU CSRs
                     `USED_IREG (rd);
-                    if (funct3[2]) begin
-                        op_args.csr.imm = rs1;
-                    end else begin
-                        `USED_IREG (rs1);
-                    end
+                    `USED_REG (REG_TYPE_I, rs1, ~funct3[2]);
                 end else begin
                     ex_type = EX_ALU;
                     op_type = INST_OP_BITS'(s_type);
@@ -350,7 +347,7 @@ module VX_decode import
                 op_args.lsu.offset = u_12;
                 `USED_IREG (rs1);
             `ifdef EXT_F_ENABLE
-                `USED_REG (opcode[2], rd);
+                `USED_REG (opcode[2], rd, 1'b1);
             `else
                 `USED_IREG (rd);
             `endif
@@ -385,7 +382,7 @@ module VX_decode import
                 op_args.lsu.offset = s_imm;
                 `USED_IREG (rs1);
             `ifdef EXT_F_ENABLE
-                `USED_REG (opcode[2], rs2);
+                `USED_REG (opcode[2], rs2, 1'b1);
             `else
                 `USED_IREG (rs2);
             `endif
