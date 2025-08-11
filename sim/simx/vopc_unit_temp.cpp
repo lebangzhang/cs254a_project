@@ -14,11 +14,6 @@
 #include "vopc_unit.h"
 #include "core.h"
 
-
-# define VOPC_VECTOR_UOP_DELAY 4 
-# define VOPC_SCALAR_DELAY 3
-
-
 using namespace vortex;
 
 VOpcUnit::VOpcUnit(const SimContext &ctx, Core* core)
@@ -38,171 +33,179 @@ void VOpcUnit::reset() {
   vector_stalls = 0; 
 
   // VRF variables
+  total_vgpr_requests = 3;
   curr_vgpr_requests = 0;
+
+  // Vlmul and Vl
+  vl_counter_ = 0; 
+  vlmul_counter_ = 0; 
+  curr_vlmul_counter = 0;
 
   // True/False variables
   instr_pending_ = false; 
   lsu_flush_ = false; 
   is_reduction_ = false;
-  done = false;
 }
 
 
 
 void VOpcUnit::tick() {
 
-  // 0. Process incoming instructions
+  // process incoming instructions
   if (Input.empty())
     return;
   auto trace = Input.front();
 
-  // 1. First Entry initialization
+  // First Entry initialization
   if(!instr_pending_) {
-    
-    // Calculate total gpr_requests to GPRF needed
-    total_gpr_requests = compute_total_gpr_requests(trace);
-    DT(3, "Scalar Requests: " << total_gpr_requests << " "<< *trace);
 
-    // Calculate total vgpr_requests to VRF needed
-    curr_vgpr_requests = compute_total_vgpr_requests(trace);
-    DT(3, "Vector Requests: " << curr_vgpr_requests << " "<< *trace);
+    // Calculate total vgpr_requests to RF needed
+    curr_vgpr_requests = 0;
+    total_vgpr_requests = compute_total_vgpr_requests(trace);
 
     // Calculate Expected RF stalls 
     scalar_stalls = this->compute_scalar_stalls(trace);
-    vector_stalls = this->compute_vector_stalls(trace);
-
-    // Initialize vector counter for state machine
-    // uops_vector_timing_counter = (Time for 1 vector uop)
-    // curr_vector_timing_counter = (Time for 1 scalar) + (Time for 1 vector uop) + (Initial time to move from Idle)
-    uops_vector_timing_counter = (vector_stalls + VOPC_VECTOR_UOP_DELAY);
-    curr_vector_timing_counter = (scalar_stalls + VOPC_SCALAR_DELAY) + uops_vector_timing_counter + 1;
-
+    vector_stalls = this->compute_vector_stalls(trace, 0);
     
-    // Check if vector insn -> Then compute Reduction parameters
+    // Check if vector insn -> Then compute Reduction and Vlmul parameters
     if (trace->fu_type == FUType::VPU) {
       auto trace_data = std::dynamic_pointer_cast<VecUnit::ExeTraceData>(trace->data);
       auto vpu_op = trace_data->vpu_op;
       is_reduction_ = (vpu_op >= VpuOpType::ARITH_R);
-
-      // TOFIX: Add the FUSED_ARCH thing
-      is_reduction_ = false;
+      
       active_PC_ = trace->PC;
 
-      if(is_reduction_)
-        DT(3, "*** VOPC_is_reduce"  << " Trace: "  << *trace);
+      vl_counter_ = trace_data->vl;
+      vlmul_counter_ = trace_data->vlmul;
+      curr_vlmul_counter = 0;
     }
 
     // Remove first entry in next CC
     instr_pending_ = true;
-    done = false;
   }
 
-
-  // 2a. Scalar instruction : Pipelined Timing 
+  // Scalar instruction
   if(trace->fu_type != FUType::VPU) {
-    
-    // Issue all except last trace in pipelined manner 
-    // Note: Shouldn't affect timing in most scenarios because only 1 gpr_requests being sent
-    uint32_t i = 0;
-    for(i = 0; i < (total_gpr_requests-1); i++){
-      
-      auto trace_alloc = core_->trace_pool().allocate(1);
-      auto new_trace = new (trace_alloc) instr_trace_t(*trace);
-      new_trace->wb = false; // disable scoreboard release
 
-      // Issue Trace to Execution
-      this->Output.push(new_trace, VOPC_SCALAR_DELAY + scalar_stalls + i);
-      DT(3, "*** VOPC_scalar_trace: Offset: " << VOPC_SCALAR_DELAY + scalar_stalls + i << " Trace: "  << *trace);
-    }
-
-    // Last trace in pipelined manner
-    this->Output.push(trace, VOPC_SCALAR_DELAY + scalar_stalls + i);
+    // Issue last trace to Execution
+    this->Output.push(trace, 2 + scalar_stalls);
     DT(3, "*** VOPC_scalar_trace: " << *trace);
     Input.pop();
-    
-    // Set instruction as done 
-    done = true;
 
-
-  // 2b. Vector instruction : State Machine Timing
+  // Vector instruction
   } else {
 
-    // Access GPR for 1 chunk 
-    // Assume: Since subsequent GPR Chunk are concurrent with sending vector uops 
-    // ==> Assume (time for GPR) < (time for uops) ==> Hence, only consider first gpr_requests, 
-    //      Other gpr_requests would be ready during time vector uops are sent 
-   
-    // Case 1: Standard Instruction 
+    // Standard Vector Arithmetic operation 
     if(!is_reduction_){
-      
-      // Decrement counter each CC
-      if(curr_vector_timing_counter > 0){
-        curr_vector_timing_counter -= 1;
-      }
-      
-      // When counter reaches 0 ==> Send a trace 
-      if(curr_vector_timing_counter == 0){
-        
-        // TOFIX: Add the SEW Loop inside 
-        
-        // Check if there is still an intermediate uop to send 
-        if(curr_vgpr_requests-1 > 0) {
-          auto trace_alloc = core_->trace_pool().allocate(1);
-          auto new_trace = new (trace_alloc) instr_trace_t(*trace);
 
-          // Check if is LSU instruction
-          this->lsu_flush(new_trace);
+      // If not last vlmul iteration ==> Do regular arith instruction
+      if (curr_vlmul_counter != vlmul_counter_){
+        this->vector_std_trace(trace);
+        curr_vgpr_requests += 1;
 
-          // Add decode
-          if (trace->fu_type == FUType::VPU) {
-            // translate VPU instructions
-            this->translate(new_trace);
-          }
-          new_trace->wb = false; // disable scoreboard release
-          
-          // Issue Trace to Execution
-          this->Output.push(new_trace);
-          DT(3, "*** VOPC_vector_trace: Time: (Look at clock); Trace: "  << *trace);
-          
-          // Decrement vgpr requests 
-          curr_vgpr_requests -= 1;
+        // VRF iteration has finished ==> next vlmul
+        if(curr_vgpr_requests == total_vgpr_requests){
+          // Reset VRF iteration for next vlmul 
+          curr_vgpr_requests = 0;
+          curr_vlmul_counter += 1; 
 
-
-        // Send the last uop trace 
-        } else {
-          this->Output.push(trace);
-          DT(3, "*** VOPC_final_vector_trace: " << *trace);
-          Input.pop();
-          
-          // Set instruction as done 
-          done = true;
+          // Recompute stalls for each vlmul
+          vector_stalls = this->compute_vector_stalls(trace, curr_vlmul_counter);
         }
-        // Reset curr_vector_timing_counter 
-        curr_vector_timing_counter = uops_vector_timing_counter;
-      }
-    
-
-    // Is a reduction instruction
-    } else {
-
       
-      this->Output.push(trace);
-      DT(3, "*** VOPC_final_vector_trace: " << *trace);
-      Input.pop();
+      // last vlmul iteration
+      } else {
+         
+        // Not last VRF iteration ==> Perform regular arith insn
+        if(curr_vgpr_requests != total_vgpr_requests){
+          this->vector_std_trace(trace);
+          curr_vgpr_requests += 1;
+        
+        // Last VRF iteration and last vlmul iteration ==> Last trace
+        } else {
+          this->vector_final_trace(trace);
+        }
+      }
+    // Reduction and Slide instruction
+    } else {
+       this->vector_final_trace(trace);
     }
   }
-
-  // Reset parameters for next instruction 
-  if(done){
-    instr_pending_ = false;
-    is_reduction_  = false;
-    lsu_flush_     = false;
-  }
-
 }
 
 
-uint32_t VOpcUnit::compute_vector_stalls(instr_trace_t* trace) {
+
+/*void VOpcUnit::reduction_level_0(instr_trace_t* trace) {*/
+/*}*/
+
+
+
+void VOpcUnit::vector_std_trace(instr_trace_t* trace) {
+
+  // Only account for scalar_stalls in first iteration, otherwise stalls is due to VRF 
+  uint32_t stalls  = 0; 
+  if(curr_vgpr_requests == 0){
+    stalls = std::max(scalar_stalls, vector_stalls);
+  } else {
+    stalls = vector_stalls;
+  }
+
+  // Not last trace --> Allocate insn trace 
+  auto trace_alloc = core_->trace_pool().allocate(1);
+  auto new_trace = new (trace_alloc) instr_trace_t(*trace);
+
+  if (trace->fu_type == FUType::VPU) {
+    // translate VPU instructions
+    this->translate(new_trace);
+  }
+  new_trace->wb = false; // disable scoreboard release
+
+  // Check if is LSU instruction
+  this->lsu_flush(new_trace);
+
+  // Send trace to Execution
+  this->Output.push(new_trace, 2 + stalls); 
+  DT(3, "*** VOPC_issued_trace: curr_iter=" << curr_vgpr_requests << ", total_iter=" << total_vgpr_requests << ", vlmul=" << vlmul_counter_ << ", " << *new_trace);
+}
+
+
+
+void VOpcUnit::vector_final_trace(instr_trace_t* trace) {
+
+  uint32_t stalls = vector_stalls;
+
+  if (trace->fu_type == FUType::VPU) {
+    // translate VPU instructions
+    this->translate(trace);
+  }
+
+  // Check if is LSU instruction 
+  this->lsu_flush(trace);
+      
+  // Issue last trace to Execution
+  this->Output.push(trace, 2 + stalls);
+  DT(3, "*** VOPC_final_trace: " << *trace);
+  Input.pop();
+
+  // Reset Parameters for next insn
+  total_stalls_ = 0;
+  total_vgpr_requests = 3;
+  curr_vgpr_requests = 0;
+  scalar_stalls = 0;
+  vector_stalls = 0; 
+
+  vl_counter_ = 0;
+  vlmul_counter_ = 0; 
+  curr_vlmul_counter = 0;
+
+  instr_pending_ = false;
+  lsu_flush_ = false;
+  is_reduction_ = false;
+}
+
+
+
+uint32_t VOpcUnit::compute_vector_stalls(instr_trace_t* trace, uint32_t vlmul_index) {
 
   uint32_t vector_stalls = 0;
 
@@ -216,13 +219,9 @@ uint32_t VOpcUnit::compute_vector_stalls(instr_trace_t* trace) {
           continue; // skip x0
         
       // bank conflict
-      /*uint32_t bank_i = (trace->src_regs[i].idx) % NUM_GPR_BANKS;*/
-      /*uint32_t bank_j = (trace->src_regs[j].idx) % NUM_GPR_BANKS;*/
-      uint32_t bank_i = (trace->src_regs[i].idx) % 1;
-      uint32_t bank_j = (trace->src_regs[j].idx) % 1;
+      uint32_t bank_i = (trace->src_regs[i].idx + vlmul_index) % NUM_GPR_BANKS;
+      uint32_t bank_j = (trace->src_regs[j].idx + vlmul_index) % NUM_GPR_BANKS;
       if (bank_i == bank_j) {
-
-        // Check if vector type
         if (trace->src_regs[i].type == RegType::Vector
           && trace->src_regs[j].type == RegType::Vector) {
           ++vector_stalls;
@@ -252,13 +251,9 @@ uint32_t VOpcUnit::compute_scalar_stalls(instr_trace_t* trace) {
           continue; // skip x0
             
       // bank conflict
-      /*uint32_t bank_i = trace->src_regs[i].idx % NUM_GPR_BANKS;*/
-      /*uint32_t bank_j = trace->src_regs[j].idx % NUM_GPR_BANKS;*/
-      uint32_t bank_i = trace->src_regs[i].idx % 1;
-      uint32_t bank_j = trace->src_regs[j].idx % 1;
+      uint32_t bank_i = trace->src_regs[i].idx % NUM_GPR_BANKS;
+      uint32_t bank_j = trace->src_regs[j].idx % NUM_GPR_BANKS;
       if (bank_i == bank_j) {
-
-        // Check if not vector type
         if (trace->src_regs[i].type != RegType::Vector
           && trace->src_regs[j].type != RegType::Vector) {
           ++scalar_stalls;
@@ -277,6 +272,8 @@ uint32_t VOpcUnit::compute_scalar_stalls(instr_trace_t* trace) {
 uint32_t VOpcUnit::compute_total_vgpr_requests(instr_trace_t* trace) {
 
   // Calculate how many requests made to vrf
+
+  // TODO : Modify this for mixed width precision
   uint32_t VL_count = VLEN/XLEN;
   uint32_t max_threads_per_req = 0;
   uint32_t vgpr_requests_per_thread = 0;
@@ -314,36 +311,6 @@ uint32_t VOpcUnit::compute_total_vgpr_requests(instr_trace_t* trace) {
   return total_requests;
 }
 
-uint32_t VOpcUnit::compute_total_gpr_requests(instr_trace_t* trace) {
-
-  // Calculate how many requests made to rf
-
-  uint32_t total_requests = 0; 
-
-  // Case: All threads fit into 1 chunk
-  if(SIMD_WIDTH >= NUM_THREADS)
-    return 1;
-
-  // Case: Threads are spread across chunks  
-  auto temp_tmask = trace->tmask;
-
-  uint32_t flag = 0;
-  for(uint32_t tid = 0; tid < NUM_THREADS; tid++){
-
-    // Update flag if thread is active 
-    if(temp_tmask.test(tid))
-      flag = 1;
-
-    // Increment at SIMD_WIDTH granularity + Reset flag for next chunk 
-    if( (tid % SIMD_WIDTH) == 0){
-      if(flag)
-        total_requests += 1; 
-      flag = 0;
-    }
-  }
-
-  return total_requests;
-}
 
 
 void VOpcUnit::translate(instr_trace_t* trace) {

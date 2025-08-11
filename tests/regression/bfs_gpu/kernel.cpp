@@ -43,7 +43,6 @@ void kernel_body(kernel_arg_t* __UNIFORM__ arg) {
             }
         }
     }
-    __syncthreads();
 }
 
 void update_frontier(kernel_arg_t* __UNIFORM__ arg) {
@@ -63,8 +62,6 @@ void update_frontier(kernel_arg_t* __UNIFORM__ arg) {
 
     // Reset workload
     thread_update[tid] = 0;
-
-    __syncthreads();
 }
 
 
