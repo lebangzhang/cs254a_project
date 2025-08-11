@@ -53,7 +53,7 @@ module VX_dispatch import VX_gpu_pkg::*; #(
                 operands_if.data.sid,
                 operands_if.data.tmask,
             `ifdef EXT_V_ENABLE
-                operands_if.data.etw,
+                operands_if.data.sew,
             `endif
                 operands_if.data.PC,
                 operands_if.data.wb,

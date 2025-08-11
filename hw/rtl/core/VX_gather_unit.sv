@@ -131,7 +131,7 @@ module VX_gather_unit import VX_gpu_pkg::*; #(
             commit_sid_w,
             commit_tmask_w,
         `ifdef EXT_V_ENABLE
-            result_tmp_if.data.header.etw,
+            result_tmp_if.data.header.sew,
         `endif
             result_tmp_if.data.header.PC,
             result_tmp_if.data.header.wb,

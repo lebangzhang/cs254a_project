@@ -51,10 +51,10 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
 
     `UNUSED_VAR (writeback_if.data.sop)
 
-    logic [ETW_TYPE_W-1:0] csr_etw_type;
+    logic [SEW_TYPE_W-1:0] csr_sew_type;
 
     logic [VSIMD_IDX_W-1:0] simd_ctr, simd_ctr_n;
-    logic [ETW_IDX_W-1:0] etw_ctr, etw_ctr_n;
+    logic [SEW_IDX_W-1:0] sew_ctr, sew_ctr_n;
 
     wire gpr_req_valid, gpr_rsp_valid;
     wire [NUM_SRC_OPDS-1:0] gpr_req_inused;
@@ -99,8 +99,8 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
         VX_vpu_pack #(
             .NUM_LANES (VL_COUNT)
         ) pack (
-            .etw_type (writeback_if.data.etw.etype),
-            .etw_idx  (writeback_if.data.etw.idx),
+            .sew_type (writeback_if.data.sew.etype),
+            .sew_idx  (writeback_if.data.sew.idx),
             .data_in  (writeback_if.data.data[VL_COUNT * t +: VL_COUNT]),
             .mask_in  (writeback_if.data.tmask[VL_COUNT * t +: VL_COUNT]),
             .data_out (gpr_wb_data_um),
@@ -110,16 +110,16 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
         VX_vpu_pack_mask #(
             .NUM_LANES (VL_COUNT)
         ) pack_mask (
-            .etw_type (writeback_if.data.etw.etype),
-            .etw_idx  (writeback_if.data.etw.idx),
+            .sew_type (writeback_if.data.sew.etype),
+            .sew_idx  (writeback_if.data.sew.idx),
             .data_in  (writeback_if.data.data[VL_COUNT * t +: VL_COUNT]),
             .mask_in  (writeback_if.data.tmask[VL_COUNT * t +: VL_COUNT]),
             .data_out (gpr_wb_data_m[t]),
             .mask_out (gpr_wb_byteen_m[t])
         );
 
-        assign gpr_wb_data[t]  = writeback_if.data.etw.masked ? gpr_wb_data_m[t]  : gpr_wb_data_um;
-        assign gpr_wb_byteen[t] = writeback_if.data.etw.masked ? gpr_wb_byteen_m[t] : gpr_wb_byteen_um;
+        assign gpr_wb_data[t]  = writeback_if.data.sew.masked ? gpr_wb_data_m[t]  : gpr_wb_data_um;
+        assign gpr_wb_byteen[t] = writeback_if.data.sew.masked ? gpr_wb_byteen_m[t] : gpr_wb_byteen_um;
     end
 
     VX_gpr_file #(
@@ -182,15 +182,15 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
     wire [VT_COUNT-1:0][VL_COUNT-1:0] unpacked_vmask;
 
     wire is_signed = ~insn_is_unsigned(soperands_if.data.ex_type, soperands_if.data.op_type);
-    wire etw_masked = insn_is_masked(soperands_if.data.ex_type, soperands_if.data.op_type);
+    wire sew_masked = insn_is_masked(soperands_if.data.ex_type, soperands_if.data.op_type);
 
     for (genvar t = 0; t < VT_COUNT; ++t) begin : g_unpack
         for (genvar i = 0; i < NUM_SRC_OPDS; ++i) begin : g_i
             VX_vpu_unpack #(
                 .NUM_LANES (VL_COUNT)
             ) unpack (
-                .etw_type  (csr_etw_type),
-                .etw_idx   (etw_ctr),
+                .sew_type  (csr_sew_type),
+                .sew_idx   (sew_ctr),
                 .is_signed (is_signed),
                 .data_in   (gpr_rsp_data[i][t]),
                 .data_out  (unpacked_data[i][t])
@@ -200,8 +200,8 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
         VX_vpu_unpack_mask #(
             .NUM_LANES (VL_COUNT)
         ) unpack_mask (
-            .etw_type  (csr_etw_type),
-            .etw_idx   (etw_ctr),
+            .sew_type  (csr_sew_type),
+            .sew_idx   (sew_ctr),
             .data_in   (vmask[t]),
             .data_out  (unpacked_vmask[t])
         );
@@ -254,14 +254,14 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
         end
         STATE_DISPATCH: begin
             if (dispatch_ready) begin
-                if (etw_ctr == 0 && simd_ctr == 0) begin
+                if (sew_ctr == 0 && simd_ctr == 0) begin
                     state_n = STATE_IDLE;
                 end else begin
                     if (simd_ctr != 0) begin
                         simd_ctr_n = simd_ctr - 1;
                     end
-                    if (etw_ctr != 0) begin
-                        etw_ctr_n = etw_ctr - 1;
+                    if (sew_ctr != 0) begin
+                        sew_ctr_n = sew_ctr - 1;
                     end
                     state_n = STATE_FETCH;
                 end
@@ -274,7 +274,7 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
         if (reset) begin
             state <= STATE_IDLE;
             simd_ctr <= 0;
-            etw_ctr <= 0;
+            sew_ctr <= 0;
         end else begin
             state <= state_n;
             dispatch_tmask <= dispatch_tmask_n;
@@ -287,14 +287,14 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
             dispatch_sop <= dispatch_sop_n;
             dispatch_eop <= dispatch_eop_n;
             simd_ctr <= simd_ctr_n;
-            etw_ctr <= etw_ctr_n;
+            sew_ctr <= sew_ctr_n;
         end
     end
 
     // CSRs udpate
     always @(posedge clk) begin
         if (reset) begin
-            csr_etw_type <= '0;
+            csr_sew_type <= '0;
         end
     end
 
@@ -315,9 +315,9 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
             soperands_if.data.wis,
             simd_ctr,
             dispatch_tmask,
-            csr_etw_type,
-            etw_ctr,
-            etw_masked,
+            csr_sew_type,
+            sew_ctr,
+            sew_masked,
             soperands_if.data.PC,
             dispatch_wb,
             dispatch_ex_type,
@@ -333,9 +333,9 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
             voperands_if.data.wis,
             voperands_if.data.sid,
             voperands_if.data.tmask,
-            voperands_if.data.etw.etype,
-            voperands_if.data.etw.idx,
-            voperands_if.data.etw.masked,
+            voperands_if.data.sew.etype,
+            voperands_if.data.sew.idx,
+            voperands_if.data.sew.masked,
             voperands_if.data.PC,
             voperands_if.data.wb,
             voperands_if.data.ex_type,

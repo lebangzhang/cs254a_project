@@ -99,8 +99,8 @@ package VX_gpu_pkg;
     localparam REG_TYPES  = REG_STYPES + 1;
     localparam REG_TYPE_V = REG_STYPES;
 
-    localparam ETW_TYPE_W = 2;
-    localparam ETW_IDX_W  = `CLOG2(XLENB);
+    localparam SEW_TYPE_W = 2;
+    localparam SEW_IDX_W  = `CLOG2(XLENB);
 `else
     localparam SIMD_COUNT = `NUM_THREADS / `SIMD_WIDTH;
     localparam REG_TYPES  = REG_STYPES;
@@ -507,10 +507,10 @@ package VX_gpu_pkg;
     } vpu_states_t;
 
     typedef struct packed {
-        logic [ETW_TYPE_W-1:0] etype;
-        logic [ETW_IDX_W-1:0]  idx;
+        logic [SEW_TYPE_W-1:0] etype;
+        logic [SEW_IDX_W-1:0]  idx;
         logic                  masked;
-    } vpu_etw_t;
+    } vpu_sew_t;
 
 `endif
 
@@ -722,7 +722,7 @@ package VX_gpu_pkg;
         logic [SIMD_IDX_W-1:0]              sid;
         logic [`SIMD_WIDTH-1:0]             tmask;
     `ifdef EXT_V_ENABLE
-        vpu_etw_t                           etw;
+        vpu_sew_t                           sew;
     `endif
         logic [PC_BITS-1:0]                 PC;
         logic [EX_BITS-1:0]                 ex_type;
@@ -744,7 +744,7 @@ package VX_gpu_pkg;
         logic [SIMD_IDX_W-1:0]              sid;
         logic [`SIMD_WIDTH-1:0]             tmask;
     `ifdef EXT_V_ENABLE
-        vpu_etw_t                           etw;
+        vpu_sew_t                           sew;
     `endif
         logic [PC_BITS-1:0]                 PC;
         logic                               wb;
@@ -764,7 +764,7 @@ package VX_gpu_pkg;
         logic [SIMD_IDX_W-1:0]              sid;
         logic [`SIMD_WIDTH-1:0]             tmask;
     `ifdef EXT_V_ENABLE
-        vpu_etw_t                           etw;
+        vpu_sew_t                           sew;
     `endif
         logic [PC_BITS-1:0]                 PC;
         logic                               wb;
@@ -780,7 +780,7 @@ package VX_gpu_pkg;
         logic [SIMD_IDX_W-1:0]              sid;
         logic [`SIMD_WIDTH-1:0]             tmask;
     `ifdef EXT_V_ENABLE
-        vpu_etw_t                           etw;
+        vpu_sew_t                           sew;
     `endif
         logic [PC_BITS-1:0]                 PC;
         logic [NUM_REGS_BITS-1:0]           rd;

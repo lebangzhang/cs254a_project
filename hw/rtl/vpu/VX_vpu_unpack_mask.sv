@@ -16,14 +16,14 @@
 module VX_vpu_unpack_mask import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
     parameter NUM_LANES = 1
 ) (
-    input  wire [ETW_TYPE_W-1:0]           etw_type,  // 0→8,1→16,2→32,3→64
-    input  wire [ETW_IDX_W-1:0]            etw_idx,   // element index within lane
+    input  wire [SEW_TYPE_W-1:0]           sew_type,  // 0→8,1→16,2→32,3→64
+    input  wire [SEW_IDX_W-1:0]            sew_idx,   // element index within lane
     input  wire [NUM_LANES-1:0][`XLEN-1:0] data_in,   // per-lane packed word
     output wire [NUM_LANES-1:0]            data_out   // per-lane element value
 );
 
-    `UNUSED_VAR (etw_type);
-    `UNUSED_VAR (etw_idx);
+    `UNUSED_VAR (sew_type);
+    `UNUSED_VAR (sew_idx);
     `UNUSED_VAR (data_in);
 
     assign data_out = '0;
