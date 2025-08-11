@@ -68,7 +68,7 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
     wire [VT_COUNT-1:0][VL_COUNT-1:0][`XLEN-1:0] gpr_wb_data;
     wire [VT_COUNT-1:0][VL_COUNT-1:0][XLENB-1:0] gpr_wb_byteen;
 
-    wire [VT_COUNT-1:0][VL_COUNT-1:0][VLENB-1:0] vmask;
+    wire [VT_COUNT-1:0][VL_COUNT-1:0][`XLEN-1:0] vmask;
 
     for (genvar i = 0; i < NUM_SRC_OPDS; ++i) begin : g_src_valid
         assign gpr_req_rid[i] = to_vreg_number(src_regs_i[i]);
@@ -176,7 +176,7 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
             vmasks[gpr_wb_addr] <= gpr_wb_data_m[t];
         end
     end
-    wire [VT_COUNT-1:0][VL_COUNT-1:0][VLENB-1:0] vmask = vmask_bank[gpr_req_addr];*/
+    wire [VT_COUNT-1:0][VL_COUNT-1:0][XLENB-1:0] vmask = vmask_bank[gpr_req_addr];*/
 
     wire [NUM_SRC_OPDS-1:0][VT_COUNT-1:0][VL_COUNT-1:0][`XLEN-1:0] unpacked_data;
     wire [VT_COUNT-1:0][VL_COUNT-1:0] unpacked_vmask;
