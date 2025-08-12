@@ -276,6 +276,7 @@ void VOpcUnit::tick() {
 
               // Next height 
               curr_red_tree_h = (curr_red_tree_h + 1) % (red_tree_height);                  
+
               // Reset curr_vector_timing_counter for the next height 
               this->compute_red_vector_timing_counter(curr_red_tree_h);
             }
