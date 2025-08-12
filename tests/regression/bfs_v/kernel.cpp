@@ -39,8 +39,9 @@ void kernel_body(kernel_arg_t* __UNIFORM__ arg) {
             auto a = &(edge[edge_index]);
             __asm__ __volatile__("vle32.v v10, (%[i])" ::[i] "r"(a));
 
-            int A[1000];
-            __asm__ __volatile__("vse32.v v10, (%[o])" ::[o] "r"(&A));
+            // Debug Content  
+            /*int A[1000];*/
+            /*__asm__ __volatile__("vse32.v v10, (%[o])" ::[o] "r"(&A));*/
             /*vx_printf("A[0]=%d\n", A[0]);*/
             /*vx_printf("A[1]=%d\n", A[1]);*/
             /*vx_printf("A[2]=%d\n", A[2]);*/
@@ -83,7 +84,6 @@ void kernel_body(kernel_arg_t* __UNIFORM__ arg) {
             edge_index += vl;
         }
     }
-    __syncthreads();
 }
 
 void update_frontier(kernel_arg_t* __UNIFORM__ arg) {
@@ -105,8 +105,6 @@ void update_frontier(kernel_arg_t* __UNIFORM__ arg) {
     thread_update[tid] = 0;
 
     /*vx_printf("TID=%d\n",tid);*/
-
-    __syncthreads();
 }
 
 

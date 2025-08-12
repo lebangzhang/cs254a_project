@@ -40,38 +40,30 @@ public:
 
 private:
 
-  uint32_t tree_height(uint32_t n);
-
-  void compute_red_vector_timing_counter(uint32_t red_tree_h);
-  void send_last_trace(instr_trace_t* trace);
-  void send_uop_trace(instr_trace_t* trace);
-  uint32_t compute_vector_stalls(instr_trace_t* trace);
+  void vector_std_trace(instr_trace_t* trace);
+  void vector_final_trace(instr_trace_t* trace);
+  uint32_t compute_vector_stalls(instr_trace_t* trace, uint32_t vlmul_index);
   uint32_t compute_scalar_stalls(instr_trace_t* trace);
-  uint32_t compute_total_gpr_requests(instr_trace_t* trace);
   uint32_t compute_total_vgpr_requests(instr_trace_t* trace);
   void translate(instr_trace_t* trace);
   void lsu_flush(instr_trace_t* trace);
 
-  Core*    core_; 
+  Core*    core_;
   uint32_t total_stalls_ = 0;
-  uint32_t total_gpr_requests = 1;
+  uint32_t total_vgpr_requests = 3;
   uint32_t curr_vgpr_requests = 0;
   uint32_t scalar_stalls = 0;
   uint32_t vector_stalls = 0; 
 
-  uint32_t curr_vector_timing_counter = 0;
-  uint32_t uops_vector_timing_counter = 0;
-
-  uint32_t red_tree_height = 0;
-  uint32_t curr_red_tree_h = 0;
+  uint32_t vl_counter_ = 0;
+  uint32_t vlmul_counter_ = 0; 
+  uint32_t curr_vlmul_counter = 0;
 
   Word     active_PC_;
 
   bool     instr_pending_ = false;
-  bool     wb_rsp_received = false;
   bool     lsu_flush_ = false;
   bool     is_reduction_ = false;
-  bool     done = false;
 };
 
 } // namespace vortex

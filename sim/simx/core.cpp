@@ -413,8 +413,12 @@ void Core::commit() {
 
     // update scoreboard
     if (trace->eop) {
+
+      // Apply writeback before trace->wb for reduction insn
+      operands_.at(iw)->writeback(trace);
+
       if (trace->wb) {
-        operands_.at(iw)->writeback(trace);
+        /*operands_.at(iw)->writeback(trace);*/
         scoreboard_.release(trace);
       }
       auto orig_size = pending_instrs_.size();

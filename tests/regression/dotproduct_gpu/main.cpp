@@ -29,7 +29,7 @@ public:
     return "integer";
   }
   static int generate() {
-    return rand() % 100;
+    return rand();
   }
   static bool compare(int a, int b, int index, int errors) {
     if (a != b) {
@@ -70,13 +70,11 @@ public:
 };
 
 const char* kernel_file = "kernel.vxbin";
-uint32_t size = 8;
+uint32_t size = 16;
 
 vx_device_h device = nullptr;
 vx_buffer_h src0_buffer = nullptr;
 vx_buffer_h src1_buffer = nullptr;
-vx_buffer_h src2_buffer = nullptr;
-vx_buffer_h src3_buffer = nullptr;
 vx_buffer_h dst_buffer = nullptr;
 vx_buffer_h krnl_buffer = nullptr;
 vx_buffer_h args_buffer = nullptr;
@@ -112,8 +110,6 @@ void cleanup() {
   if (device) {
     vx_mem_free(src0_buffer);
     vx_mem_free(src1_buffer);
-    vx_mem_free(src2_buffer);
-    vx_mem_free(src3_buffer);
     vx_mem_free(dst_buffer);
     vx_mem_free(krnl_buffer);
     vx_mem_free(args_buffer);
@@ -131,96 +127,55 @@ int main(int argc, char *argv[]) {
   std::cout << "open device connection" << std::endl;
   RT_CHECK(vx_dev_open(&device));
 
-  // Assignments
-  size = 8;
-  uint32_t num_nodes = size; 
-  uint32_t num_edges = 8;
+  uint32_t num_points = size;
+  uint32_t buf_size = num_points * sizeof(TYPE);
 
-  uint32_t nodes_buf_size = num_nodes  * sizeof(Node);
-  uint32_t edges_buf_size = num_edges  * sizeof(int);  
-  uint32_t cost_buf_size  = num_nodes  * sizeof(int);
+  std::cout << "number of points: " << num_points << std::endl;
+  std::cout << "data type: " << Comparator<TYPE>::type_str() << std::endl;
+  std::cout << "buffer size: " << buf_size << " bytes" << std::endl;
 
-  std::cout << "number of nodes: " << num_nodes << std::endl;
+  const uint32_t threadsPerBlock = 8;
+  const uint32_t blocksPerGrid = (num_points+threadsPerBlock-1) / threadsPerBlock;
 
-  kernel_arg.num_nodes  = num_nodes;
-  kernel_arg.num_edges  = num_edges;
+  kernel_arg.num_points = num_points;
+  kernel_arg.block_dim[0] = threadsPerBlock;
+  kernel_arg.grid_dim[0] = blocksPerGrid;
 
+  uint32_t total_threads = threadsPerBlock * blocksPerGrid; 
+  kernel_arg.items_per_thread = (num_points + total_threads - 1) / total_threads;
 
+  uint32_t dst_buf_size = blocksPerGrid * sizeof(TYPE);
   // allocate device memory
   std::cout << "allocate device memory" << std::endl;
-  RT_CHECK(vx_mem_alloc(device, nodes_buf_size, VX_MEM_READ_WRITE, &src0_buffer));
+  RT_CHECK(vx_mem_alloc(device, buf_size, VX_MEM_READ, &src0_buffer));
   RT_CHECK(vx_mem_address(src0_buffer, &kernel_arg.src0_addr));
-  RT_CHECK(vx_mem_alloc(device, edges_buf_size, VX_MEM_READ_WRITE, &src1_buffer));
+  RT_CHECK(vx_mem_alloc(device, buf_size, VX_MEM_READ, &src1_buffer));
   RT_CHECK(vx_mem_address(src1_buffer, &kernel_arg.src1_addr));
-  RT_CHECK(vx_mem_alloc(device, edges_buf_size, VX_MEM_READ_WRITE, &src2_buffer));
-  RT_CHECK(vx_mem_address(src2_buffer, &kernel_arg.src2_addr));
-  RT_CHECK(vx_mem_alloc(device, edges_buf_size, VX_MEM_READ_WRITE, &src3_buffer));
-  RT_CHECK(vx_mem_address(src3_buffer, &kernel_arg.src3_addr));
-
-  RT_CHECK(vx_mem_alloc(device, cost_buf_size, VX_MEM_READ_WRITE, &dst_buffer));
+  RT_CHECK(vx_mem_alloc(device, dst_buf_size, VX_MEM_WRITE, &dst_buffer));
   RT_CHECK(vx_mem_address(dst_buffer, &kernel_arg.dst_addr));
 
   std::cout << "dev_src0=0x" << std::hex << kernel_arg.src0_addr << std::endl;
   std::cout << "dev_src1=0x" << std::hex << kernel_arg.src1_addr << std::endl;
-  std::cout << "dev_src2=0x" << std::hex << kernel_arg.src2_addr << std::endl;
-  std::cout << "dev_src3=0x" << std::hex << kernel_arg.src3_addr << std::endl;
   std::cout << "dev_dst=0x" << std::hex << kernel_arg.dst_addr << std::endl;
 
   // allocate host buffers
   std::cout << "allocate host buffers" << std::endl;
-  std::vector<Node> h_src0(num_nodes);
-  std::vector<int> h_src1(num_edges);
-  std::vector<int> h_src2(num_nodes);
-  std::vector<int> h_src3(num_nodes);
-  std::vector<int> h_dst(num_nodes);
+  std::vector<TYPE> h_src0(num_points);
+  std::vector<TYPE> h_src1(num_points);
+  std::vector<TYPE> h_dst(dst_buf_size);
 
-  /*for (uint32_t i = 0; i < num_points; ++i) {*/
-    /*h_src0[i] = Comparator<TYPE>::generate();*/
-  /*}*/
-
-  // Store in CSR (Compressed Sparse Row) format
-  Node h_nodes[8] = {
-    {0, 2},  // Node 0 edges start at 0, 2 edges
-    {2, 2},  // Node 1 edges start at 2, 2 edges
-    {4, 1},  // Node 2 edges start at 4, 1 edge
-    {5, 1},  // Node 3 edges start at 5, 1 edge
-    {6, 1},  // Node 4 edges start at 6, 1 edge
-    {7, 1},  // Node 5 edges start at 7, 1 edge
-    {8, 0},  // Node 6 no edges
-    {8, 0}   // Node 7 no edges
-};
-  
-  int h_edges[8] = {
-    1, 2,    // Node 0 → Node 1, Node 2
-    3, 4,    // Node 1 → Node 3, Node 4
-    4,       // Node 2 → Node 4
-    5,       // Node 3 → Node 5
-    6,       // Node 4 → Node 6
-    7        // Node 5 → Node 7
-    // Nodes 6 and 7 have no outgoing edges
-  };
-
-  for(uint32_t i = 0; i < num_nodes; i++){
-    h_src0[i] = h_nodes[i];
+  for (uint32_t i = 0; i < num_points; ++i) {
+    h_src0[i] = Comparator<TYPE>::generate();
+    h_src1[i] = Comparator<TYPE>::generate();
   }
-
-  for(uint32_t i = 0; i < num_edges; i++){
-    h_src1[i] = h_edges[i];
-  }
-
-  for(uint32_t i = 0; i < num_edges; i++){
-    h_dst[i] = -1; 
-  }
-  h_dst[0] = 0;
-
 
   // upload source buffer0
   std::cout << "upload source buffer0" << std::endl;
-  RT_CHECK(vx_copy_to_dev(src0_buffer, h_src0.data(), 0, nodes_buf_size));
+  RT_CHECK(vx_copy_to_dev(src0_buffer, h_src0.data(), 0, buf_size));
 
-  // upload source buffer0
+  // upload source buffer1
   std::cout << "upload source buffer1" << std::endl;
-  RT_CHECK(vx_copy_to_dev(src1_buffer, h_src1.data(), 0, edges_buf_size));
+  RT_CHECK(vx_copy_to_dev(src1_buffer, h_src1.data(), 0, buf_size));
 
   // upload program
   std::cout << "upload program" << std::endl;
@@ -240,19 +195,22 @@ int main(int argc, char *argv[]) {
 
   // download destination buffer
   std::cout << "download destination buffer" << std::endl;
-  RT_CHECK(vx_copy_from_dev(h_dst.data(), dst_buffer, 0, cost_buf_size));
+  RT_CHECK(vx_copy_from_dev(h_dst.data(), dst_buffer, 0, dst_buf_size));
 
   // verify result
   std::cout << "verify result" << std::endl;
-
-  // Run Golden result test 
-  for(uint32_t i = 0; i < num_edges; i++){
-    printf("%d\n", h_dst[i]);
-  }
- 
-  // Check for errors
   int errors = 0;
+  TYPE ref = 0;
+  TYPE cur = 0;
+  for (uint32_t i = 0; i < num_points; ++i) {
+    ref += h_src0[i] * h_src1[i];
+  }
+  for(uint32_t i = 0; i < blocksPerGrid; i++)
+    cur += h_dst[i];
 
+  if (!Comparator<TYPE>::compare(cur, ref, 0, errors)) {
+    ++errors;
+  }
   // cleanup
   std::cout << "cleanup" << std::endl;
   cleanup();
