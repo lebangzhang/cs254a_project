@@ -13,10 +13,11 @@
 
 #include "vopc_unit.h"
 #include "core.h"
+#include "math.h"
 
 
-# define VOPC_VECTOR_UOP_DELAY 4 
-# define VOPC_SCALAR_DELAY 3
+# define VOPC_VECTOR_UOP_DELAY 3 
+# define VOPC_SCALAR_DELAY 2
 
 
 using namespace vortex;
@@ -89,25 +90,37 @@ void VOpcUnit::tick() {
     if (trace->fu_type == FUType::VPU) {
       auto trace_data = std::dynamic_pointer_cast<VecUnit::ExeTraceData>(trace->data);
       auto vpu_op = trace_data->vpu_op;
+
+      // Redution Parameters
       is_reduction_ = (vpu_op >= VpuOpType::ARITH_R);
 
-      // TOFIX: Add the FUSED_ARCH thing
-      /*is_reduction_ = false;*/
+      // If not fused vpu
+      #ifdef NOT_FUSED_VPU
+        is_reduction_ = false;
+      #endif
+
       active_PC_ = trace->PC;
-      
+
       // Set parameters if reduction insn 
       if(is_reduction_){
         DT(3, "*** VOPC_is_reduce"  << " Trace: "  << *trace);
 
-        // TOFIX: Calculate reduction tree height properly 
-        red_tree_height = 4;
+        red_tree_height = this->tree_height(trace_data->vl);
+
+        // Special case when vl = 1  ==> Handle reduction like std insn
+        // I.e: vl = 1 ==> Implies similar to vadd 
+        if(trace_data->vl == 1){
+          is_reduction_ = false;
+        }
 
         // Set reduction tree height to 0 
         curr_red_tree_h = 0;
 
         // Fetch 2x VRF for layer 0 
         if(curr_vgpr_requests >= 2){
-          curr_vector_timing_counter += vector_stalls;
+
+          // +2 to handle the fetch and response
+          curr_vector_timing_counter += (vector_stalls + 1);
         } 
 
         curr_red_tree_h = 0;
@@ -181,10 +194,11 @@ void VOpcUnit::tick() {
         // Send the last trace 
         } else {
           this->send_last_trace(trace);
+
         }
 
-        // Reset curr_vector_timing_counter 
-        curr_vector_timing_counter = uops_vector_timing_counter;
+        // Reset curr_vector_timing_counter for the next height 
+        this->compute_red_vector_timing_counter(curr_red_tree_h);
       }
     
 
@@ -282,6 +296,14 @@ void VOpcUnit::tick() {
 
 }
 
+uint32_t VOpcUnit::tree_height(uint32_t n){
+
+  if(n == 1){
+    return 1;
+  }
+
+  return ceil(log2(n));
+}
 
 void VOpcUnit::compute_red_vector_timing_counter(uint32_t red_tree_h){
 
@@ -289,11 +311,11 @@ void VOpcUnit::compute_red_vector_timing_counter(uint32_t red_tree_h){
   // ==> Start collecting registers, dont wait for wb
   if(red_tree_h == 0){
     
-    curr_vector_timing_counter = vector_stalls + 2;
+    curr_vector_timing_counter = vector_stalls + VOPC_VECTOR_UOP_DELAY;
 
     // If can fetch 2, then fetch 2 registers
     if(curr_vgpr_requests >= 2){
-      curr_vector_timing_counter += vector_stalls;
+      curr_vector_timing_counter += (vector_stalls + 1);
     }
 
   // Case 2: Next height is part of the tree  
@@ -354,10 +376,8 @@ uint32_t VOpcUnit::compute_vector_stalls(instr_trace_t* trace) {
           continue; // skip x0
         
       // bank conflict
-      /*uint32_t bank_i = (trace->src_regs[i].idx) % NUM_GPR_BANKS;*/
-      /*uint32_t bank_j = (trace->src_regs[j].idx) % NUM_GPR_BANKS;*/
-      uint32_t bank_i = (trace->src_regs[i].idx) % 1;
-      uint32_t bank_j = (trace->src_regs[j].idx) % 1;
+      uint32_t bank_i = (trace->src_regs[i].idx) % NUM_GPR_BANKS;
+      uint32_t bank_j = (trace->src_regs[j].idx) % NUM_GPR_BANKS;
       if (bank_i == bank_j) {
 
         // Check if vector type
@@ -390,10 +410,8 @@ uint32_t VOpcUnit::compute_scalar_stalls(instr_trace_t* trace) {
           continue; // skip x0
             
       // bank conflict
-      /*uint32_t bank_i = trace->src_regs[i].idx % NUM_GPR_BANKS;*/
-      /*uint32_t bank_j = trace->src_regs[j].idx % NUM_GPR_BANKS;*/
-      uint32_t bank_i = trace->src_regs[i].idx % 1;
-      uint32_t bank_j = trace->src_regs[j].idx % 1;
+      uint32_t bank_i = trace->src_regs[i].idx % NUM_GPR_BANKS;
+      uint32_t bank_j = trace->src_regs[j].idx % NUM_GPR_BANKS;
       if (bank_i == bank_j) {
 
         // Check if not vector type

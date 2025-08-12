@@ -40,6 +40,8 @@ public:
 
 private:
 
+  uint32_t tree_height(uint32_t n);
+
   void compute_red_vector_timing_counter(uint32_t red_tree_h);
   void send_last_trace(instr_trace_t* trace);
   void send_uop_trace(instr_trace_t* trace);
