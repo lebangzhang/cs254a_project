@@ -34,14 +34,21 @@ VOpcUnit::~VOpcUnit() {}
 void VOpcUnit::reset() {
   // Stall variables
   total_stalls_ = 0;
+  total_gpr_requests = 1; 
+  curr_vgpr_requests = 0;
   scalar_stalls = 0;
   vector_stalls = 0; 
 
-  // VRF variables
-  curr_vgpr_requests = 0;
+  // Counter variables
+  curr_vector_timing_counter = 0; 
+  uops_vector_timing_counter = 0; 
+
+  // Reduction variables 
+  red_tree_height = 0;
 
   // True/False variables
   instr_pending_ = false; 
+  wb_rsp_received = false;
   lsu_flush_ = false; 
   is_reduction_ = false;
   done = false;
@@ -85,20 +92,38 @@ void VOpcUnit::tick() {
       is_reduction_ = (vpu_op >= VpuOpType::ARITH_R);
 
       // TOFIX: Add the FUSED_ARCH thing
-      is_reduction_ = false;
+      /*is_reduction_ = false;*/
       active_PC_ = trace->PC;
-
-      if(is_reduction_)
+      
+      // Set parameters if reduction insn 
+      if(is_reduction_){
         DT(3, "*** VOPC_is_reduce"  << " Trace: "  << *trace);
+
+        // TOFIX: Calculate reduction tree height properly 
+        red_tree_height = 4;
+
+        // Set reduction tree height to 0 
+        curr_red_tree_h = 0;
+
+        // Fetch 2x VRF for layer 0 
+        if(curr_vgpr_requests >= 2){
+          curr_vector_timing_counter += vector_stalls;
+        } 
+
+        curr_red_tree_h = 0;
+        wb_rsp_received = true;
+      }
     }
 
     // Remove first entry in next CC
     instr_pending_ = true;
+
+    // Not yet EOP
     done = false;
   }
 
 
-  // 2a. Scalar instruction : Pipelined Timing 
+  // Scalar instruction : Pipelined Timing 
   if(trace->fu_type != FUType::VPU) {
     
     // Issue all except last trace in pipelined manner 
@@ -124,7 +149,7 @@ void VOpcUnit::tick() {
     done = true;
 
 
-  // 2b. Vector instruction : State Machine Timing
+  // Vector instruction : State Machine Timing
   } else {
 
     // Access GPR for 1 chunk 
@@ -132,7 +157,6 @@ void VOpcUnit::tick() {
     // ==> Assume (time for GPR) < (time for uops) ==> Hence, only consider first gpr_requests, 
     //      Other gpr_requests would be ready during time vector uops are sent 
    
-    // Case 1: Standard Instruction 
     if(!is_reduction_){
       
       // Decrement counter each CC
@@ -145,38 +169,20 @@ void VOpcUnit::tick() {
         
         // TOFIX: Add the SEW Loop inside 
         
-        // Check if there is still an intermediate uop to send 
+        // Check if there is still a uop to send 
         if(curr_vgpr_requests-1 > 0) {
-          auto trace_alloc = core_->trace_pool().allocate(1);
-          auto new_trace = new (trace_alloc) instr_trace_t(*trace);
-
-          // Check if is LSU instruction
-          this->lsu_flush(new_trace);
-
-          // Add decode
-          if (trace->fu_type == FUType::VPU) {
-            // translate VPU instructions
-            this->translate(new_trace);
-          }
-          new_trace->wb = false; // disable scoreboard release
           
-          // Issue Trace to Execution
-          this->Output.push(new_trace);
-          DT(3, "*** VOPC_vector_trace: Time: (Look at clock); Trace: "  << *trace);
-          
+          // Send uop to execution
+          this->send_uop_trace(trace);
+
           // Decrement vgpr requests 
           curr_vgpr_requests -= 1;
 
-
-        // Send the last uop trace 
+        // Send the last trace 
         } else {
-          this->Output.push(trace);
-          DT(3, "*** VOPC_final_vector_trace: " << *trace);
-          Input.pop();
-          
-          // Set instruction as done 
-          done = true;
+          this->send_last_trace(trace);
         }
+
         // Reset curr_vector_timing_counter 
         curr_vector_timing_counter = uops_vector_timing_counter;
       }
@@ -185,19 +191,151 @@ void VOpcUnit::tick() {
     // Is a reduction instruction
     } else {
 
-      
-      this->Output.push(trace);
-      DT(3, "*** VOPC_final_vector_trace: " << *trace);
-      Input.pop();
+      // Case 1: First Layer of reduction Tree
+      if(curr_red_tree_h == 0){
+
+        // Decrement counter each CC
+        // ==> Don't wait for writeback 
+        if(curr_vector_timing_counter > 0){
+          curr_vector_timing_counter -= 1;
+        }
+
+        // When counter reaches 0 ==> Send a trace 
+        if(curr_vector_timing_counter == 0){
+
+          // TOFIX: Add the SEW Loop inside 
+          
+          // Case 1a: Last trace to send out 
+          if((curr_vgpr_requests == 0) and (red_tree_height == 1)){
+            this->send_last_trace(trace);
+
+          // Case 1b: Other traces to send out 
+          } else {
+            // Send uop to execution
+            this->send_uop_trace(trace);
+
+            // Set WB hasn't been received
+            wb_rsp_received = false; 
+
+            // Decrement vgpr requests 
+            if(curr_vgpr_requests >= 2){
+              curr_vgpr_requests -= 2; 
+            } else {
+              curr_vgpr_requests -= 1;
+            } 
+
+            // Next height 
+            curr_red_tree_h = (curr_red_tree_h + 1) % (red_tree_height);
+
+            // Reset curr_vector_timing_counter for the next height 
+            this->compute_red_vector_timing_counter(curr_red_tree_h);
+          }
+        }
+
+      // Case 2: Subsequent layers of reduction tree 
+      // Need to wait for writeback
+      } else {
+
+        // Writeback Received --> Start processing state machine
+        if(wb_rsp_received){
+
+          // Decrement counter each CC 
+          if(curr_vector_timing_counter > 0){
+            curr_vector_timing_counter -= 1;
+          }
+
+          // When counter reaches 0 ==> Send a trace 
+          if(curr_vector_timing_counter == 0){
+
+            // Case 2a : Last trace to send out 
+            if((curr_vgpr_requests == 0) and (curr_red_tree_h == red_tree_height - 1) ){
+              this->send_last_trace(trace);
+
+            // Case 2b : Other traces to send out
+            } else { 
+
+              // Send uop to execution
+              this->send_uop_trace(trace);
+
+              // Set WB hasn't been received
+              wb_rsp_received = false; 
+
+              // Next height 
+              curr_red_tree_h = (curr_red_tree_h + 1) % (red_tree_height);                  
+              // Reset curr_vector_timing_counter for the next height 
+              this->compute_red_vector_timing_counter(curr_red_tree_h);
+            }
+          }
+        }
+      }
     }
   }
 
   // Reset parameters for next instruction 
   if(done){
-    instr_pending_ = false;
-    is_reduction_  = false;
-    lsu_flush_     = false;
+    instr_pending_ = false; 
+    wb_rsp_received = false;
+    lsu_flush_ = false; 
+    is_reduction_ = false;
+    done = false;
   }
+
+}
+
+
+void VOpcUnit::compute_red_vector_timing_counter(uint32_t red_tree_h){
+
+  // Case 1: Next height is '0' (new chunk) 
+  // ==> Start collecting registers, dont wait for wb
+  if(red_tree_h == 0){
+    
+    curr_vector_timing_counter = vector_stalls + 2;
+
+    // If can fetch 2, then fetch 2 registers
+    if(curr_vgpr_requests >= 2){
+      curr_vector_timing_counter += vector_stalls;
+    }
+
+  // Case 2: Next height is part of the tree  
+  // Don't fetch VRF again  
+  } else {
+    curr_vector_timing_counter = VOPC_VECTOR_UOP_DELAY; 
+  }
+
+}
+
+
+void VOpcUnit::send_last_trace(instr_trace_t* trace) {
+
+  this->Output.push(trace);
+  DT(3, "*** VOPC_final_vector_trace: " << *trace);
+  Input.pop();
+          
+  // Set instruction as done 
+  done = true;
+}
+
+
+void VOpcUnit::send_uop_trace(instr_trace_t* trace) {
+
+  auto trace_alloc = core_->trace_pool().allocate(1);
+  auto new_trace = new (trace_alloc) instr_trace_t(*trace);
+
+  // Check if is LSU instruction
+  this->lsu_flush(new_trace);
+
+  // Add decode
+  if (trace->fu_type == FUType::VPU) {
+    // translate VPU instructions
+    this->translate(new_trace);
+  }
+
+  // Disable scoreboard release
+  new_trace->wb = false; 
+
+  // Issue Trace to Execution
+  this->Output.push(new_trace);
+  DT(3, "*** VOPC_vector_trace: Time: (Look at clock); Trace: "  << *trace);
 
 }
 
@@ -407,9 +545,18 @@ void VOpcUnit::lsu_flush(instr_trace_t* trace) {
 
 
 void VOpcUnit::writeback(instr_trace_t* trace) {
+
+  /*printf("----------\n");*/
+  /*printf("%x %x\n", trace->PC ,active_PC_);*/
+  /*printf("%d\n", trace->wb ,active_PC_);*/
+  /*printf("----------\n");*/
+
   // only notify writeback for the currently active reduction instructions
   if (instr_pending_ && trace->PC == active_PC_) {
     DT(3, "VOPC_Writeback_Received" << ", " << *trace);
+
+    // Set response received as true
+    wb_rsp_received = true;
   }
 }
 

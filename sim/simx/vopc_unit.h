@@ -40,6 +40,9 @@ public:
 
 private:
 
+  void compute_red_vector_timing_counter(uint32_t red_tree_h);
+  void send_last_trace(instr_trace_t* trace);
+  void send_uop_trace(instr_trace_t* trace);
   uint32_t compute_vector_stalls(instr_trace_t* trace);
   uint32_t compute_scalar_stalls(instr_trace_t* trace);
   uint32_t compute_total_gpr_requests(instr_trace_t* trace);
@@ -57,9 +60,13 @@ private:
   uint32_t curr_vector_timing_counter = 0;
   uint32_t uops_vector_timing_counter = 0;
 
+  uint32_t red_tree_height = 0;
+  uint32_t curr_red_tree_h = 0;
+
   Word     active_PC_;
 
   bool     instr_pending_ = false;
+  bool     wb_rsp_received = false;
   bool     lsu_flush_ = false;
   bool     is_reduction_ = false;
   bool     done = false;
