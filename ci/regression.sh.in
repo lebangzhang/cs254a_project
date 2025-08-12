@@ -416,8 +416,8 @@ vector()
 
     make -C sim/rtlsim clean && CONFIGS="-DVLEN=256 -DEXT_V_ENABLE" DEBUG=3 PERF=1 make -C sim/rtlsim
 
-    make -C sim/simx clean && CONFIGS="-DVLEN=256 -DEXT_V_ENABLE" DEBUG=3 PERF=1 make -C sim/simx
-    make -C sim/simx clean && CONFIGS="-DVLEN=256 -DEXT_V_ENABLE" make -C sim/simx
+    make -C sim/simx clean && CONFIGS="-DVLEN=256 -DEXT_V_ENABLE -DNOT_FUSED_VPU" DEBUG=3 PERF=1 make -C sim/simx
+    make -C sim/simx clean && CONFIGS="-DVLEN=256 -DEXT_V_ENABLE -DNOT_FUSED_VPU" make -C sim/simx
     VLEN=256 ./tests/riscv/riscv-vector-tests/run-test.sh
 
     echo "vector tests done!"
