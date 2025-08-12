@@ -134,8 +134,6 @@ package VX_gpu_pkg;
     endfunction
 `endif
 
-	localparam OFFSET_BITS = 12;
-
 	localparam NUM_SOCKETS = `UP(`NUM_CORES / `SOCKET_SIZE);
 
     localparam MEM_REQ_FLAG_FLUSH = 0;
@@ -565,14 +563,14 @@ package VX_gpu_pkg;
 
     //////////////////////// instruction arguments ////////////////////////////
 
-    localparam INST_ARGS_BITS = ALU_TYPE_BITS + `XLEN + 3;
+    localparam INST_ARGS_BITS = 3 + ALU_TYPE_BITS + 20;
 
     typedef struct packed {
         logic use_PC;
         logic use_imm;
         logic is_w;
         logic [ALU_TYPE_BITS-1:0] xtype;
-        logic [`XLEN-1:0] imm;
+        logic [19:0] imm20;
     } alu_args_t;
     `PACKAGE_ASSERT($bits(alu_args_t) == INST_ARGS_BITS)
 
@@ -585,13 +583,13 @@ package VX_gpu_pkg;
 
     typedef struct packed {
     `ifdef EXT_V_ENABLE
-        logic [(INST_ARGS_BITS-1-1-OFFSET_BITS-3)-1:0] __padding;
+        logic [(INST_ARGS_BITS-1-1-12-3)-1:0] __padding;
     `else
-        logic [(INST_ARGS_BITS-1-1-OFFSET_BITS)-1:0] __padding;
+        logic [(INST_ARGS_BITS-1-1-12)-1:0] __padding;
     `endif
         logic is_store;
         logic is_float;
-        logic [OFFSET_BITS-1:0] offset;
+        logic [11:0] offset;
     `ifdef EXT_V_ENABLE
         logic [2:0] nf;
     `endif
@@ -602,7 +600,7 @@ package VX_gpu_pkg;
         logic [(INST_ARGS_BITS-1-`VX_CSR_ADDR_BITS-5)-1:0] __padding;
         logic use_imm;
         logic [`VX_CSR_ADDR_BITS-1:0] addr;
-        logic [4:0] imm;
+        logic [4:0] imm5;
     } csr_args_t;
     `PACKAGE_ASSERT($bits(csr_args_t) == INST_ARGS_BITS)
 
