@@ -97,6 +97,153 @@ public:
     }
   }
 
+  bool decode(uint32_t code, uint32_t wid, uint64_t uuid) {
+    bool is_valid = false;
+
+    auto& ibuffer = core_->emulator().ibuffer(wid);
+    auto& instr_pool = core_->emulator().instr_pool();
+
+    auto op = Opcode((code >> shift_opcode) & mask_opcode);
+    auto funct3 = (code >> shift_funct3) & mask_funct3;
+    auto funct6 = (code >> shift_funct6) & mask_funct6;
+
+    auto rd  = (code >> shift_rd)  & mask_reg;
+    auto rs1 = (code >> shift_rs1) & mask_reg;
+    auto rs2 = (code >> shift_rs2) & mask_reg;
+    auto rs3 = (code >> shift_rs3) & mask_reg;
+
+    uint32_t vm = (code >> shift_vm) & mask_vm;
+
+    switch (op) {
+    case Opcode::FL:
+    case Opcode::FS: {
+      if (funct3 != 0x2 && funct3 != 0x3) {
+        bool is_load = (op == Opcode::FL);
+        auto instr = std::allocate_shared<Instr>(instr_pool, uuid, FUType::LSU);
+        IntrVlsArgs instArgs{};
+        instArgs.mew = (code >> shift_vmew) & mask_vmew;
+        instArgs.nf = (code >> shift_vnf) & mask_vnf;
+        instArgs.vm = vm;
+        switch (funct3) {
+        case 0: instArgs.width = 0; break;
+        case 5: instArgs.width = 1; break;
+        case 6: instArgs.width = 2; break;
+        case 7: instArgs.width = 3; break;
+        default:
+          std::abort();
+        }
+        instr->setSrcReg(0, rs1, RegType::Integer);
+        auto mop = (code >> shift_vmop) & mask_vmop;
+        switch (mop) {
+        case 0b00:
+          instr->setOpType(is_load ? VlsType::VL : VlsType::VS);
+          instArgs.umop = rs2;
+          break;
+        case 0b10:
+          instr->setOpType(is_load ? VlsType::VLS : VlsType::VSS);
+          instr->setSrcReg(1, rs2, RegType::Integer);
+          break;
+        case 0b01:
+        case 0b11:
+          instr->setOpType(is_load ? VlsType::VLX : VlsType::VSX);
+          instr->setSrcReg(1, rs2, RegType::Vector);
+          break;
+        }
+        if (is_load) {
+          instr->setDestReg(rd, RegType::Vector);
+        } else {
+          instr->setSrcReg(2, rd, RegType::Vector);
+        }
+        if (vm) {
+          instr->setSrcReg(2, rd, RegType::Vector);
+        }
+        instr->setArgs(instArgs);
+        ibuffer.push_back(instr);
+        is_valid = true;
+      }
+    } break;
+    case Opcode::VSET: {
+      auto instr = std::allocate_shared<Instr>(instr_pool, uuid, FUType::VPU);
+      switch (funct3) {
+      case 0: { // OPIVV
+        instr->setOpType(VopType::OPIVV);
+        instr->setArgs(IntrVopArgs{vm, funct6, 0});
+        instr->setDestReg(rd, RegType::Vector);
+        instr->setSrcReg(0, rs1, RegType::Vector);
+        instr->setSrcReg(1, rs2, RegType::Vector);
+      } break;
+      case 1: { // OPFVV
+        instr->setOpType(VopType::OPFVV);
+        instr->setArgs(IntrVopArgs{vm, funct6, 0});
+        instr->setDestReg(rd, (funct6 == 16) ? RegType::Float : RegType::Vector);
+        instr->setSrcReg(0, rs1, RegType::Vector);
+        instr->setSrcReg(1, rs2, RegType::Vector);
+      } break;
+      case 2: { // OPMVV
+        instr->setOpType(VopType::OPMVV);
+        instr->setArgs(IntrVopArgs{vm, funct6, 0});
+        instr->setDestReg(rd, (funct6 == 16) ? RegType::Integer : RegType::Vector);
+        instr->setSrcReg(0, rs1, RegType::Vector);
+        instr->setSrcReg(1, rs2, RegType::Vector);
+      } break;
+      case 3: { // OPIVI
+        instr->setOpType(VopType::OPIVI);
+        instr->setArgs(IntrVopArgs{vm, funct6, rs1});
+        instr->setDestReg(rd, RegType::Vector);
+        instr->setSrcReg(1, rs2, RegType::Vector);
+      } break;
+      case 4: { // OPIVX
+        instr->setOpType(VopType::OPIVX);
+        instr->setArgs(IntrVopArgs{vm, funct6, 0});
+        instr->setDestReg(rd, RegType::Vector);
+        instr->setSrcReg(0, rs1, RegType::Integer);
+        instr->setSrcReg(1, rs2, RegType::Vector);
+      } break;
+      case 5: { // OPFVF
+        instr->setOpType(VopType::OPFVF);
+        instr->setArgs(IntrVopArgs{vm, funct6, 0});
+        instr->setDestReg(rd, RegType::Vector);
+        instr->setSrcReg(0, rs1, RegType::Float);
+        instr->setSrcReg(1, rs2, RegType::Vector);
+      } break;
+      case 6: { // OPMVX
+        instr->setOpType(VopType::OPMVX);
+        instr->setArgs(IntrVopArgs{vm, funct6, 0});
+        instr->setDestReg(rd, (funct6 == 16) ? RegType::Integer : RegType::Vector);
+        instr->setSrcReg(0, rs1, RegType::Integer);
+        instr->setSrcReg(1, rs2, RegType::Vector);
+      } break;
+      case 7: {
+        instr->setDestReg(rd, RegType::Integer);
+        if ((code >> 30) == 0b10) { // vsetvl
+          instr->setOpType(VsetType::VSETVL);
+          instr->setArgs(IntrVsetArgs{0, 0});
+          instr->setSrcReg(0, rs1, RegType::Integer);
+          instr->setSrcReg(1, rs2, RegType::Integer);
+        } else {
+          auto zimm = (code >> shift_vzimm) & mask_vzimm;
+          if ((code >> 30) == 0b11) { // vsetivli
+            instr->setOpType(VsetType::VSETIVLI);
+            instr->setArgs(IntrVsetArgs{zimm, rs1});
+          } else { // vsetvli
+            instr->setOpType(VsetType::VSETVLI);
+            instr->setArgs(IntrVsetArgs{zimm, 0});
+            instr->setSrcReg(0, rs1, RegType::Integer);
+          }
+        }
+      } break;
+      default:
+        std::abort();
+      }
+      ibuffer.push_back(instr);
+      is_valid = true;
+    } break;
+    default:
+      break;
+    }
+    return is_valid;
+  }
+
   void load(const Instr &instr,
             uint32_t wid,
             uint32_t tid,
@@ -106,7 +253,7 @@ public:
     auto &states = vpu_states_.at(wid);
     auto vls_type = std::get<VlsType>(instr.getOpType());
     auto lsuArgs = std::get<IntrVlsArgs>(instr.getArgs());
-    uint32_t vmask = lsuArgs.vm;
+    bool is_masked = lsuArgs.vm;
     uint32_t vd = instr.getDestReg().idx;
     uint32_t vsewb = 1 << states.vtype.vsew;
     assert(lsuArgs.width == states.vtype.vsew && "vsew and width must match!");
@@ -117,6 +264,7 @@ public:
     // udpate trace data
     trace_data->vl = states.vl;
     trace_data->vnf = lsuArgs.nf + 1;
+    trace_data->is_masked = is_masked;
 
     switch (vls_type) {
     case VlsType::VL: { // unit-stride
@@ -143,7 +291,7 @@ public:
         assert(nfields * emul <= 8);
 
         for (uint32_t i = 0; i < states.vl; i++) {
-          if (isMasked(vreg_file, 0, i, vmask))
+          if (isMasked(vreg_file, 0, i, is_masked))
             continue;
           for (uint32_t f = 0; f < nfields; f++) {
             uint64_t mem_addr = base_addr + (i * nfields + f) * vsewb;
@@ -170,7 +318,7 @@ public:
         trace_data->vnf = 1;
 
         for (uint32_t i = 0; i < vl; i++) {
-          if (isMasked(vreg_file, 0, i, vmask))
+          if (isMasked(vreg_file, 0, i, is_masked))
             continue;
           uint64_t mem_addr = base_addr + i * stride;
           uint64_t mem_data = 0;
@@ -225,7 +373,7 @@ public:
       WordI stride = rs2_data.at(tid).i;
 
       for (uint32_t i = 0; i < states.vl; i++) {
-        if (isMasked(vreg_file, 0, i, vmask))
+        if (isMasked(vreg_file, 0, i, is_masked))
           continue;
         for (uint32_t f = 0; f < nfields; f++) {
           WordI offset = i * stride + f * vsewb;
@@ -263,7 +411,7 @@ public:
       assert(nfields * emul <= 8);
 
       for (uint32_t i = 0; i < states.vl; i++) {
-        if (isMasked(vreg_file, 0, i, vmask))
+        if (isMasked(vreg_file, 0, i, is_masked))
           continue;
         uint64_t offset = getVregData(eew, vreg_file, vs2, i);
         for (uint32_t f = 0; f < nfields; f++) {
@@ -290,7 +438,7 @@ public:
     auto &states = vpu_states_.at(wid);
     auto vls_type = std::get<VlsType>(instr.getOpType());
     auto lsuArgs = std::get<IntrVlsArgs>(instr.getArgs());
-    uint32_t vmask = lsuArgs.vm;
+    bool is_masked = lsuArgs.vm;
     uint32_t vsewb = 1 << states.vtype.vsew;
     assert(lsuArgs.width == states.vtype.vsew && "vsew and width must match!");
     uint32_t vs3 = instr.getSrcReg(2).idx;
@@ -301,6 +449,7 @@ public:
     // udpate trace data
     trace_data->vl = states.vl;
     trace_data->vnf = lsuArgs.nf + 1;
+    trace_data->is_masked = is_masked;
 
     switch (vls_type) {
     case VlsType::VS: { // unit-stride
@@ -312,7 +461,7 @@ public:
         assert(nfields * emul <= 8);
 
         for (uint32_t i = 0; i < states.vl; i++) {
-          if (isMasked(vreg_file, 0, i, vmask))
+          if (isMasked(vreg_file, 0, i, is_masked))
             continue;
           for (uint32_t f = 0; f < nfields; f++) {
             uint64_t mem_addr = base_addr + (i * nfields + f) * vsewb;
@@ -336,7 +485,7 @@ public:
         trace_data->vnf = 1;
 
         for (uint32_t i = 0; i < vl; i++) {
-          if (isMasked(vreg_file, 0, i, vmask))
+          if (isMasked(vreg_file, 0, i, is_masked))
             continue;
           uint64_t value = getVregData(states.vtype.vsew, vreg_file, vs3, i);
           uint64_t mem_addr = base_addr + i * stride;
@@ -388,7 +537,7 @@ public:
       assert(nfields * emul <= 8);
 
       for (uint32_t i = 0; i < states.vl; i++) {
-        if (isMasked(vreg_file, 0, i, vmask))
+        if (isMasked(vreg_file, 0, i, is_masked))
           continue;
         for (uint32_t f = 0; f < nfields; f++) {
           WordI offset = i * stride + f * vsewb;
@@ -425,7 +574,7 @@ public:
       assert(nfields * emul <= 8);
 
       for (uint32_t i = 0; i < states.vl; i++) {
-        if (isMasked(vreg_file, 0, i, vmask))
+        if (isMasked(vreg_file, 0, i, is_masked))
           continue;
         uint64_t offset = getVregData(eew, vreg_file, vs2, i);
         for (uint32_t f = 0; f < nfields; f++) {
@@ -536,7 +685,7 @@ public:
     auto vop_type = std::get<VopType>(op_type);
     auto vopArgs = std::get<IntrVopArgs>(instrArgs);
 
-    uint32_t vmask = vopArgs.vm;
+    bool is_masked = vopArgs.vm;
     uint32_t uimmsrc = vopArgs.imm;
     uint32_t funct6 = vopArgs.funct6;
     Word immsrc = sext<Word>(vopArgs.imm, width_reg);
@@ -545,136 +694,136 @@ public:
     case VopType::OPIVV: { // vector-vector
       switch (funct6) {
       case 0: { // vadd.vv
-        vector_op_vv<Add, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv<Add, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 2: { // vsub.vv
-        vector_op_vv<Sub, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv<Sub, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 4: { // vminu.vv
-        vector_op_vv<Min, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv<Min, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 5: { // vmin.vv
-        vector_op_vv<Min, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv<Min, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 6: { // vmaxu.vv
-        vector_op_vv<Max, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv<Max, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 7: { // vmax.vv
-        vector_op_vv<Max, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv<Max, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 9: { // vand.vv
-        vector_op_vv<And, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv<And, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 10: { // vor.vv
-        vector_op_vv<Or, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv<Or, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 11: { // vxor.vv
-        vector_op_vv<Xor, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv<Xor, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 12: { // vrgather.vv
-        vector_op_vv_gather<uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, false, states.vlmax, vmask);
+        vector_op_vv_gather<uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, false, states.vlmax, is_masked);
       } break;
       case 14: { // vrgatherei16.vv
-        vector_op_vv_gather<uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, true, states.vlmax, vmask);
+        vector_op_vv_gather<uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, true, states.vlmax, is_masked);
       } break;
       case 16: { // vadc.vvm
         vector_op_vv_carry<Adc, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl);
       } break;
       case 17: { // vmadc.vv, vmadc.vvm
-        vector_op_vv_carry_out<Madc, uint8_t, uint16_t, uint32_t, uint64_t, __uint128_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv_carry_out<Madc, uint8_t, uint16_t, uint32_t, uint64_t, __uint128_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 18: { // vsbc.vvm
         vector_op_vv_carry<Sbc, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl);
       } break;
       case 19: { // vmsbc.vv, vmsbc.vvm
-        vector_op_vv_carry_out<Msbc, uint8_t, uint16_t, uint32_t, uint64_t, __uint128_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv_carry_out<Msbc, uint8_t, uint16_t, uint32_t, uint64_t, __uint128_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 23: {
-        if (vmask) { // vmv.v.v
+        if (is_masked) { // vmv.v.v
           if (rsrc1 != 0) {
             std::cout << "For vmv.v.v vs2 must contain v0." << std::endl;
             std::abort();
           }
-          vector_op_vv<Mv, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+          vector_op_vv<Mv, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
         } else { // vmerge.vvm
-          vector_op_vv_merge<int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+          vector_op_vv_merge<int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
         }
       } break;
       case 24: { // vmseq.vv
-        vector_op_vv_mask<Eq, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv_mask<Eq, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 25: { // vmsne.vv
-        vector_op_vv_mask<Ne, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv_mask<Ne, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 26: { // vmsltu.vv
-        vector_op_vv_mask<Lt, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv_mask<Lt, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 27: { // vmslt.vv
-        vector_op_vv_mask<Lt, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv_mask<Lt, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 28: { // vmsleu.vv
-        vector_op_vv_mask<Le, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv_mask<Le, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 29: { // vmsle.vv
-        vector_op_vv_mask<Le, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv_mask<Le, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 30: { // vmsgtu.vv
-        vector_op_vv_mask<Gt, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv_mask<Gt, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 31: { // vmsgt.vv
-        vector_op_vv_mask<Gt, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv_mask<Gt, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 32: { // vsaddu.vv
-        vector_op_vv_sat<Sadd, uint8_t, uint16_t, uint32_t, uint64_t, __uint128_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask, 2, states.vxsat);
+        vector_op_vv_sat<Sadd, uint8_t, uint16_t, uint32_t, uint64_t, __uint128_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked, 2, states.vxsat);
       } break;
       case 33: { // vsadd.vv
-        vector_op_vv_sat<Sadd, int8_t, int16_t, int32_t, int64_t, __int128_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask, 2, states.vxsat);
+        vector_op_vv_sat<Sadd, int8_t, int16_t, int32_t, int64_t, __int128_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked, 2, states.vxsat);
       } break;
       case 34: { // vssubu.vv
-        vector_op_vv_sat<Ssubu, uint8_t, uint16_t, uint32_t, uint64_t, __uint128_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask, 2, states.vxsat);
+        vector_op_vv_sat<Ssubu, uint8_t, uint16_t, uint32_t, uint64_t, __uint128_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked, 2, states.vxsat);
       } break;
       case 35: { // vssub.vv
-        vector_op_vv_sat<Ssub, int8_t, int16_t, int32_t, int64_t, __int128_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask, 2, states.vxsat);
+        vector_op_vv_sat<Ssub, int8_t, int16_t, int32_t, int64_t, __int128_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked, 2, states.vxsat);
       } break;
       case 37: { // vsll.vv
-        vector_op_vv<Sll, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv<Sll, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 39: { // vsmul.vv
-        vector_op_vv_sat<Smul, int8_t, int16_t, int32_t, int64_t, __int128_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask, states.vxrm, states.vxsat);
+        vector_op_vv_sat<Smul, int8_t, int16_t, int32_t, int64_t, __int128_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked, states.vxrm, states.vxsat);
       } break;
       case 40: { // vsrl.vv
-        vector_op_vv<SrlSra, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv<SrlSra, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 41: { // vsra.vv
-        vector_op_vv<SrlSra, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv<SrlSra, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 42: {            // vssrl.vv
         uint32_t vxsat = 0; // saturation is not relevant for this operation
-        vector_op_vv_scale<SrlSra, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask, states.vxrm, vxsat);
+        vector_op_vv_scale<SrlSra, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked, states.vxrm, vxsat);
       } break;
       case 43: {            // vssra.vv
         uint32_t vxsat = 0; // saturation is not relevant for this operation
-        vector_op_vv_scale<SrlSra, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask, states.vxrm, vxsat);
+        vector_op_vv_scale<SrlSra, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked, states.vxrm, vxsat);
       } break;
       case 44: {            // vnsrl.wv
         uint32_t vxsat = 0; // saturation is not relevant for this operation
-        vector_op_vv_n<SrlSra, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask, 2, vxsat);
+        vector_op_vv_n<SrlSra, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked, 2, vxsat);
       } break;
       case 45: {            // vnsra.wv
         uint32_t vxsat = 0; // saturation is not relevant for this operation
-        vector_op_vv_n<SrlSra, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask, 2, vxsat);
+        vector_op_vv_n<SrlSra, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked, 2, vxsat);
       } break;
       case 46: { // vnclipu.wv
-        vector_op_vv_n<Clip, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask, states.vxrm, states.vxsat);
+        vector_op_vv_n<Clip, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked, states.vxrm, states.vxsat);
       } break;
       case 47: { // vnclip.wv
-        vector_op_vv_n<Clip, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask, states.vxrm, states.vxsat);
+        vector_op_vv_n<Clip, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked, states.vxrm, states.vxsat);
       } break;
       case 48: { // vwredsumu.vs
-        vector_op_vv_red_w<Add, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv_red_w<Add, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 49: { // vwredsum.vs
-        vector_op_vv_red_w<Add, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv_red_w<Add, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       default:
         std::cout << "Unrecognised vector - vector instruction funct6: " << funct6 << std::endl;
@@ -685,44 +834,44 @@ public:
       switch (funct6) {
       case 0: { // vfadd.vv
         vpu_op = VpuOpType::FMA;
-        vector_op_vv<Fadd, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv<Fadd, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 2: { // vfsub.vv
         vpu_op = VpuOpType::FMA;
-        vector_op_vv<Fsub, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv<Fsub, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 1:   // vfredusum.vs - treated the same as vfredosum.vs
       case 3: { // vfredosum.vs
         vpu_op = VpuOpType::FMA_R;
-        vector_op_vv_red<Fadd, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv_red<Fadd, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 4: { // vfmin.vv
         vpu_op = VpuOpType::FNCP;
-        vector_op_vv<Fmin, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv<Fmin, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 5: { // vfredmin.vs
         vpu_op = VpuOpType::FNCP_R;
-        vector_op_vv_red<Fmin, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv_red<Fmin, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 6: { // vfmax.vv
         vpu_op = VpuOpType::FNCP;
-        vector_op_vv<Fmax, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv<Fmax, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 7: { // vfredmax.vs
         vpu_op = VpuOpType::FNCP_R;
-        vector_op_vv_red<Fmax, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv_red<Fmax, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 8: { // vfsgnj.vv
         vpu_op = VpuOpType::FNCP;
-        vector_op_vv<Fsgnj, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv<Fsgnj, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 9: { // vfsgnjn.vv
         vpu_op = VpuOpType::FNCP;
-        vector_op_vv<Fsgnjn, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv<Fsgnjn, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 10: { // vfsgnjx.vv
         vpu_op = VpuOpType::FNCP;
-        vector_op_vv<Fsgnjx, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv<Fsgnjx, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 16: { // vfmv.f.s
         vpu_op = VpuOpType::FNCP;
@@ -735,14 +884,14 @@ public:
         vpu_op = VpuOpType::FCVT;
         switch (rsrc0 >> 3) {
         case 0b00: // vfcvt.xu.f.v, vfcvt.x.f.v, vfcvt.f.xu.v, vfcvt.f.x.v, vfcvt.rtz.xu.f.v, vfcvt.rtz.x.f.v
-          vector_op_vix<Fcvt, uint8_t, uint16_t, uint32_t, uint64_t>(rsrc0, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+          vector_op_vix<Fcvt, uint8_t, uint16_t, uint32_t, uint64_t>(rsrc0, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
           break;
         case 0b01: // vfwcvt.xu.f.v, vfwcvt.x.f.v, vfwcvt.f.xu.v, vfwcvt.f.x.v, vfwcvt.f.f.v, vfwcvt.rtz.xu.f.v, vfwcvt.rtz.x.f.v
-          vector_op_vix_w<Fcvt, uint8_t, uint16_t, uint32_t, uint64_t>(rsrc0, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+          vector_op_vix_w<Fcvt, uint8_t, uint16_t, uint32_t, uint64_t>(rsrc0, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
           break;
         case 0b10: {          // vfncvt.xu.f.w, vfncvt.x.f.w, vfncvt.f.xu.w, vfncvt.f.x.w, vfncvt.f.f.w, vfncvt.rod.f.f.w, vfncvt.rtz.xu.f.w, vfncvt.rtz.x.f.w
           uint32_t vxsat = 0; // saturation argument is unused
-          vector_op_vix_n<Fcvt, uint8_t, uint16_t, uint32_t, uint64_t>(rsrc0, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask, states.vxrm, vxsat);
+          vector_op_vix_n<Fcvt, uint8_t, uint16_t, uint32_t, uint64_t>(rsrc0, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked, states.vxrm, vxsat);
           break;
         }
         default:
@@ -752,104 +901,104 @@ public:
       } break;
       case 19: { // vfsqrt.v, vfrsqrt7.v, vfrec7.v, vfclass.v
         vpu_op = VpuOpType::FSQRT;
-        vector_op_vix<Funary1, uint8_t, uint16_t, uint32_t, uint64_t>(rsrc0, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix<Funary1, uint8_t, uint16_t, uint32_t, uint64_t>(rsrc0, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 24: { // vmfeq.vv
         vpu_op = VpuOpType::FNCP;
-        vector_op_vv_mask<Feq, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv_mask<Feq, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 25: { // vmfle.vv
         vpu_op = VpuOpType::FNCP;
-        vector_op_vv_mask<Fle, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv_mask<Fle, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 27: { // vmflt.vv
         vpu_op = VpuOpType::FNCP;
-        vector_op_vv_mask<Flt, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv_mask<Flt, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 28: { // vmfne.vv
         vpu_op = VpuOpType::FNCP;
-        vector_op_vv_mask<Fne, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv_mask<Fne, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 32: { // vfdiv.vv
         vpu_op = VpuOpType::FDIV;
-        vector_op_vv<Fdiv, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv<Fdiv, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 36: { // vfmul.vv
         vpu_op = VpuOpType::FMA;
-        vector_op_vv<Fmul, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv<Fmul, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 40: { // vfmadd.vv
         vpu_op = VpuOpType::FMA;
-        vector_op_vv<Fmadd, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv<Fmadd, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 41: { // vfnmadd.vv
         vpu_op = VpuOpType::FMA;
-        vector_op_vv<Fnmadd, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv<Fnmadd, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 42: { // vfmsub.vv
         vpu_op = VpuOpType::FMA;
-        vector_op_vv<Fmsub, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv<Fmsub, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 43: { // vfnmsub.vv
         vpu_op = VpuOpType::FMA;
-        vector_op_vv<Fnmsub, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv<Fnmsub, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 44: { // vfmacc.vv
         vpu_op = VpuOpType::FMA;
-        vector_op_vv<Fmacc, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv<Fmacc, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 45: { // vfnmacc.vv
         vpu_op = VpuOpType::FMA;
-        vector_op_vv<Fnmacc, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv<Fnmacc, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 46: { // vfmsac.vv
         vpu_op = VpuOpType::FMA;
-        vector_op_vv<Fmsac, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv<Fmsac, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 47: { // vfnmsac.vv
         vpu_op = VpuOpType::FMA;
-        vector_op_vv<Fnmsac, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv<Fnmsac, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 48: { // vfwadd.vv
         vpu_op = VpuOpType::FMA;
-        vector_op_vv_w<Fadd, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv_w<Fadd, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 51:   // vfwredosum.vs
       case 49: { // vfwredusum.vv
         vpu_op = VpuOpType::FMA;
-        vector_op_vv_red_wf<Fadd, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv_red_wf<Fadd, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 50: { // vfwsub.vv
         vpu_op = VpuOpType::FMA;
-        vector_op_vv_w<Fsub, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv_w<Fsub, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 52: { // vfwadd.wv
         vpu_op = VpuOpType::FMA;
-        vector_op_vv_wfv<Fadd, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv_wfv<Fadd, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 54: { // vfwsub.wv
         vpu_op = VpuOpType::FMA;
-        vector_op_vv_wfv<Fsub, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv_wfv<Fsub, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 56: { // vfwmul.vv
         vpu_op = VpuOpType::FMA;
-        vector_op_vv_w<Fmul, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv_w<Fmul, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 60: { // vfwmacc.vv
         vpu_op = VpuOpType::FMA;
-        vector_op_vv_w<Fmacc, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv_w<Fmacc, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 61: { // vfwnmacc.vv
         vpu_op = VpuOpType::FMA;
-        vector_op_vv_w<Fnmacc, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv_w<Fnmacc, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 62: { // vfwmsac.vv
         vpu_op = VpuOpType::FMA;
-        vector_op_vv_w<Fmsac, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv_w<Fmsac, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 63: { // vfwnmsac.vv
         vpu_op = VpuOpType::FMA;
-        vector_op_vv_w<Fnmsac, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv_w<Fnmsac, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       default:
         std::cout << "Unrecognised float vector - vector instruction funct6: " << funct6 << std::endl;
@@ -860,51 +1009,51 @@ public:
       switch (funct6) {
       case 0: { // vredsum.vs
         vpu_op = VpuOpType::ARITH_R;
-        vector_op_vv_red<Add, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv_red<Add, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 1: { // vredand.vs
         vpu_op = VpuOpType::ARITH_R;
-        vector_op_vv_red<And, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv_red<And, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 2: { // vredor.vs
         vpu_op = VpuOpType::ARITH_R;
-        vector_op_vv_red<Or, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv_red<Or, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 3: { // vredxor.vs
         vpu_op = VpuOpType::ARITH_R;
-        vector_op_vv_red<Xor, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv_red<Xor, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 4: { // vredminu.vs
         vpu_op = VpuOpType::ARITH_R;
-        vector_op_vv_red<Min, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv_red<Min, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 5: { // vredmin.vs
         vpu_op = VpuOpType::ARITH_R;
-        vector_op_vv_red<Min, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv_red<Min, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 6: { // vredmaxu.vs
         vpu_op = VpuOpType::ARITH_R;
-        vector_op_vv_red<Max, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv_red<Max, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 7: { // vredmax.vs
         vpu_op = VpuOpType::ARITH_R;
-        vector_op_vv_red<Max, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv_red<Max, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 8: {             // vaaddu.vv
         uint32_t vxsat = 0; // saturation is not relevant for this operation
-        vector_op_vv_sat<Aadd, uint8_t, uint16_t, uint32_t, uint64_t, __uint128_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask, states.vxrm, vxsat);
+        vector_op_vv_sat<Aadd, uint8_t, uint16_t, uint32_t, uint64_t, __uint128_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked, states.vxrm, vxsat);
       } break;
       case 9: {             // vaadd.vv
         uint32_t vxsat = 0; // saturation is not relevant for this operation
-        vector_op_vv_sat<Aadd, int8_t, int16_t, int32_t, int64_t, __int128_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask, states.vxrm, vxsat);
+        vector_op_vv_sat<Aadd, int8_t, int16_t, int32_t, int64_t, __int128_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked, states.vxrm, vxsat);
       } break;
       case 10: {            // vasubu.vv
         uint32_t vxsat = 0; // saturation is not relevant for this operation
-        vector_op_vv_sat<Asub, uint8_t, uint16_t, uint32_t, uint64_t, __uint128_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask, states.vxrm, vxsat);
+        vector_op_vv_sat<Asub, uint8_t, uint16_t, uint32_t, uint64_t, __uint128_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked, states.vxrm, vxsat);
       } break;
       case 11: {            // vasub.vv
         uint32_t vxsat = 0; // saturation is not relevant for this operation
-        vector_op_vv_sat<Asub, int8_t, int16_t, int32_t, int64_t, __int128_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask, states.vxrm, vxsat);
+        vector_op_vv_sat<Asub, int8_t, int16_t, int32_t, int64_t, __int128_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked, states.vxrm, vxsat);
       } break;
       case 16: { // vmv.x.s
         WordI result = 0;
@@ -919,10 +1068,10 @@ public:
           std::cout << "Lmul*vf<1/8 is not supported by vzext and vsext." << std::endl;
           std::abort();
         }
-        vector_op_vix_ext<Xunary0>(rsrc0, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix_ext<Xunary0>(rsrc0, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 20: { // vid.v
-        vector_op_vid(vreg_file, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vid(vreg_file, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 23: { // vcompress.vm
         vector_op_vv_compress<uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl);
@@ -953,99 +1102,99 @@ public:
       } break;
       case 32: { // vdivu.vv
         vpu_op = VpuOpType::IDIV;
-        vector_op_vv<Div, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv<Div, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 33: { // vdiv.vv
         vpu_op = VpuOpType::IDIV;
-        vector_op_vv<Div, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv<Div, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 34: { // vremu.vv
         vpu_op = VpuOpType::IDIV;
-        vector_op_vv<Rem, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv<Rem, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 35: { // vrem.vv
         vpu_op = VpuOpType::IDIV;
-        vector_op_vv<Rem, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv<Rem, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 36: { // vmulhu.vv
         vpu_op = VpuOpType::IMUL;
-        vector_op_vv<Mulhu, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv<Mulhu, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 37: { // vmul.vv
         vpu_op = VpuOpType::IMUL;
-        vector_op_vv<Mul, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv<Mul, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 38: { // vmulhsu.vv
         vpu_op = VpuOpType::IMUL;
-        vector_op_vv<Mulhsu, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv<Mulhsu, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 39: { // vmulh.vv
         vpu_op = VpuOpType::IMUL;
-        vector_op_vv<Mulh, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv<Mulh, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 41: { // vmadd.vv
         vpu_op = VpuOpType::IMUL;
-        vector_op_vv<Madd, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv<Madd, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 43: { // vnmsub.vv
         vpu_op = VpuOpType::IMUL;
-        vector_op_vv<Nmsub, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv<Nmsub, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 45: { // vmacc.vv
         vpu_op = VpuOpType::IMUL;
-        vector_op_vv<Macc, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv<Macc, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 47: { // vnmsac.vv
         vpu_op = VpuOpType::IMUL;
-        vector_op_vv<Nmsac, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv<Nmsac, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 48: { // vwaddu.vv
-        vector_op_vv_w<Add, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv_w<Add, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 49: { // vwadd.vv
-        vector_op_vv_w<Add, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv_w<Add, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 50: { // vwsubu.vv
-        vector_op_vv_w<Sub, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv_w<Sub, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 51: { // vwsub.vv
-        vector_op_vv_w<Sub, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv_w<Sub, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 52: { // vwaddu.wv
-        vector_op_vv_wv<Add, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv_wv<Add, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 53: { // vwadd.wv
-        vector_op_vv_wv<Add, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv_wv<Add, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 54: { // vwsubu.wv
-        vector_op_vv_wv<Sub, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv_wv<Sub, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 55: { // vwsub.wv
-        vector_op_vv_wv<Sub, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv_wv<Sub, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 56: { // vwmulu.vv
         vpu_op = VpuOpType::IMUL;
-        vector_op_vv_w<Mul, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv_w<Mul, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 58: { // vwmulsu.vv
         vpu_op = VpuOpType::IMUL;
-        vector_op_vv_w<Mulsu, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv_w<Mulsu, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 59: { // vwmul.vv
         vpu_op = VpuOpType::IMUL;
-        vector_op_vv_w<Mul, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv_w<Mul, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 60: { // vwmaccu.vv
         vpu_op = VpuOpType::IMUL;
-        vector_op_vv_w<Macc, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv_w<Macc, uint8_t, uint16_t, uint32_t, uint64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 61: { // vwmacc.vv
         vpu_op = VpuOpType::IMUL;
-        vector_op_vv_w<Macc, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv_w<Macc, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 63: { // vwmaccsu.vv
         vpu_op = VpuOpType::IMUL;
-        vector_op_vv_w<Maccsu, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vv_w<Maccsu, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       default:
         std::cout << "Unrecognised mask vector - vector instruction funct6: " << funct6 << std::endl;
@@ -1056,78 +1205,78 @@ public:
       vpu_op = VpuOpType::ARITH;
       switch (funct6) {
       case 0: { // vadd.vi
-        vector_op_vix<Add, int8_t, int16_t, int32_t, int64_t>(immsrc, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix<Add, int8_t, int16_t, int32_t, int64_t>(immsrc, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 3: { // vrsub.vi
-        vector_op_vix<Rsub, int8_t, int16_t, int32_t, int64_t>(immsrc, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix<Rsub, int8_t, int16_t, int32_t, int64_t>(immsrc, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 9: { // vand.vi
-        vector_op_vix<And, int8_t, int16_t, int32_t, int64_t>(immsrc, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix<And, int8_t, int16_t, int32_t, int64_t>(immsrc, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 10: { // vor.vi
-        vector_op_vix<Or, int8_t, int16_t, int32_t, int64_t>(immsrc, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix<Or, int8_t, int16_t, int32_t, int64_t>(immsrc, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 11: { // vxor.vi
-        vector_op_vix<Xor, int8_t, int16_t, int32_t, int64_t>(immsrc, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix<Xor, int8_t, int16_t, int32_t, int64_t>(immsrc, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 12: { // vrgather.vi
-        vector_op_vix_gather<uint8_t, uint16_t, uint32_t, uint64_t>(uimmsrc, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, states.vlmax, vmask);
+        vector_op_vix_gather<uint8_t, uint16_t, uint32_t, uint64_t>(uimmsrc, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, states.vlmax, is_masked);
       } break;
       case 14: { // vslideup.vi
-        vector_op_vix_slide<uint8_t, uint16_t, uint32_t, uint64_t>(uimmsrc, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, 0, vmask, false);
+        vector_op_vix_slide<uint8_t, uint16_t, uint32_t, uint64_t>(uimmsrc, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, 0, is_masked, false);
       } break;
       case 15: { // vslidedown.vi
-        vector_op_vix_slide<uint8_t, uint16_t, uint32_t, uint64_t>(uimmsrc, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, states.vlmax, vmask, false);
+        vector_op_vix_slide<uint8_t, uint16_t, uint32_t, uint64_t>(uimmsrc, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, states.vlmax, is_masked, false);
       } break;
       case 16: { // vadc.vim
         vector_op_vix_carry<Adc, uint8_t, uint16_t, uint32_t, uint64_t>(immsrc, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl);
       } break;
       case 17: { // vmadc.vi, vmadc.vim
-        vector_op_vix_carry_out<Madc, uint8_t, uint16_t, uint32_t, uint64_t, __uint128_t>(immsrc, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix_carry_out<Madc, uint8_t, uint16_t, uint32_t, uint64_t, __uint128_t>(immsrc, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 23: {     // vmv.v.i
-        if (vmask) { // vmv.v.i
+        if (is_masked) { // vmv.v.i
           if (rsrc1 != 0) {
             std::cout << "For vmv.v.i vs2 must contain v0." << std::endl;
             std::abort();
           }
-          vector_op_vix<Mv, int8_t, int16_t, int32_t, int64_t>(immsrc, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+          vector_op_vix<Mv, int8_t, int16_t, int32_t, int64_t>(immsrc, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
         } else { // vmerge.vim
-          vector_op_vix_merge<int8_t, int16_t, int32_t, int64_t>(immsrc, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+          vector_op_vix_merge<int8_t, int16_t, int32_t, int64_t>(immsrc, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
         }
       } break;
       case 24: { // vmseq.vi
-        vector_op_vix_mask<Eq, int8_t, int16_t, int32_t, int64_t>(immsrc, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix_mask<Eq, int8_t, int16_t, int32_t, int64_t>(immsrc, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 25: { // vmsne.vi
-        vector_op_vix_mask<Ne, int8_t, int16_t, int32_t, int64_t>(immsrc, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix_mask<Ne, int8_t, int16_t, int32_t, int64_t>(immsrc, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 26: { // vmsltu.vi
-        vector_op_vix_mask<Lt, uint8_t, uint16_t, uint32_t, uint64_t>(immsrc, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix_mask<Lt, uint8_t, uint16_t, uint32_t, uint64_t>(immsrc, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 27: { // vmslt.vi
-        vector_op_vix_mask<Lt, int8_t, int16_t, int32_t, int64_t>(immsrc, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix_mask<Lt, int8_t, int16_t, int32_t, int64_t>(immsrc, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 28: { // vmsleu.vi
-        vector_op_vix_mask<Le, uint8_t, uint16_t, uint32_t, uint64_t>(immsrc, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix_mask<Le, uint8_t, uint16_t, uint32_t, uint64_t>(immsrc, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 29: { // vmsle.vi
-        vector_op_vix_mask<Le, int8_t, int16_t, int32_t, int64_t>(immsrc, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix_mask<Le, int8_t, int16_t, int32_t, int64_t>(immsrc, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 30: { // vmsgtu.vi
-        vector_op_vix_mask<Gt, uint8_t, uint16_t, uint32_t, uint64_t>(immsrc, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix_mask<Gt, uint8_t, uint16_t, uint32_t, uint64_t>(immsrc, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 31: { // vmsgt.vi
-        vector_op_vix_mask<Gt, int8_t, int16_t, int32_t, int64_t>(immsrc, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix_mask<Gt, int8_t, int16_t, int32_t, int64_t>(immsrc, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 32: { // vsaddu.vi
-        vector_op_vix_sat<Sadd, uint8_t, uint16_t, uint32_t, uint64_t, __uint128_t>(immsrc, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask, 2, states.vxsat);
+        vector_op_vix_sat<Sadd, uint8_t, uint16_t, uint32_t, uint64_t, __uint128_t>(immsrc, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked, 2, states.vxsat);
       } break;
       case 33: { // vsadd.vi
-        vector_op_vix_sat<Sadd, int8_t, int16_t, int32_t, int64_t, __int128_t>(immsrc, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask, 2, states.vxsat);
+        vector_op_vix_sat<Sadd, int8_t, int16_t, int32_t, int64_t, __int128_t>(immsrc, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked, 2, states.vxsat);
       } break;
       case 37: { // vsll.vi
-        vector_op_vix<Sll, int8_t, int16_t, int32_t, int64_t>(immsrc, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix<Sll, int8_t, int16_t, int32_t, int64_t>(immsrc, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 39: { // vmv1r.v, vmv2r.v, vmv4r.v, vmv8r.v
         uint32_t nreg = (immsrc & 0b111) + 1;
@@ -1137,35 +1286,35 @@ public:
         }
         uint32_t vl = (nreg * VLENB) >> states.vtype.vsew;
         trace_data->vl = vl;
-        vector_op_vv<Mv, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc1, rsrc1, rdest, states.vtype.vsew, vl, vmask);
+        vector_op_vv<Mv, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc1, rsrc1, rdest, states.vtype.vsew, vl, is_masked);
       } break;
       case 40: { // vsrl.vi
-        vector_op_vix<SrlSra, uint8_t, uint16_t, uint32_t, uint64_t>(immsrc, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix<SrlSra, uint8_t, uint16_t, uint32_t, uint64_t>(immsrc, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 41: { // vsra.vi
-        vector_op_vix<SrlSra, int8_t, int16_t, int32_t, int64_t>(immsrc, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix<SrlSra, int8_t, int16_t, int32_t, int64_t>(immsrc, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 42: {            // vssrl.vi
         uint32_t vxsat = 0; // saturation is not relevant for this operation
-        vector_op_vix_scale<SrlSra, uint8_t, uint16_t, uint32_t, uint64_t>(immsrc, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask, states.vxrm, vxsat);
+        vector_op_vix_scale<SrlSra, uint8_t, uint16_t, uint32_t, uint64_t>(immsrc, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked, states.vxrm, vxsat);
       } break;
       case 43: {            // vssra.vi
         uint32_t vxsat = 0; // saturation is not relevant for this operation
-        vector_op_vix_scale<SrlSra, int8_t, int16_t, int32_t, int64_t>(immsrc, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask, states.vxrm, vxsat);
+        vector_op_vix_scale<SrlSra, int8_t, int16_t, int32_t, int64_t>(immsrc, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked, states.vxrm, vxsat);
       } break;
       case 44: {            // vnsrl.wi
         uint32_t vxsat = 0; // saturation is not relevant for this operation
-        vector_op_vix_n<SrlSra, uint8_t, uint16_t, uint32_t, uint64_t>(immsrc, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask, 2, vxsat);
+        vector_op_vix_n<SrlSra, uint8_t, uint16_t, uint32_t, uint64_t>(immsrc, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked, 2, vxsat);
       } break;
       case 45: {            // vnsra.wi
         uint32_t vxsat = 0; // saturation is not relevant for this operation
-        vector_op_vix_n<SrlSra, int8_t, int16_t, int32_t, int64_t>(immsrc, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask, 2, vxsat);
+        vector_op_vix_n<SrlSra, int8_t, int16_t, int32_t, int64_t>(immsrc, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked, 2, vxsat);
       } break;
       case 46: { // vnclipu.wi
-        vector_op_vix_n<Clip, uint8_t, uint16_t, uint32_t, uint64_t>(immsrc, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask, states.vxrm, states.vxsat);
+        vector_op_vix_n<Clip, uint8_t, uint16_t, uint32_t, uint64_t>(immsrc, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked, states.vxrm, states.vxsat);
       } break;
       case 47: { // vnclip.wi
-        vector_op_vix_n<Clip, int8_t, int16_t, int32_t, int64_t>(immsrc, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask, states.vxrm, states.vxsat);
+        vector_op_vix_n<Clip, int8_t, int16_t, int32_t, int64_t>(immsrc, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked, states.vxrm, states.vxsat);
       } break;
       default:
         std::cout << "Unrecognised vector - immidiate instruction funct6: " << funct6 << std::endl;
@@ -1177,136 +1326,136 @@ public:
       auto rs1_value = rs1_data.at(tid).i;
       switch (funct6) {
       case 0: { // vadd.vx
-        vector_op_vix<Add, int8_t, int16_t, int32_t, int64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix<Add, int8_t, int16_t, int32_t, int64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 2: { // vsub.vx
-        vector_op_vix<Sub, int8_t, int16_t, int32_t, int64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix<Sub, int8_t, int16_t, int32_t, int64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 3: { // vrsub.vx
-        vector_op_vix<Rsub, int8_t, int16_t, int32_t, int64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix<Rsub, int8_t, int16_t, int32_t, int64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 4: { // vminu.vx
-        vector_op_vix<Min, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix<Min, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 5: { // vmin.vx
-        vector_op_vix<Min, int8_t, int16_t, int32_t, int64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix<Min, int8_t, int16_t, int32_t, int64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 6: { // vmaxu.vx
-        vector_op_vix<Max, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix<Max, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 7: { // vmax.vx
-        vector_op_vix<Max, int8_t, int16_t, int32_t, int64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix<Max, int8_t, int16_t, int32_t, int64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 9: { // vand.vx
-        vector_op_vix<And, int8_t, int16_t, int32_t, int64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix<And, int8_t, int16_t, int32_t, int64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 10: { // vor.vx
-        vector_op_vix<Or, int8_t, int16_t, int32_t, int64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix<Or, int8_t, int16_t, int32_t, int64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 11: { // vxor.vx
-        vector_op_vix<Xor, int8_t, int16_t, int32_t, int64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix<Xor, int8_t, int16_t, int32_t, int64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 12: { // vrgather.vx
-        vector_op_vix_gather<uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, states.vlmax, vmask);
+        vector_op_vix_gather<uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, states.vlmax, is_masked);
       } break;
       case 14: { // vslideup.vx
-        vector_op_vix_slide<uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, 0, vmask, false);
+        vector_op_vix_slide<uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, 0, is_masked, false);
       } break;
       case 15: { // vslidedown.vx
-        vector_op_vix_slide<uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, states.vlmax, vmask, false);
+        vector_op_vix_slide<uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, states.vlmax, is_masked, false);
       } break;
       case 16: { // vadc.vxm
         vector_op_vix_carry<Adc, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl);
       } break;
       case 17: { // vmadc.vx, vmadc.vxm
-        vector_op_vix_carry_out<Madc, uint8_t, uint16_t, uint32_t, uint64_t, __uint128_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix_carry_out<Madc, uint8_t, uint16_t, uint32_t, uint64_t, __uint128_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 18: { // vsbc.vxm
         vector_op_vix_carry<Sbc, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl);
       } break;
       case 19: { // vmsbc.vx, vmsbc.vxm
-        vector_op_vix_carry_out<Msbc, uint8_t, uint16_t, uint32_t, uint64_t, __uint128_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix_carry_out<Msbc, uint8_t, uint16_t, uint32_t, uint64_t, __uint128_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 23: {
-        if (vmask) { // vmv.v.x
+        if (is_masked) { // vmv.v.x
           if (rsrc1 != 0) {
             std::cout << "For vmv.v.x vs2 must contain v0." << std::endl;
             std::abort();
           }
-          vector_op_vix<Mv, int8_t, int16_t, int32_t, int64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+          vector_op_vix<Mv, int8_t, int16_t, int32_t, int64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
         } else { // vmerge.vxm
-          vector_op_vix_merge<int8_t, int16_t, int32_t, int64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+          vector_op_vix_merge<int8_t, int16_t, int32_t, int64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
         }
       } break;
       case 24: { // vmseq.vx
-        vector_op_vix_mask<Eq, int8_t, int16_t, int32_t, int64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix_mask<Eq, int8_t, int16_t, int32_t, int64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 25: { // vmsne.vx
-        vector_op_vix_mask<Ne, int8_t, int16_t, int32_t, int64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix_mask<Ne, int8_t, int16_t, int32_t, int64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 26: { // vmsltu.vx
-        vector_op_vix_mask<Lt, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix_mask<Lt, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 27: { // vmslt.vx
-        vector_op_vix_mask<Lt, int8_t, int16_t, int32_t, int64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix_mask<Lt, int8_t, int16_t, int32_t, int64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 28: { // vmsleu.vx
-        vector_op_vix_mask<Le, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix_mask<Le, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 29: { // vmsle.vx
-        vector_op_vix_mask<Le, int8_t, int16_t, int32_t, int64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix_mask<Le, int8_t, int16_t, int32_t, int64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 30: { // vmsgtu.vx
-        vector_op_vix_mask<Gt, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix_mask<Gt, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 31: { // vmsgt.vx
-        vector_op_vix_mask<Gt, int8_t, int16_t, int32_t, int64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix_mask<Gt, int8_t, int16_t, int32_t, int64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 32: { // vsaddu.vx
-        vector_op_vix_sat<Sadd, uint8_t, uint16_t, uint32_t, uint64_t, __uint128_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask, 2, states.vxsat);
+        vector_op_vix_sat<Sadd, uint8_t, uint16_t, uint32_t, uint64_t, __uint128_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked, 2, states.vxsat);
       } break;
       case 33: { // vsadd.vx
-        vector_op_vix_sat<Sadd, int8_t, int16_t, int32_t, int64_t, __int128_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask, 2, states.vxsat);
+        vector_op_vix_sat<Sadd, int8_t, int16_t, int32_t, int64_t, __int128_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked, 2, states.vxsat);
       } break;
       case 34: { // vssubu.vx
-        vector_op_vix_sat<Ssubu, uint8_t, uint16_t, uint32_t, uint64_t, __uint128_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask, 2, states.vxsat);
+        vector_op_vix_sat<Ssubu, uint8_t, uint16_t, uint32_t, uint64_t, __uint128_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked, 2, states.vxsat);
       } break;
       case 35: { // vssub.vx
-        vector_op_vix_sat<Ssub, int8_t, int16_t, int32_t, int64_t, __int128_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask, 2, states.vxsat);
+        vector_op_vix_sat<Ssub, int8_t, int16_t, int32_t, int64_t, __int128_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked, 2, states.vxsat);
       } break;
       case 37: { // vsll.vx
-        vector_op_vix<Sll, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix<Sll, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 39: { // vsmul.vx
-        vector_op_vix_sat<Smul, int8_t, int16_t, int32_t, int64_t, __int128_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask, states.vxrm, states.vxsat);
+        vector_op_vix_sat<Smul, int8_t, int16_t, int32_t, int64_t, __int128_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked, states.vxrm, states.vxsat);
       } break;
       case 40: { // vsrl.vx
-        vector_op_vix<SrlSra, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix<SrlSra, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 41: { // vsra.vx
-        vector_op_vix<SrlSra, int8_t, int16_t, int32_t, int64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix<SrlSra, int8_t, int16_t, int32_t, int64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 42: {            // vssrl.vx
         uint32_t vxsat = 0; // saturation is not relevant for this operation
-        vector_op_vix_scale<SrlSra, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask, states.vxrm, vxsat);
+        vector_op_vix_scale<SrlSra, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked, states.vxrm, vxsat);
       } break;
       case 43: {            // vssra.vx
         uint32_t vxsat = 0; // saturation is not relevant for this operation
-        vector_op_vix_scale<SrlSra, int8_t, int16_t, int32_t, int64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask, states.vxrm, vxsat);
+        vector_op_vix_scale<SrlSra, int8_t, int16_t, int32_t, int64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked, states.vxrm, vxsat);
       } break;
       case 44: {            // vnsrl.wx
         uint32_t vxsat = 0; // saturation is not relevant for this operation
-        vector_op_vix_n<SrlSra, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask, 2, vxsat);
+        vector_op_vix_n<SrlSra, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked, 2, vxsat);
       } break;
       case 45: {            // vnsra.wx
         uint32_t vxsat = 0; // saturation is not relevant for this operation
-        vector_op_vix_n<SrlSra, int8_t, int16_t, int32_t, int64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask, 2, vxsat);
+        vector_op_vix_n<SrlSra, int8_t, int16_t, int32_t, int64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked, 2, vxsat);
       } break;
       case 46: { // vnclipu.wx
-        vector_op_vix_n<Clip, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask, states.vxrm, states.vxsat);
+        vector_op_vix_n<Clip, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked, states.vxrm, states.vxsat);
       } break;
       case 47: { // vnclip.wx
-        vector_op_vix_n<Clip, int8_t, int16_t, int32_t, int64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask, states.vxrm, states.vxsat);
+        vector_op_vix_n<Clip, int8_t, int16_t, int32_t, int64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked, states.vxrm, states.vxsat);
       } break;
       default:
         std::cout << "Unrecognised vector - scalar instruction funct6: " << funct6 << std::endl;
@@ -1318,39 +1467,39 @@ public:
       switch (funct6) {
       case 0: { // vfadd.vf
         vpu_op = VpuOpType::FMA;
-        vector_op_vix<Fadd, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix<Fadd, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 2: { // vfsub.vf
         vpu_op = VpuOpType::FMA;
-        vector_op_vix<Fsub, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix<Fsub, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 4: { // vfmin.vf
         vpu_op = VpuOpType::FNCP;
-        vector_op_vix<Fmin, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix<Fmin, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 6: { // vfmax.vf
         vpu_op = VpuOpType::FNCP;
-        vector_op_vix<Fmax, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix<Fmax, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 8: { // vfsgnj.vf
         vpu_op = VpuOpType::FNCP;
-        vector_op_vix<Fsgnj, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix<Fsgnj, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 9: { // vfsgnjn.vf
         vpu_op = VpuOpType::FNCP;
-        vector_op_vix<Fsgnjn, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix<Fsgnjn, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 10: { // vfsgnjx.vf
         vpu_op = VpuOpType::FNCP;
-        vector_op_vix<Fsgnjx, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix<Fsgnjx, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 14: { // vfslide1up.vf
         vpu_op = VpuOpType::FNCP;
-        vector_op_vix_slide<uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, 0, vmask, true);
+        vector_op_vix_slide<uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, 0, is_masked, true);
       } break;
       case 15: { // vfslide1down.vf
         vpu_op = VpuOpType::FNCP;
-        vector_op_vix_slide<uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, states.vlmax, vmask, true);
+        vector_op_vix_slide<uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, states.vlmax, is_masked, true);
       } break;
       case 16: { // vfmv.s.f
         vpu_op = VpuOpType::FNCP;
@@ -1360,129 +1509,129 @@ public:
         }
         uint32_t vl = std::min(states.vl, (uint32_t)1);
         trace_data->vl = vl;
-        vector_op_vix<Mv, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, vl, vmask);
+        vector_op_vix<Mv, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, vl, is_masked);
       } break;
       case 24: { // vmfeq.vf
         vpu_op = VpuOpType::FNCP;
-        vector_op_vix_mask<Feq, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix_mask<Feq, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 23: {
         vpu_op = VpuOpType::FNCP;
-        if (vmask) { // vfmv.v.f
+        if (is_masked) { // vfmv.v.f
           if (rsrc1 != 0) {
             std::cout << "For vfmv.v.f vs2 must contain v0." << std::endl;
             std::abort();
           }
-          vector_op_vix<Mv, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+          vector_op_vix<Mv, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
         } else { // vfmerge.vfm
-          vector_op_vix_merge<int8_t, int16_t, int32_t, int64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+          vector_op_vix_merge<int8_t, int16_t, int32_t, int64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
         }
       } break;
       case 25: { // vmfle.vf
         vpu_op = VpuOpType::FNCP;
-        vector_op_vix_mask<Fle, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix_mask<Fle, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 27: { // vmflt.vf
         vpu_op = VpuOpType::FNCP;
-        vector_op_vix_mask<Flt, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix_mask<Flt, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 28: { // vmfne.vf
         vpu_op = VpuOpType::FNCP;
-        vector_op_vix_mask<Fne, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix_mask<Fne, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 29: { // vmfgt.vf
         vpu_op = VpuOpType::FNCP;
-        vector_op_vix_mask<Fgt, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix_mask<Fgt, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 31: { // vmfge.vf
         vpu_op = VpuOpType::FNCP;
-        vector_op_vix_mask<Fge, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix_mask<Fge, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 32: { // vfdiv.vf
         vpu_op = VpuOpType::FDIV;
-        vector_op_vix<Fdiv, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix<Fdiv, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 33: { // vfrdiv.vf
         vpu_op = VpuOpType::FDIV;
-        vector_op_vix<Frdiv, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix<Frdiv, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 36: { // vfmul.vf
         vpu_op = VpuOpType::FMA;
-        vector_op_vix<Fmul, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix<Fmul, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 39: { // vfrsub.vf
         vpu_op = VpuOpType::FMA;
-        vector_op_vix<Frsub, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix<Frsub, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 40: { // vfmadd.vf
         vpu_op = VpuOpType::FMA;
-        vector_op_vix<Fmadd, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix<Fmadd, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 41: { // vfnmadd.vf
         vpu_op = VpuOpType::FMA;
-        vector_op_vix<Fnmadd, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix<Fnmadd, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 42: { // vfmsub.vf
         vpu_op = VpuOpType::FMA;
-        vector_op_vix<Fmsub, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix<Fmsub, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 43: { // vfnmsub.vf
         vpu_op = VpuOpType::FMA;
-        vector_op_vix<Fnmsub, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix<Fnmsub, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 44: { // vfmacc.vf
         vpu_op = VpuOpType::FMA;
-        vector_op_vix<Fmacc, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix<Fmacc, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 45: { // vfnmacc.vf
         vpu_op = VpuOpType::FMA;
-        vector_op_vix<Fnmacc, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix<Fnmacc, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 46: { // vfmsac.vf
         vpu_op = VpuOpType::FMA;
-        vector_op_vix<Fmsac, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix<Fmsac, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 47: { // vfnmsac.vf
         vpu_op = VpuOpType::FMA;
-        vector_op_vix<Fnmsac, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix<Fnmsac, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 48: { // vfwadd.vf
         vpu_op = VpuOpType::FMA;
-        vector_op_vix_w<Fadd, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix_w<Fadd, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 50: { // vfwsub.vf
         vpu_op = VpuOpType::FMA;
-        vector_op_vix_w<Fsub, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix_w<Fsub, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 52: { // vfwadd.wf
         vpu_op = VpuOpType::FMA;
         uint64_t src1_d = rv_ftod(rs1_value);
-        vector_op_vix_wx<Fadd, uint8_t, uint16_t, uint32_t, uint64_t>(src1_d, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix_wx<Fadd, uint8_t, uint16_t, uint32_t, uint64_t>(src1_d, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 54: { // vfwsub.wf
         vpu_op = VpuOpType::FMA;
         uint64_t src1_d = rv_ftod(rs1_value);
-        vector_op_vix_wx<Fsub, uint8_t, uint16_t, uint32_t, uint64_t>(src1_d, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix_wx<Fsub, uint8_t, uint16_t, uint32_t, uint64_t>(src1_d, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 56: { // vfwmul.vf
         vpu_op = VpuOpType::FMA;
-        vector_op_vix_w<Fmul, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix_w<Fmul, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 60: { // vfwmacc.vf
         vpu_op = VpuOpType::FMA;
-        vector_op_vix_w<Fmacc, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix_w<Fmacc, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 61: { // vfwnmacc.vf
         vpu_op = VpuOpType::FMA;
-        vector_op_vix_w<Fnmacc, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix_w<Fnmacc, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 62: { // vfwmsac.vf
         vpu_op = VpuOpType::FMA;
-        vector_op_vix_w<Fmsac, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix_w<Fmsac, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 63: { // vfwnmsac.vf
         vpu_op = VpuOpType::FMA;
-        vector_op_vix_w<Fnmsac, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix_w<Fnmsac, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       default:
         std::cout << "Unrecognised float vector - scalar instruction funct6: " << funct6 << std::endl;
@@ -1495,25 +1644,25 @@ public:
       switch (funct6) {
       case 8: {             // vaaddu.vx
         uint32_t vxsat = 0; // saturation is not relevant for this operation
-        vector_op_vix_sat<Aadd, uint8_t, uint16_t, uint32_t, uint64_t, __uint128_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask, states.vxrm, vxsat);
+        vector_op_vix_sat<Aadd, uint8_t, uint16_t, uint32_t, uint64_t, __uint128_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked, states.vxrm, vxsat);
       } break;
       case 9: {             // vaadd.vx
         uint32_t vxsat = 0; // saturation is not relevant for this operation
-        vector_op_vix_sat<Aadd, int8_t, int16_t, int32_t, int64_t, __int128_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask, states.vxrm, vxsat);
+        vector_op_vix_sat<Aadd, int8_t, int16_t, int32_t, int64_t, __int128_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked, states.vxrm, vxsat);
       } break;
       case 10: {            // vasubu.vx
         uint32_t vxsat = 0; // saturation is not relevant for this operation
-        vector_op_vix_sat<Asub, uint8_t, uint16_t, uint32_t, uint64_t, __uint128_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask, states.vxrm, vxsat);
+        vector_op_vix_sat<Asub, uint8_t, uint16_t, uint32_t, uint64_t, __uint128_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked, states.vxrm, vxsat);
       } break;
       case 11: {            // vasub.vx
         uint32_t vxsat = 0; // saturation is not relevant for this operation
-        vector_op_vix_sat<Asub, int8_t, int16_t, int32_t, int64_t, __int128_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask, states.vxrm, vxsat);
+        vector_op_vix_sat<Asub, int8_t, int16_t, int32_t, int64_t, __int128_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked, states.vxrm, vxsat);
       } break;
       case 14: { // vslide1up.vx
-        vector_op_vix_slide<uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, 0, vmask, true);
+        vector_op_vix_slide<uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, 0, is_masked, true);
       } break;
       case 15: { // vslide1down.vx
-        vector_op_vix_slide<uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, states.vlmax, vmask, true);
+        vector_op_vix_slide<uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, states.vlmax, is_masked, true);
       } break;
       case 16: { // vmv.s.x
         if (rsrc1 != 0) {
@@ -1522,111 +1671,111 @@ public:
         }
         uint32_t vl = std::min(states.vl, (uint32_t)1);
         trace_data->vl = vl;
-        vector_op_vix<Mv, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, vl, vmask);
+        vector_op_vix<Mv, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, vl, is_masked);
       } break;
       case 32: { // vdivu.vx
         vpu_op = VpuOpType::IDIV;
-        vector_op_vix<Div, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix<Div, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 33: { // vdiv.vx
         vpu_op = VpuOpType::IDIV;
-        vector_op_vix<Div, int8_t, int16_t, int32_t, int64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix<Div, int8_t, int16_t, int32_t, int64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 34: { // vremu.vx
         vpu_op = VpuOpType::IDIV;
-        vector_op_vix<Rem, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix<Rem, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 35: { // vrem.vx
         vpu_op = VpuOpType::IDIV;
-        vector_op_vix<Rem, int8_t, int16_t, int32_t, int64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix<Rem, int8_t, int16_t, int32_t, int64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 36: { // vmulhu.vx
         vpu_op = VpuOpType::IMUL;
-        vector_op_vix<Mulhu, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix<Mulhu, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 37: { // vmul.vx
         vpu_op = VpuOpType::IMUL;
-        vector_op_vix<Mul, int8_t, int16_t, int32_t, int64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix<Mul, int8_t, int16_t, int32_t, int64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 38: { // vmulhsu.vx
         vpu_op = VpuOpType::IMUL;
-        vector_op_vix<Mulhsu, int8_t, int16_t, int32_t, int64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix<Mulhsu, int8_t, int16_t, int32_t, int64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 39: { // vmulh.vx
         vpu_op = VpuOpType::IMUL;
-        vector_op_vix<Mulh, int8_t, int16_t, int32_t, int64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix<Mulh, int8_t, int16_t, int32_t, int64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 41: { // vmadd.vx
         vpu_op = VpuOpType::IMUL;
-        vector_op_vix<Madd, int8_t, int16_t, int32_t, int64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix<Madd, int8_t, int16_t, int32_t, int64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 43: { // vnmsub.vx
         vpu_op = VpuOpType::IMUL;
-        vector_op_vix<Nmsub, int8_t, int16_t, int32_t, int64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix<Nmsub, int8_t, int16_t, int32_t, int64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 45: { // vmacc.vx
         vpu_op = VpuOpType::IMUL;
-        vector_op_vix<Macc, int8_t, int16_t, int32_t, int64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix<Macc, int8_t, int16_t, int32_t, int64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 47: { // vnmsac.vx
         vpu_op = VpuOpType::IMUL;
-        vector_op_vix<Nmsac, int8_t, int16_t, int32_t, int64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix<Nmsac, int8_t, int16_t, int32_t, int64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 48: { // vwaddu.vx
-        vector_op_vix_w<Add, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix_w<Add, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 49: { // vwadd.vx
-        vector_op_vix_w<Add, int8_t, int16_t, int32_t, int64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix_w<Add, int8_t, int16_t, int32_t, int64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 50: { // vwsubu.vx
-        vector_op_vix_w<Sub, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix_w<Sub, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 51: { // vwsub.vx
-        vector_op_vix_w<Sub, int8_t, int16_t, int32_t, int64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix_w<Sub, int8_t, int16_t, int32_t, int64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 52: { // vwaddu.wx
-        vector_op_vix_wx<Add, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix_wx<Add, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 53: { // vwadd.wx
         uint32_t vsew_bits = 1 << (3 + states.vtype.vsew);
         Word src1_ext = sext(rs1_value, vsew_bits);
-        vector_op_vix_wx<Add, int8_t, int16_t, int32_t, int64_t>(src1_ext, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix_wx<Add, int8_t, int16_t, int32_t, int64_t>(src1_ext, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 54: { // vwsubu.wx
-        vector_op_vix_wx<Sub, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix_wx<Sub, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 55: { // vwsub.wx
         uint32_t vsew_bits = 1 << (3 + states.vtype.vsew);
         Word src1_ext = sext(rs1_value, vsew_bits);
-        vector_op_vix_wx<Sub, int8_t, int16_t, int32_t, int64_t>(src1_ext, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix_wx<Sub, int8_t, int16_t, int32_t, int64_t>(src1_ext, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 56: { // vwmulu.vx
         vpu_op = VpuOpType::IMUL;
-        vector_op_vix_w<Mul, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix_w<Mul, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 58: { // vwmulsu.vx
         vpu_op = VpuOpType::IMUL;
-        vector_op_vix_w<Mulsu, int8_t, int16_t, int32_t, int64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix_w<Mulsu, int8_t, int16_t, int32_t, int64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 59: { // vwmul.vx
         vpu_op = VpuOpType::IMUL;
-        vector_op_vix_w<Mul, int8_t, int16_t, int32_t, int64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix_w<Mul, int8_t, int16_t, int32_t, int64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 60: { // vwmaccu.vx
         vpu_op = VpuOpType::IMUL;
-        vector_op_vix_w<Macc, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix_w<Macc, uint8_t, uint16_t, uint32_t, uint64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 61: { // vwmacc.vx
         vpu_op = VpuOpType::IMUL;
-        vector_op_vix_w<Macc, int8_t, int16_t, int32_t, int64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix_w<Macc, int8_t, int16_t, int32_t, int64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 62: { // vwmaccus.vx
         vpu_op = VpuOpType::IMUL;
-        vector_op_vix_w<Maccus, int8_t, int16_t, int32_t, int64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix_w<Maccus, int8_t, int16_t, int32_t, int64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       case 63: { // vwmaccsu.vx
         vpu_op = VpuOpType::IMUL;
-        vector_op_vix_w<Maccsu, int8_t, int16_t, int32_t, int64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
+        vector_op_vix_w<Maccsu, int8_t, int16_t, int32_t, int64_t>(rs1_value, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;
       default:
         std::cout << "Unrecognised vector - scalar instruction funct6: " << funct6 << std::endl;
@@ -1640,6 +1789,7 @@ public:
     // udpate trace data
     trace_data->vl = states.vl;
     trace_data->vlmul = 1;
+    trace_data->is_masked = is_masked;
     trace_data->vpu_op = vpu_op;
   }
 
@@ -1811,6 +1961,10 @@ void VecUnit::reset() {
 
 void VecUnit::tick() {
   impl_->tick();
+}
+
+bool VecUnit::decode(uint32_t code, uint32_t wid, uint64_t uuid) {
+  return impl_->decode(code, wid, uuid);
 }
 
 std::string VecUnit::dumpRegister(uint32_t wid, uint32_t tid, uint32_t reg_idx) const {

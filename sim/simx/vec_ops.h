@@ -1133,8 +1133,8 @@ public:
 
 ///////////////////////////////////////////////////////////////////////////////
 
-inline bool isMasked(const VRF_t& vreg_file, uint32_t maskVreg, uint32_t byteI, uint32_t vmask) {
-  if (vmask == 1)
+inline bool isMasked(const VRF_t& vreg_file, uint32_t maskVreg, uint32_t byteI, bool is_masked) {
+  if (is_masked)
     return false; // unmasked
   auto& mask = vreg_file.at(maskVreg);
   uint8_t emask = *(uint8_t *)(mask.data() + byteI / 8);
@@ -1222,9 +1222,9 @@ inline void setVregData(uint32_t vsew, VRF_t& vreg_file, uint32_t baseVreg, uint
 }
 
 template <template <typename DT1, typename DT2> class OP, typename DT>
-void vector_op_vix(DT first, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vl, uint32_t vmask) {
+void vector_op_vix(DT first, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vl, bool is_masked) {
   for (uint32_t i = 0; i < vl; i++) {
-    if (isMasked(vreg_file, 0, i, vmask))
+    if (isMasked(vreg_file, 0, i, is_masked))
       continue;
     DT second = getVregData<DT>(vreg_file, rsrc0, i);
     DT third = getVregData<DT>(vreg_file, rdest, i);
@@ -1235,19 +1235,19 @@ void vector_op_vix(DT first, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rdest, u
 }
 
 template <template <typename DT1, typename DT2> class OP, typename DT8, typename DT16, typename DT32, typename DT64>
-void vector_op_vix(Word src1, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vsew, uint32_t vl, uint32_t vmask) {
+void vector_op_vix(Word src1, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vsew, uint32_t vl, bool is_masked) {
   switch (vsew) {
   case 0:
-    vector_op_vix<OP, DT8>(src1, vreg_file, rsrc0, rdest, vl, vmask);
+    vector_op_vix<OP, DT8>(src1, vreg_file, rsrc0, rdest, vl, is_masked);
     break;
   case 1:
-    vector_op_vix<OP, DT16>(src1, vreg_file, rsrc0, rdest, vl, vmask);
+    vector_op_vix<OP, DT16>(src1, vreg_file, rsrc0, rdest, vl, is_masked);
     break;
   case 2:
-    vector_op_vix<OP, DT32>(src1, vreg_file, rsrc0, rdest, vl, vmask);
+    vector_op_vix<OP, DT32>(src1, vreg_file, rsrc0, rdest, vl, is_masked);
     break;
   case 3:
-    vector_op_vix<OP, DT64>(src1, vreg_file, rsrc0, rdest, vl, vmask);
+    vector_op_vix<OP, DT64>(src1, vreg_file, rsrc0, rdest, vl, is_masked);
     break;
   default:
     std::cout << "Failed to execute VI/VX for vsew: " << vsew << std::endl;
@@ -1288,10 +1288,10 @@ void vector_op_vix_carry(Word src1, VRF_t& vreg_file, uint32_t rsrc0, uint32_t r
 }
 
 template <template <typename DT1, typename DT2> class OP, typename DT, typename DTR>
-void vector_op_vix_carry_out(DT first, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vl, uint32_t vmask) {
+void vector_op_vix_carry_out(DT first, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vl, bool is_masked) {
   for (uint32_t i = 0; i < vl; i++) {
     DT second = getVregData<DT>(vreg_file, rsrc0, i);
-    bool third = !vmask && !isMasked(vreg_file, 0, i, vmask);
+    bool third = !is_masked && !isMasked(vreg_file, 0, i, is_masked);
     bool result = OP<DT, DTR>::apply(first, second, third);
     DP(4, (OP<DT, DT>::name()) << "(" << +first << ", " << +second << ", " << +third << ")" << " = " << +result);
     auto old_value = getVregData<uint8_t>(vreg_file, rdest, i / 8);
@@ -1304,19 +1304,19 @@ void vector_op_vix_carry_out(DT first, VRF_t& vreg_file, uint32_t rsrc0, uint32_
 }
 
 template <template <typename DT1, typename DT2> class OP, typename DT8, typename DT16, typename DT32, typename DT64, typename DT128>
-void vector_op_vix_carry_out(Word src1, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vsew, uint32_t vl, uint32_t vmask) {
+void vector_op_vix_carry_out(Word src1, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vsew, uint32_t vl, bool is_masked) {
   switch (vsew) {
   case 0:
-    vector_op_vix_carry_out<OP, DT8, DT16>(src1, vreg_file, rsrc0, rdest, vl, vmask);
+    vector_op_vix_carry_out<OP, DT8, DT16>(src1, vreg_file, rsrc0, rdest, vl, is_masked);
     break;
   case 1:
-    vector_op_vix_carry_out<OP, DT16, DT32>(src1, vreg_file, rsrc0, rdest, vl, vmask);
+    vector_op_vix_carry_out<OP, DT16, DT32>(src1, vreg_file, rsrc0, rdest, vl, is_masked);
     break;
   case 2:
-    vector_op_vix_carry_out<OP, DT32, DT64>(src1, vreg_file, rsrc0, rdest, vl, vmask);
+    vector_op_vix_carry_out<OP, DT32, DT64>(src1, vreg_file, rsrc0, rdest, vl, is_masked);
     break;
   case 3:
-    vector_op_vix_carry_out<OP, DT64, DT128>(src1, vreg_file, rsrc0, rdest, vl, vmask);
+    vector_op_vix_carry_out<OP, DT64, DT128>(src1, vreg_file, rsrc0, rdest, vl, is_masked);
     break;
   default:
     std::cout << "Failed to execute VI/VX carry out for vsew: " << vsew << std::endl;
@@ -1325,28 +1325,28 @@ void vector_op_vix_carry_out(Word src1, VRF_t& vreg_file, uint32_t rsrc0, uint32
 }
 
 template <typename DT>
-void vector_op_vix_merge(DT first, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vl, uint32_t vmask) {
+void vector_op_vix_merge(DT first, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vl, bool is_masked) {
   for (uint32_t i = 0; i < vl; i++) {
-    DT result = isMasked(vreg_file, 0, i, vmask) ? getVregData<DT>(vreg_file, rsrc0, i) : first;
+    DT result = isMasked(vreg_file, 0, i, is_masked) ? getVregData<DT>(vreg_file, rsrc0, i) : first;
     DP(4, "Merge - Choosing result: " << +result);
     setVregData<DT>(vreg_file, rdest, i, result);
   }
 }
 
 template <typename DT8, typename DT16, typename DT32, typename DT64>
-void vector_op_vix_merge(Word src1, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vsew, uint32_t vl, uint32_t vmask) {
+void vector_op_vix_merge(Word src1, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vsew, uint32_t vl, bool is_masked) {
   switch (vsew) {
   case 0:
-    vector_op_vix_merge<DT8>(src1, vreg_file, rsrc0, rdest, vl, vmask);
+    vector_op_vix_merge<DT8>(src1, vreg_file, rsrc0, rdest, vl, is_masked);
     break;
   case 1:
-    vector_op_vix_merge<DT16>(src1, vreg_file, rsrc0, rdest, vl, vmask);
+    vector_op_vix_merge<DT16>(src1, vreg_file, rsrc0, rdest, vl, is_masked);
     break;
   case 2:
-    vector_op_vix_merge<DT32>(src1, vreg_file, rsrc0, rdest, vl, vmask);
+    vector_op_vix_merge<DT32>(src1, vreg_file, rsrc0, rdest, vl, is_masked);
     break;
   case 3:
-    vector_op_vix_merge<DT64>(src1, vreg_file, rsrc0, rdest, vl, vmask);
+    vector_op_vix_merge<DT64>(src1, vreg_file, rsrc0, rdest, vl, is_masked);
     break;
   default:
     std::cout << "Failed to execute VI/VX for vsew: " << vsew << std::endl;
@@ -1380,9 +1380,9 @@ void vector_op_scalar(DT *dest, const VRF_t& vreg_file, uint32_t rsrc0, uint32_t
 }
 
 template <template <typename DT1, typename DT2> class OP, typename DT, typename DTR>
-void vector_op_vix_w(DT first, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vl, uint32_t vmask) {
+void vector_op_vix_w(DT first, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vl, bool is_masked) {
   for (uint32_t i = 0; i < vl; i++) {
-    if (isMasked(vreg_file, 0, i, vmask))
+    if (isMasked(vreg_file, 0, i, is_masked))
       continue;
     DT second = getVregData<DT>(vreg_file, rsrc0, i);
     DTR third = getVregData<DTR>(vreg_file, rdest, i);
@@ -1393,16 +1393,16 @@ void vector_op_vix_w(DT first, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rdest,
 }
 
 template <template <typename DT1, typename DT2> class OP, typename DT8, typename DT16, typename DT32, typename DT64>
-void vector_op_vix_w(Word src1, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vsew, uint32_t vl, uint32_t vmask) {
+void vector_op_vix_w(Word src1, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vsew, uint32_t vl, bool is_masked) {
   switch (vsew) {
   case 0:
-    vector_op_vix_w<OP, DT8, DT16>(src1, vreg_file, rsrc0, rdest, vl, vmask);
+    vector_op_vix_w<OP, DT8, DT16>(src1, vreg_file, rsrc0, rdest, vl, is_masked);
     break;
   case 1:
-    vector_op_vix_w<OP, DT16, DT32>(src1, vreg_file, rsrc0, rdest, vl, vmask);
+    vector_op_vix_w<OP, DT16, DT32>(src1, vreg_file, rsrc0, rdest, vl, is_masked);
     break;
   case 2:
-    vector_op_vix_w<OP, DT32, DT64>(src1, vreg_file, rsrc0, rdest, vl, vmask);
+    vector_op_vix_w<OP, DT32, DT64>(src1, vreg_file, rsrc0, rdest, vl, is_masked);
     break;
   default:
     std::cout << "Failed to execute VI/VX widening for vsew: " << vsew << std::endl;
@@ -1411,16 +1411,16 @@ void vector_op_vix_w(Word src1, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rdest
 }
 
 template <template <typename DT1, typename DT2> class OP, typename DT8, typename DT16, typename DT32, typename DT64>
-void vector_op_vix_wx(Word src1, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vsew, uint32_t vl, uint32_t vmask) {
+void vector_op_vix_wx(Word src1, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vsew, uint32_t vl, bool is_masked) {
   switch (vsew) {
   case 0:
-    vector_op_vix<OP, DT16>(src1, vreg_file, rsrc0, rdest, vl, vmask);
+    vector_op_vix<OP, DT16>(src1, vreg_file, rsrc0, rdest, vl, is_masked);
     break;
   case 1:
-    vector_op_vix<OP, DT32>(src1, vreg_file, rsrc0, rdest, vl, vmask);
+    vector_op_vix<OP, DT32>(src1, vreg_file, rsrc0, rdest, vl, is_masked);
     break;
   case 2:
-    vector_op_vix<OP, DT64>(src1, vreg_file, rsrc0, rdest, vl, vmask);
+    vector_op_vix<OP, DT64>(src1, vreg_file, rsrc0, rdest, vl, is_masked);
     break;
   default:
     std::cout << "Failed to execute VI/VX widening wx for vsew: " << vsew << std::endl;
@@ -1429,9 +1429,9 @@ void vector_op_vix_wx(Word src1, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rdes
 }
 
 template <template <typename DT1, typename DT2> class OP, typename DT, typename DTR>
-void vector_op_vix_n(DT first, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vl, uint32_t vmask, uint32_t vxrm, uint32_t &vxsat) {
+void vector_op_vix_n(DT first, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vl, bool is_masked, uint32_t vxrm, uint32_t &vxsat) {
   for (uint32_t i = 0; i < vl; i++) {
-    if (isMasked(vreg_file, 0, i, vmask))
+    if (isMasked(vreg_file, 0, i, is_masked))
       continue;
     DT second = getVregData<DT>(vreg_file, rsrc0, i);
     DTR result = OP<DT, DTR>::apply(first, second, vxrm, vxsat);
@@ -1441,16 +1441,16 @@ void vector_op_vix_n(DT first, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rdest,
 }
 
 template <template <typename DT1, typename DT2> class OP, typename DT8, typename DT16, typename DT32, typename DT64>
-void vector_op_vix_n(Word src1, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vsew, uint32_t vl, uint32_t vmask, uint32_t vxrm, uint32_t &vxsat) {
+void vector_op_vix_n(Word src1, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vsew, uint32_t vl, bool is_masked, uint32_t vxrm, uint32_t &vxsat) {
   switch (vsew) {
   case 0:
-    vector_op_vix_n<OP, DT16, DT8>(src1, vreg_file, rsrc0, rdest, vl, vmask, vxrm, vxsat);
+    vector_op_vix_n<OP, DT16, DT8>(src1, vreg_file, rsrc0, rdest, vl, is_masked, vxrm, vxsat);
     break;
   case 1:
-    vector_op_vix_n<OP, DT32, DT16>(src1, vreg_file, rsrc0, rdest, vl, vmask, vxrm, vxsat);
+    vector_op_vix_n<OP, DT32, DT16>(src1, vreg_file, rsrc0, rdest, vl, is_masked, vxrm, vxsat);
     break;
   case 2:
-    vector_op_vix_n<OP, DT64, DT32>(src1, vreg_file, rsrc0, rdest, vl, vmask, vxrm, vxsat);
+    vector_op_vix_n<OP, DT64, DT32>(src1, vreg_file, rsrc0, rdest, vl, is_masked, vxrm, vxsat);
     break;
   default:
     std::cout << "Failed to execute VI/VX narrowing for vsew: " << vsew << std::endl;
@@ -1459,9 +1459,9 @@ void vector_op_vix_n(Word src1, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rdest
 }
 
 template <template <typename DT1, typename DT2> class OP, typename DT, typename DTR>
-void vector_op_vix_sat(DTR first, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vl, uint32_t vmask, uint32_t vxrm, uint32_t &vxsat) {
+void vector_op_vix_sat(DTR first, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vl, bool is_masked, uint32_t vxrm, uint32_t &vxsat) {
   for (uint32_t i = 0; i < vl; i++) {
-    if (isMasked(vreg_file, 0, i, vmask))
+    if (isMasked(vreg_file, 0, i, is_masked))
       continue;
     DT second = getVregData<DTR>(vreg_file, rsrc0, i);
     DTR result = OP<DT, DTR>::apply(first, second, vxrm, vxsat);
@@ -1471,19 +1471,19 @@ void vector_op_vix_sat(DTR first, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rde
 }
 
 template <template <typename DT1, typename DT2> class OP, typename DT8, typename DT16, typename DT32, typename DT64, typename DT128>
-void vector_op_vix_sat(Word src1, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vsew, uint32_t vl, uint32_t vmask, uint32_t vxrm, uint32_t &vxsat) {
+void vector_op_vix_sat(Word src1, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vsew, uint32_t vl, bool is_masked, uint32_t vxrm, uint32_t &vxsat) {
   switch (vsew) {
   case 0:
-    vector_op_vix_sat<OP, DT16, DT8>(src1, vreg_file, rsrc0, rdest, vl, vmask, vxrm, vxsat);
+    vector_op_vix_sat<OP, DT16, DT8>(src1, vreg_file, rsrc0, rdest, vl, is_masked, vxrm, vxsat);
     break;
   case 1:
-    vector_op_vix_sat<OP, DT32, DT16>(src1, vreg_file, rsrc0, rdest, vl, vmask, vxrm, vxsat);
+    vector_op_vix_sat<OP, DT32, DT16>(src1, vreg_file, rsrc0, rdest, vl, is_masked, vxrm, vxsat);
     break;
   case 2:
-    vector_op_vix_sat<OP, DT64, DT32>(src1, vreg_file, rsrc0, rdest, vl, vmask, vxrm, vxsat);
+    vector_op_vix_sat<OP, DT64, DT32>(src1, vreg_file, rsrc0, rdest, vl, is_masked, vxrm, vxsat);
     break;
   case 3:
-    vector_op_vix_sat<OP, DT128, DT64>(src1, vreg_file, rsrc0, rdest, vl, vmask, vxrm, vxsat);
+    vector_op_vix_sat<OP, DT128, DT64>(src1, vreg_file, rsrc0, rdest, vl, is_masked, vxrm, vxsat);
     break;
   default:
     std::cout << "Failed to execute VI/VX saturating for vsew: " << vsew << std::endl;
@@ -1492,19 +1492,19 @@ void vector_op_vix_sat(Word src1, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rde
 }
 
 template <template <typename DT1, typename DT2> class OP, typename DT8, typename DT16, typename DT32, typename DT64>
-void vector_op_vix_scale(Word src1, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vsew, uint32_t vl, uint32_t vmask, uint32_t vxrm, uint32_t &vxsat) {
+void vector_op_vix_scale(Word src1, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vsew, uint32_t vl, bool is_masked, uint32_t vxrm, uint32_t &vxsat) {
   switch (vsew) {
   case 0:
-    vector_op_vix_sat<OP, DT8, DT8>(src1, vreg_file, rsrc0, rdest, vl, vmask, vxrm, vxsat);
+    vector_op_vix_sat<OP, DT8, DT8>(src1, vreg_file, rsrc0, rdest, vl, is_masked, vxrm, vxsat);
     break;
   case 1:
-    vector_op_vix_sat<OP, DT16, DT16>(src1, vreg_file, rsrc0, rdest, vl, vmask, vxrm, vxsat);
+    vector_op_vix_sat<OP, DT16, DT16>(src1, vreg_file, rsrc0, rdest, vl, is_masked, vxrm, vxsat);
     break;
   case 2:
-    vector_op_vix_sat<OP, DT32, DT32>(src1, vreg_file, rsrc0, rdest, vl, vmask, vxrm, vxsat);
+    vector_op_vix_sat<OP, DT32, DT32>(src1, vreg_file, rsrc0, rdest, vl, is_masked, vxrm, vxsat);
     break;
   case 3:
-    vector_op_vix_sat<OP, DT64, DT64>(src1, vreg_file, rsrc0, rdest, vl, vmask, vxrm, vxsat);
+    vector_op_vix_sat<OP, DT64, DT64>(src1, vreg_file, rsrc0, rdest, vl, is_masked, vxrm, vxsat);
     break;
   default:
     std::cout << "Failed to execute VI/VX scale for vsew: " << vsew << std::endl;
@@ -1513,14 +1513,14 @@ void vector_op_vix_scale(Word src1, VRF_t& vreg_file, uint32_t rsrc0, uint32_t r
 }
 
 template <template <typename DT1, typename DT2> class OP>
-void vector_op_vix_ext(Word src1, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vsew, uint32_t vl, uint32_t vmask) {
+void vector_op_vix_ext(Word src1, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vsew, uint32_t vl, bool is_masked) {
   if (vsew == 1) {
     switch (src1) {
     case 0b00110: // vzext.vf2
-      vector_op_vix_w<OP, uint8_t, uint16_t>(src1, vreg_file, rsrc0, rdest, vl, vmask);
+      vector_op_vix_w<OP, uint8_t, uint16_t>(src1, vreg_file, rsrc0, rdest, vl, is_masked);
       break;
     case 0b00111: // vsext.vf2
-      vector_op_vix_w<OP, int8_t, int16_t>(src1, vreg_file, rsrc0, rdest, vl, vmask);
+      vector_op_vix_w<OP, int8_t, int16_t>(src1, vreg_file, rsrc0, rdest, vl, is_masked);
       break;
     default:
       std::cout << "Xunary0 has unsupported value for vf: " << src1 << std::endl;
@@ -1529,16 +1529,16 @@ void vector_op_vix_ext(Word src1, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rde
   } else if (vsew == 2) {
     switch (src1) {
     case 0b00100: // vzext.vf4
-      vector_op_vix_w<OP, uint8_t, uint32_t>(src1, vreg_file, rsrc0, rdest, vl, vmask);
+      vector_op_vix_w<OP, uint8_t, uint32_t>(src1, vreg_file, rsrc0, rdest, vl, is_masked);
       break;
     case 0b00101: // vsext.vf4
-      vector_op_vix_w<OP, int8_t, int32_t>(src1, vreg_file, rsrc0, rdest, vl, vmask);
+      vector_op_vix_w<OP, int8_t, int32_t>(src1, vreg_file, rsrc0, rdest, vl, is_masked);
       break;
     case 0b00110: // vzext.vf2
-      vector_op_vix_w<OP, uint16_t, uint32_t>(src1, vreg_file, rsrc0, rdest, vl, vmask);
+      vector_op_vix_w<OP, uint16_t, uint32_t>(src1, vreg_file, rsrc0, rdest, vl, is_masked);
       break;
     case 0b00111: // vsext.vf2
-      vector_op_vix_w<OP, int16_t, int32_t>(src1, vreg_file, rsrc0, rdest, vl, vmask);
+      vector_op_vix_w<OP, int16_t, int32_t>(src1, vreg_file, rsrc0, rdest, vl, is_masked);
       break;
     default:
       std::cout << "Xunary0 has unsupported value for vf: " << src1 << std::endl;
@@ -1547,22 +1547,22 @@ void vector_op_vix_ext(Word src1, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rde
   } else if (vsew == 3) {
     switch (src1) {
     case 0b00010: // vzext.vf8
-      vector_op_vix_w<OP, uint8_t, uint64_t>(src1, vreg_file, rsrc0, rdest, vl, vmask);
+      vector_op_vix_w<OP, uint8_t, uint64_t>(src1, vreg_file, rsrc0, rdest, vl, is_masked);
       break;
     case 0b00011: // vsext.vf8
-      vector_op_vix_w<OP, int8_t, int64_t>(src1, vreg_file, rsrc0, rdest, vl, vmask);
+      vector_op_vix_w<OP, int8_t, int64_t>(src1, vreg_file, rsrc0, rdest, vl, is_masked);
       break;
     case 0b00100: // vzext.vf4
-      vector_op_vix_w<OP, uint16_t, uint64_t>(src1, vreg_file, rsrc0, rdest, vl, vmask);
+      vector_op_vix_w<OP, uint16_t, uint64_t>(src1, vreg_file, rsrc0, rdest, vl, is_masked);
       break;
     case 0b00101: // vsext.vf4
-      vector_op_vix_w<OP, int16_t, int64_t>(src1, vreg_file, rsrc0, rdest, vl, vmask);
+      vector_op_vix_w<OP, int16_t, int64_t>(src1, vreg_file, rsrc0, rdest, vl, is_masked);
       break;
     case 0b00110: // vzext.vf2
-      vector_op_vix_w<OP, uint32_t, uint64_t>(src1, vreg_file, rsrc0, rdest, vl, vmask);
+      vector_op_vix_w<OP, uint32_t, uint64_t>(src1, vreg_file, rsrc0, rdest, vl, is_masked);
       break;
     case 0b00111: // vsext.vf2
-      vector_op_vix_w<OP, int32_t, int64_t>(src1, vreg_file, rsrc0, rdest, vl, vmask);
+      vector_op_vix_w<OP, int32_t, int64_t>(src1, vreg_file, rsrc0, rdest, vl, is_masked);
       break;
     default:
       std::cout << "Xunary0 has unsupported value for vf: " << src1 << std::endl;
@@ -1575,9 +1575,9 @@ void vector_op_vix_ext(Word src1, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rde
 }
 
 template <template <typename DT1, typename DT2> class OP, typename DT>
-void vector_op_vix_mask(DT first, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vl, uint32_t vmask) {
+void vector_op_vix_mask(DT first, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vl, bool is_masked) {
   for (uint32_t i = 0; i < vl; i++) {
-    if (isMasked(vreg_file, 0, i, vmask))
+    if (isMasked(vreg_file, 0, i, is_masked))
       continue;
     DT second = getVregData<DT>(vreg_file, rsrc0, i);
     bool result = OP<DT, bool>::apply(first, second, 0);
@@ -1592,19 +1592,19 @@ void vector_op_vix_mask(DT first, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rde
 }
 
 template <template <typename DT1, typename DT2> class OP, typename DT8, typename DT16, typename DT32, typename DT64>
-void vector_op_vix_mask(Word src1, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vsew, uint32_t vl, uint32_t vmask) {
+void vector_op_vix_mask(Word src1, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vsew, uint32_t vl, bool is_masked) {
   switch (vsew) {
   case 0:
-    vector_op_vix_mask<OP, DT8>(src1, vreg_file, rsrc0, rdest, vl, vmask);
+    vector_op_vix_mask<OP, DT8>(src1, vreg_file, rsrc0, rdest, vl, is_masked);
     break;
   case 1:
-    vector_op_vix_mask<OP, DT16>(src1, vreg_file, rsrc0, rdest, vl, vmask);
+    vector_op_vix_mask<OP, DT16>(src1, vreg_file, rsrc0, rdest, vl, is_masked);
     break;
   case 2:
-    vector_op_vix_mask<OP, DT32>(src1, vreg_file, rsrc0, rdest, vl, vmask);
+    vector_op_vix_mask<OP, DT32>(src1, vreg_file, rsrc0, rdest, vl, is_masked);
     break;
   case 3:
-    vector_op_vix_mask<OP, DT64>(src1, vreg_file, rsrc0, rdest, vl, vmask);
+    vector_op_vix_mask<OP, DT64>(src1, vreg_file, rsrc0, rdest, vl, is_masked);
     break;
   default:
     std::cout << "Failed to execute VI/VX integer/float compare mask for vsew: " << vsew << std::endl;
@@ -1613,20 +1613,20 @@ void vector_op_vix_mask(Word src1, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rd
 }
 
 template <typename DT>
-void vector_op_vix_slide(Word first, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vl, Word vlmax, uint32_t vmask, bool scalar) {
+void vector_op_vix_slide(Word first, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vl, Word vlmax, bool is_masked, bool scalar) {
   // If vlmax > 0 this means we have a vslidedown instruction, vslideup does not require vlmax
   bool slideDown = vlmax;
   uint32_t scalarPos = slideDown ? vl - 1 : 0;
   // If scalar set is set this means we have a v(f)slide1up or v(f)slide1down instruction,
   // so first is our scalar value and we need to overwrite it with 1 for later computations
-  if (scalar && vl && !isMasked(vreg_file, 0, scalarPos, vmask)) {
+  if (scalar && vl && !isMasked(vreg_file, 0, scalarPos, is_masked)) {
     DP(4, "Slide - Moving scalar value " << +first << " to position " << +scalarPos);
     setVregData<DT>(vreg_file, rdest, scalarPos, first);
   }
   first = scalar ? 1 : first;
 
   for (Word i = slideDown ? 0 : first; i < vl - (scalar && vl && slideDown); i++) {
-    if (isMasked(vreg_file, 0, i, vmask))
+    if (isMasked(vreg_file, 0, i, is_masked))
       continue;
 
     __uint128_t iSrc = slideDown ? (__uint128_t)i + (__uint128_t)first : (__uint128_t)i - (__uint128_t)first; // prevent overflows/underflows
@@ -1637,19 +1637,19 @@ void vector_op_vix_slide(Word first, VRF_t& vreg_file, uint32_t rsrc0, uint32_t 
 }
 
 template <typename DT8, typename DT16, typename DT32, typename DT64>
-void vector_op_vix_slide(Word src1, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vsew, uint32_t vl, Word vlmax, uint32_t vmask, bool scalar) {
+void vector_op_vix_slide(Word src1, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vsew, uint32_t vl, Word vlmax, bool is_masked, bool scalar) {
   switch (vsew) {
   case 0:
-    vector_op_vix_slide<DT8>(src1, vreg_file, rsrc0, rdest, vl, vlmax, vmask, scalar);
+    vector_op_vix_slide<DT8>(src1, vreg_file, rsrc0, rdest, vl, vlmax, is_masked, scalar);
     break;
   case 1:
-    vector_op_vix_slide<DT16>(src1, vreg_file, rsrc0, rdest, vl, vlmax, vmask, scalar);
+    vector_op_vix_slide<DT16>(src1, vreg_file, rsrc0, rdest, vl, vlmax, is_masked, scalar);
     break;
   case 2:
-    vector_op_vix_slide<DT32>(src1, vreg_file, rsrc0, rdest, vl, vlmax, vmask, scalar);
+    vector_op_vix_slide<DT32>(src1, vreg_file, rsrc0, rdest, vl, vlmax, is_masked, scalar);
     break;
   case 3:
-    vector_op_vix_slide<DT64>(src1, vreg_file, rsrc0, rdest, vl, vlmax, vmask, scalar);
+    vector_op_vix_slide<DT64>(src1, vreg_file, rsrc0, rdest, vl, vlmax, is_masked, scalar);
     break;
   default:
     std::cout << "Failed to execute VI/VX slide for vsew: " << vsew << std::endl;
@@ -1658,9 +1658,9 @@ void vector_op_vix_slide(Word src1, VRF_t& vreg_file, uint32_t rsrc0, uint32_t r
 }
 
 template <typename DT>
-void vector_op_vix_gather(Word first, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vl, Word vlmax, uint32_t vmask) {
+void vector_op_vix_gather(Word first, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vl, Word vlmax, bool is_masked) {
   for (Word i = 0; i < vl; i++) {
-    if (isMasked(vreg_file, 0, i, vmask))
+    if (isMasked(vreg_file, 0, i, is_masked))
       continue;
     DT value = first < vlmax ? getVregData<DT>(vreg_file, rsrc0, first) : 0;
     DP(4, "Register gather - Moving value " << +value << " from position " << +first << " to position " << +i);
@@ -1669,19 +1669,19 @@ void vector_op_vix_gather(Word first, VRF_t& vreg_file, uint32_t rsrc0, uint32_t
 }
 
 template <typename DT8, typename DT16, typename DT32, typename DT64>
-void vector_op_vix_gather(Word src1, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vsew, uint32_t vl, Word vlmax, uint32_t vmask) {
+void vector_op_vix_gather(Word src1, VRF_t& vreg_file, uint32_t rsrc0, uint32_t rdest, uint32_t vsew, uint32_t vl, Word vlmax, bool is_masked) {
   switch (vsew) {
   case 0:
-    vector_op_vix_gather<DT8>(src1, vreg_file, rsrc0, rdest, vl, vlmax, vmask);
+    vector_op_vix_gather<DT8>(src1, vreg_file, rsrc0, rdest, vl, vlmax, is_masked);
     break;
   case 1:
-    vector_op_vix_gather<DT16>(src1, vreg_file, rsrc0, rdest, vl, vlmax, vmask);
+    vector_op_vix_gather<DT16>(src1, vreg_file, rsrc0, rdest, vl, vlmax, is_masked);
     break;
   case 2:
-    vector_op_vix_gather<DT32>(src1, vreg_file, rsrc0, rdest, vl, vlmax, vmask);
+    vector_op_vix_gather<DT32>(src1, vreg_file, rsrc0, rdest, vl, vlmax, is_masked);
     break;
   case 3:
-    vector_op_vix_gather<DT64>(src1, vreg_file, rsrc0, rdest, vl, vlmax, vmask);
+    vector_op_vix_gather<DT64>(src1, vreg_file, rsrc0, rdest, vl, vlmax, is_masked);
     break;
   default:
     std::cout << "Failed to execute VI/VX register gather for vsew: " << vsew << std::endl;
@@ -1690,9 +1690,9 @@ void vector_op_vix_gather(Word src1, VRF_t& vreg_file, uint32_t rsrc0, uint32_t 
 }
 
 template <template <typename DT1, typename DT2> class OP, typename DT>
-void vector_op_vv(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vl, uint32_t vmask) {
+void vector_op_vv(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vl, bool is_masked) {
   for (uint32_t i = 0; i < vl; i++) {
-    if (isMasked(vreg_file, 0, i, vmask))
+    if (isMasked(vreg_file, 0, i, is_masked))
       continue;
     DT first = getVregData<DT>(vreg_file, rsrc0, i);
     DT second = getVregData<DT>(vreg_file, rsrc1, i);
@@ -1704,19 +1704,19 @@ void vector_op_vv(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rde
 }
 
 template <template <typename DT1, typename DT2> class OP, typename DT8, typename DT16, typename DT32, typename DT64>
-void vector_op_vv(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vsew, uint32_t vl, uint32_t vmask) {
+void vector_op_vv(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vsew, uint32_t vl, bool is_masked) {
   switch (vsew) {
   case 0:
-    vector_op_vv<OP, DT8>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask);
+    vector_op_vv<OP, DT8>(vreg_file, rsrc0, rsrc1, rdest, vl, is_masked);
     break;
   case 1:
-    vector_op_vv<OP, DT16>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask);
+    vector_op_vv<OP, DT16>(vreg_file, rsrc0, rsrc1, rdest, vl, is_masked);
     break;
   case 2:
-    vector_op_vv<OP, DT32>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask);
+    vector_op_vv<OP, DT32>(vreg_file, rsrc0, rsrc1, rdest, vl, is_masked);
     break;
   case 3:
-    vector_op_vv<OP, DT64>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask);
+    vector_op_vv<OP, DT64>(vreg_file, rsrc0, rsrc1, rdest, vl, is_masked);
     break;
   default:
     std::cout << "Failed to execute VV for vsew: " << vsew << std::endl;
@@ -1758,11 +1758,11 @@ void vector_op_vv_carry(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32
 }
 
 template <template <typename DT1, typename DT2> class OP, typename DT, typename DTR>
-void vector_op_vv_carry_out(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vl, uint32_t vmask) {
+void vector_op_vv_carry_out(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vl, bool is_masked) {
   for (uint32_t i = 0; i < vl; i++) {
     DT first = getVregData<DT>(vreg_file, rsrc0, i);
     DT second = getVregData<DT>(vreg_file, rsrc1, i);
-    bool third = !vmask && !isMasked(vreg_file, 0, i, vmask);
+    bool third = !is_masked && !isMasked(vreg_file, 0, i, is_masked);
     bool result = OP<DT, DTR>::apply(first, second, third);
     DP(4, (OP<DT, DT>::name()) << "(" << +first << ", " << +second << ", " << +third << ")" << " = " << +result);
     auto old_value = getVregData<uint8_t>(vreg_file, rdest, i / 8);
@@ -1775,19 +1775,19 @@ void vector_op_vv_carry_out(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, ui
 }
 
 template <template <typename DT1, typename DT2> class OP, typename DT8, typename DT16, typename DT32, typename DT64, typename DT128>
-void vector_op_vv_carry_out(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vsew, uint32_t vl, uint32_t vmask) {
+void vector_op_vv_carry_out(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vsew, uint32_t vl, bool is_masked) {
   switch (vsew) {
   case 0:
-    vector_op_vv_carry_out<OP, DT8, DT16>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask);
+    vector_op_vv_carry_out<OP, DT8, DT16>(vreg_file, rsrc0, rsrc1, rdest, vl, is_masked);
     break;
   case 1:
-    vector_op_vv_carry_out<OP, DT16, DT32>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask);
+    vector_op_vv_carry_out<OP, DT16, DT32>(vreg_file, rsrc0, rsrc1, rdest, vl, is_masked);
     break;
   case 2:
-    vector_op_vv_carry_out<OP, DT32, DT64>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask);
+    vector_op_vv_carry_out<OP, DT32, DT64>(vreg_file, rsrc0, rsrc1, rdest, vl, is_masked);
     break;
   case 3:
-    vector_op_vv_carry_out<OP, DT64, DT128>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask);
+    vector_op_vv_carry_out<OP, DT64, DT128>(vreg_file, rsrc0, rsrc1, rdest, vl, is_masked);
     break;
   default:
     std::cout << "Failed to execute VV carry out for vsew: " << vsew << std::endl;
@@ -1796,9 +1796,9 @@ void vector_op_vv_carry_out(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, ui
 }
 
 template <typename DT>
-void vector_op_vv_merge(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vl, uint32_t vmask) {
+void vector_op_vv_merge(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vl, bool is_masked) {
   for (uint32_t i = 0; i < vl; i++) {
-    uint32_t rsrc = isMasked(vreg_file, 0, i, vmask) ? rsrc1 : rsrc0;
+    uint32_t rsrc = isMasked(vreg_file, 0, i, is_masked) ? rsrc1 : rsrc0;
     DT result = getVregData<DT>(vreg_file, rsrc, i);
     DP(4, "Merge - Choosing result: " << +result);
     setVregData<DT>(vreg_file, rdest, i, result);
@@ -1806,19 +1806,19 @@ void vector_op_vv_merge(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32
 }
 
 template <typename DT8, typename DT16, typename DT32, typename DT64>
-void vector_op_vv_merge(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vsew, uint32_t vl, uint32_t vmask) {
+void vector_op_vv_merge(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vsew, uint32_t vl, bool is_masked) {
   switch (vsew) {
   case 0:
-    vector_op_vv_merge<DT8>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask);
+    vector_op_vv_merge<DT8>(vreg_file, rsrc0, rsrc1, rdest, vl, is_masked);
     break;
   case 1:
-    vector_op_vv_merge<DT16>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask);
+    vector_op_vv_merge<DT16>(vreg_file, rsrc0, rsrc1, rdest, vl, is_masked);
     break;
   case 2:
-    vector_op_vv_merge<DT32>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask);
+    vector_op_vv_merge<DT32>(vreg_file, rsrc0, rsrc1, rdest, vl, is_masked);
     break;
   case 3:
-    vector_op_vv_merge<DT64>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask);
+    vector_op_vv_merge<DT64>(vreg_file, rsrc0, rsrc1, rdest, vl, is_masked);
     break;
   default:
     std::cout << "Failed to execute VV for vsew: " << vsew << std::endl;
@@ -1827,9 +1827,9 @@ void vector_op_vv_merge(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32
 }
 
 template <typename DT>
-void vector_op_vv_gather(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vl, bool ei16, uint32_t vlmax, uint32_t vmask) {
+void vector_op_vv_gather(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vl, bool ei16, uint32_t vlmax, bool is_masked) {
   for (Word i = 0; i < vl; i++) {
-    if (isMasked(vreg_file, 0, i, vmask))
+    if (isMasked(vreg_file, 0, i, is_masked))
       continue;
     uint32_t first = ei16 ? getVregData<uint16_t>(vreg_file, rsrc0, i) : getVregData<DT>(vreg_file, rsrc0, i);
     DT value = first < vlmax ? getVregData<DT>(vreg_file, rsrc1, first) : 0;
@@ -1839,19 +1839,19 @@ void vector_op_vv_gather(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint3
 }
 
 template <typename DT8, typename DT16, typename DT32, typename DT64>
-void vector_op_vv_gather(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vsew, uint32_t vl, bool ei16, uint32_t vlmax, uint32_t vmask) {
+void vector_op_vv_gather(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vsew, uint32_t vl, bool ei16, uint32_t vlmax, bool is_masked) {
   switch (vsew) {
   case 0:
-    vector_op_vv_gather<DT8>(vreg_file, rsrc0, rsrc1, rdest, vl, ei16, vlmax, vmask);
+    vector_op_vv_gather<DT8>(vreg_file, rsrc0, rsrc1, rdest, vl, ei16, vlmax, is_masked);
     break;
   case 1:
-    vector_op_vv_gather<DT16>(vreg_file, rsrc0, rsrc1, rdest, vl, ei16, vlmax, vmask);
+    vector_op_vv_gather<DT16>(vreg_file, rsrc0, rsrc1, rdest, vl, ei16, vlmax, is_masked);
     break;
   case 2:
-    vector_op_vv_gather<DT32>(vreg_file, rsrc0, rsrc1, rdest, vl, ei16, vlmax, vmask);
+    vector_op_vv_gather<DT32>(vreg_file, rsrc0, rsrc1, rdest, vl, ei16, vlmax, is_masked);
     break;
   case 3:
-    vector_op_vv_gather<DT64>(vreg_file, rsrc0, rsrc1, rdest, vl, ei16, vlmax, vmask);
+    vector_op_vv_gather<DT64>(vreg_file, rsrc0, rsrc1, rdest, vl, ei16, vlmax, is_masked);
     break;
   default:
     std::cout << "Failed to execute VV register gather for vsew: " << vsew << std::endl;
@@ -1860,9 +1860,9 @@ void vector_op_vv_gather(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint3
 }
 
 template <template <typename DT1, typename DT2> class OP, typename DT, typename DTR>
-void vector_op_vv_w(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vl, uint32_t vmask) {
+void vector_op_vv_w(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vl, bool is_masked) {
   for (uint32_t i = 0; i < vl; i++) {
-    if (isMasked(vreg_file, 0, i, vmask))
+    if (isMasked(vreg_file, 0, i, is_masked))
       continue;
     DT first = getVregData<DT>(vreg_file, rsrc0, i);
     DT second = getVregData<DT>(vreg_file, rsrc1, i);
@@ -1874,16 +1874,16 @@ void vector_op_vv_w(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t r
 }
 
 template <template <typename DT1, typename DT2> class OP, typename DT8, typename DT16, typename DT32, typename DT64>
-void vector_op_vv_w(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vsew, uint32_t vl, uint32_t vmask) {
+void vector_op_vv_w(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vsew, uint32_t vl, bool is_masked) {
   switch (vsew) {
   case 0:
-    vector_op_vv_w<OP, DT8, DT16>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask);
+    vector_op_vv_w<OP, DT8, DT16>(vreg_file, rsrc0, rsrc1, rdest, vl, is_masked);
     break;
   case 1:
-    vector_op_vv_w<OP, DT16, DT32>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask);
+    vector_op_vv_w<OP, DT16, DT32>(vreg_file, rsrc0, rsrc1, rdest, vl, is_masked);
     break;
   case 2:
-    vector_op_vv_w<OP, DT32, DT64>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask);
+    vector_op_vv_w<OP, DT32, DT64>(vreg_file, rsrc0, rsrc1, rdest, vl, is_masked);
     break;
   default:
     std::cout << "Failed to execute VV widening for vsew: " << vsew << std::endl;
@@ -1892,9 +1892,9 @@ void vector_op_vv_w(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t r
 }
 
 template <template <typename DT1, typename DT2> class OP, typename DT, typename DTR>
-void vector_op_vv_wv(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vl, uint32_t vmask) {
+void vector_op_vv_wv(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vl, bool is_masked) {
   for (uint32_t i = 0; i < vl; i++) {
-    if (isMasked(vreg_file, 0, i, vmask))
+    if (isMasked(vreg_file, 0, i, is_masked))
       continue;
     DT first = getVregData<DT>(vreg_file, rsrc0, i);
     DTR second = getVregData<DTR>(vreg_file, rsrc1, i);
@@ -1906,16 +1906,16 @@ void vector_op_vv_wv(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t 
 }
 
 template <template <typename DT1, typename DT2> class OP, typename DT8, typename DT16, typename DT32, typename DT64>
-void vector_op_vv_wv(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vsew, uint32_t vl, uint32_t vmask) {
+void vector_op_vv_wv(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vsew, uint32_t vl, bool is_masked) {
   switch (vsew) {
   case 0:
-    vector_op_vv_wv<OP, DT8, DT16>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask);
+    vector_op_vv_wv<OP, DT8, DT16>(vreg_file, rsrc0, rsrc1, rdest, vl, is_masked);
     break;
   case 1:
-    vector_op_vv_wv<OP, DT16, DT32>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask);
+    vector_op_vv_wv<OP, DT16, DT32>(vreg_file, rsrc0, rsrc1, rdest, vl, is_masked);
     break;
   case 2:
-    vector_op_vv_wv<OP, DT32, DT64>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask);
+    vector_op_vv_wv<OP, DT32, DT64>(vreg_file, rsrc0, rsrc1, rdest, vl, is_masked);
     break;
   default:
     std::cout << "Failed to execute VV widening wv for vsew: " << vsew << std::endl;
@@ -1924,9 +1924,9 @@ void vector_op_vv_wv(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t 
 }
 
 template <template <typename DT1, typename DT2> class OP, typename DT, typename DTR>
-void vector_op_vv_wfv(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vl, uint32_t vmask) {
+void vector_op_vv_wfv(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vl, bool is_masked) {
   for (uint32_t i = 0; i < vl; i++) {
-    if (isMasked(vreg_file, 0, i, vmask))
+    if (isMasked(vreg_file, 0, i, is_masked))
       continue;
     DT first = getVregData<DT>(vreg_file, rsrc0, i);
     DTR second = getVregData<DTR>(vreg_file, rsrc1, i);
@@ -1938,9 +1938,9 @@ void vector_op_vv_wfv(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t
 }
 
 template <template <typename DT1, typename DT2> class OP, typename DT8, typename DT16, typename DT32, typename DT64>
-void vector_op_vv_wfv(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vsew, uint32_t vl, uint32_t vmask) {
+void vector_op_vv_wfv(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vsew, uint32_t vl, bool is_masked) {
   if (vsew == 2) {
-    vector_op_vv_wfv<OP, DT32, DT64>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask);
+    vector_op_vv_wfv<OP, DT32, DT64>(vreg_file, rsrc0, rsrc1, rdest, vl, is_masked);
   } else {
     std::cout << "Failed to execute VV widening wfv for vsew: " << vsew << std::endl;
     std::abort();
@@ -1948,9 +1948,9 @@ void vector_op_vv_wfv(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t
 }
 
 template <template <typename DT1, typename DT2> class OP, typename DT, typename DTR>
-void vector_op_vv_n(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vl, uint32_t vmask, uint32_t vxrm, uint32_t &vxsat) {
+void vector_op_vv_n(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vl, bool is_masked, uint32_t vxrm, uint32_t &vxsat) {
   for (uint32_t i = 0; i < vl; i++) {
-    if (isMasked(vreg_file, 0, i, vmask))
+    if (isMasked(vreg_file, 0, i, is_masked))
       continue;
     DTR first = getVregData<DTR>(vreg_file, rsrc0, i);
     DT second = getVregData<DT>(vreg_file, rsrc1, i);
@@ -1961,16 +1961,16 @@ void vector_op_vv_n(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t r
 }
 
 template <template <typename DT1, typename DT2> class OP, typename DT8, typename DT16, typename DT32, typename DT64>
-void vector_op_vv_n(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vsew, uint32_t vl, uint32_t vmask, uint32_t vxrm, uint32_t &vxsat) {
+void vector_op_vv_n(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vsew, uint32_t vl, bool is_masked, uint32_t vxrm, uint32_t &vxsat) {
   switch (vsew) {
   case 0:
-    vector_op_vv_n<OP, DT16, DT8>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask, vxrm, vxsat);
+    vector_op_vv_n<OP, DT16, DT8>(vreg_file, rsrc0, rsrc1, rdest, vl, is_masked, vxrm, vxsat);
     break;
   case 1:
-    vector_op_vv_n<OP, DT32, DT16>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask, vxrm, vxsat);
+    vector_op_vv_n<OP, DT32, DT16>(vreg_file, rsrc0, rsrc1, rdest, vl, is_masked, vxrm, vxsat);
     break;
   case 2:
-    vector_op_vv_n<OP, DT64, DT32>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask, vxrm, vxsat);
+    vector_op_vv_n<OP, DT64, DT32>(vreg_file, rsrc0, rsrc1, rdest, vl, is_masked, vxrm, vxsat);
     break;
   default:
     std::cout << "Failed to execute VV narrowing for vsew: " << vsew << std::endl;
@@ -1979,9 +1979,9 @@ void vector_op_vv_n(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t r
 }
 
 template <template <typename DT1, typename DT2> class OP, typename DT, typename DTR>
-void vector_op_vv_sat(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vl, uint32_t vmask, uint32_t vxrm, uint32_t &vxsat) {
+void vector_op_vv_sat(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vl, bool is_masked, uint32_t vxrm, uint32_t &vxsat) {
   for (uint32_t i = 0; i < vl; i++) {
-    if (isMasked(vreg_file, 0, i, vmask))
+    if (isMasked(vreg_file, 0, i, is_masked))
       continue;
     DT first = getVregData<DTR>(vreg_file, rsrc0, i);
     DT second = getVregData<DTR>(vreg_file, rsrc1, i);
@@ -1992,19 +1992,19 @@ void vector_op_vv_sat(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t
 }
 
 template <template <typename DT1, typename DT2> class OP, typename DT8, typename DT16, typename DT32, typename DT64, typename DT128>
-void vector_op_vv_sat(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vsew, uint32_t vl, uint32_t vmask, uint32_t vxrm, uint32_t &vxsat) {
+void vector_op_vv_sat(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vsew, uint32_t vl, bool is_masked, uint32_t vxrm, uint32_t &vxsat) {
   switch (vsew) {
   case 0:
-    vector_op_vv_sat<OP, DT16, DT8>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask, vxrm, vxsat);
+    vector_op_vv_sat<OP, DT16, DT8>(vreg_file, rsrc0, rsrc1, rdest, vl, is_masked, vxrm, vxsat);
     break;
   case 1:
-    vector_op_vv_sat<OP, DT32, DT16>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask, vxrm, vxsat);
+    vector_op_vv_sat<OP, DT32, DT16>(vreg_file, rsrc0, rsrc1, rdest, vl, is_masked, vxrm, vxsat);
     break;
   case 2:
-    vector_op_vv_sat<OP, DT64, DT32>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask, vxrm, vxsat);
+    vector_op_vv_sat<OP, DT64, DT32>(vreg_file, rsrc0, rsrc1, rdest, vl, is_masked, vxrm, vxsat);
     break;
   case 3:
-    vector_op_vv_sat<OP, DT128, DT64>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask, vxrm, vxsat);
+    vector_op_vv_sat<OP, DT128, DT64>(vreg_file, rsrc0, rsrc1, rdest, vl, is_masked, vxrm, vxsat);
     break;
   default:
     std::cout << "Failed to execute VV saturating for vsew: " << vsew << std::endl;
@@ -2013,19 +2013,19 @@ void vector_op_vv_sat(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t
 }
 
 template <template <typename DT1, typename DT2> class OP, typename DT8, typename DT16, typename DT32, typename DT64>
-void vector_op_vv_scale(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vsew, uint32_t vl, uint32_t vmask, uint32_t vxrm, uint32_t &vxsat) {
+void vector_op_vv_scale(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vsew, uint32_t vl, bool is_masked, uint32_t vxrm, uint32_t &vxsat) {
   switch (vsew) {
   case 0:
-    vector_op_vv_sat<OP, DT8, DT8>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask, vxrm, vxsat);
+    vector_op_vv_sat<OP, DT8, DT8>(vreg_file, rsrc0, rsrc1, rdest, vl, is_masked, vxrm, vxsat);
     break;
   case 1:
-    vector_op_vv_sat<OP, DT16, DT16>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask, vxrm, vxsat);
+    vector_op_vv_sat<OP, DT16, DT16>(vreg_file, rsrc0, rsrc1, rdest, vl, is_masked, vxrm, vxsat);
     break;
   case 2:
-    vector_op_vv_sat<OP, DT32, DT32>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask, vxrm, vxsat);
+    vector_op_vv_sat<OP, DT32, DT32>(vreg_file, rsrc0, rsrc1, rdest, vl, is_masked, vxrm, vxsat);
     break;
   case 3:
-    vector_op_vv_sat<OP, DT64, DT64>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask, vxrm, vxsat);
+    vector_op_vv_sat<OP, DT64, DT64>(vreg_file, rsrc0, rsrc1, rdest, vl, is_masked, vxrm, vxsat);
     break;
   default:
     std::cout << "Failed to execute VV scale for vsew: " << vsew << std::endl;
@@ -2034,13 +2034,13 @@ void vector_op_vv_scale(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32
 }
 
 template <template <typename DT1, typename DT2> class OP, typename DT>
-void vector_op_vv_red(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vl, uint32_t vmask) {
+void vector_op_vv_red(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vl, bool is_masked) {
   for (uint32_t i = 0; i < vl; i++) {
     // use rdest as accumulator
     if (i == 0) {
       setVregData<DT>(vreg_file, rdest, 0, getVregData<DT>(vreg_file, rsrc0, 0));
     }
-    if (isMasked(vreg_file, 0, i, vmask))
+    if (isMasked(vreg_file, 0, i, is_masked))
       continue;
     DT first = getVregData<DT>(vreg_file, rdest, 0);
     DT second = getVregData<DT>(vreg_file, rsrc1, i);
@@ -2051,19 +2051,19 @@ void vector_op_vv_red(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t
 }
 
 template <template <typename DT1, typename DT2> class OP, typename DT8, typename DT16, typename DT32, typename DT64>
-void vector_op_vv_red(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vsew, uint32_t vl, uint32_t vmask) {
+void vector_op_vv_red(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vsew, uint32_t vl, bool is_masked) {
   switch (vsew) {
   case 0:
-    vector_op_vv_red<OP, DT8>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask);
+    vector_op_vv_red<OP, DT8>(vreg_file, rsrc0, rsrc1, rdest, vl, is_masked);
     break;
   case 1:
-    vector_op_vv_red<OP, DT16>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask);
+    vector_op_vv_red<OP, DT16>(vreg_file, rsrc0, rsrc1, rdest, vl, is_masked);
     break;
   case 2:
-    vector_op_vv_red<OP, DT32>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask);
+    vector_op_vv_red<OP, DT32>(vreg_file, rsrc0, rsrc1, rdest, vl, is_masked);
     break;
   case 3:
-    vector_op_vv_red<OP, DT64>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask);
+    vector_op_vv_red<OP, DT64>(vreg_file, rsrc0, rsrc1, rdest, vl, is_masked);
     break;
   default:
     std::cout << "Failed to execute VV reduction for vsew: " << vsew << std::endl;
@@ -2072,13 +2072,13 @@ void vector_op_vv_red(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t
 }
 
 template <template <typename DT1, typename DT2> class OP, typename DT, typename DTR>
-void vector_op_vv_red_w(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vl, uint32_t vmask) {
+void vector_op_vv_red_w(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vl, bool is_masked) {
   for (uint32_t i = 0; i < vl; i++) {
     // use rdest as accumulator
     if (i == 0) {
       setVregData<DTR>(vreg_file, rdest, 0, getVregData<DTR>(vreg_file, rsrc0, 0));
     }
-    if (isMasked(vreg_file, 0, i, vmask))
+    if (isMasked(vreg_file, 0, i, is_masked))
       continue;
     DTR first = getVregData<DTR>(vreg_file, rdest, 0);
     DT second = getVregData<DT>(vreg_file, rsrc1, i);
@@ -2090,16 +2090,16 @@ void vector_op_vv_red_w(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32
 }
 
 template <template <typename DT1, typename DT2> class OP, typename DT8, typename DT16, typename DT32, typename DT64>
-void vector_op_vv_red_w(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vsew, uint32_t vl, uint32_t vmask) {
+void vector_op_vv_red_w(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vsew, uint32_t vl, bool is_masked) {
   switch (vsew) {
   case 0:
-    vector_op_vv_red_w<OP, DT8, DT16>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask);
+    vector_op_vv_red_w<OP, DT8, DT16>(vreg_file, rsrc0, rsrc1, rdest, vl, is_masked);
     break;
   case 1:
-    vector_op_vv_red_w<OP, DT16, DT32>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask);
+    vector_op_vv_red_w<OP, DT16, DT32>(vreg_file, rsrc0, rsrc1, rdest, vl, is_masked);
     break;
   case 2:
-    vector_op_vv_red_w<OP, DT32, DT64>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask);
+    vector_op_vv_red_w<OP, DT32, DT64>(vreg_file, rsrc0, rsrc1, rdest, vl, is_masked);
     break;
   default:
     std::cout << "Failed to execute VV widening reduction for vsew: " << vsew << std::endl;
@@ -2108,13 +2108,13 @@ void vector_op_vv_red_w(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32
 }
 
 template <template <typename DT1, typename DT2> class OP, typename DT, typename DTR>
-void vector_op_vv_red_wf(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vl, uint32_t vmask) {
+void vector_op_vv_red_wf(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vl, bool is_masked) {
   for (uint32_t i = 0; i < vl; i++) {
     // use rdest as accumulator
     if (i == 0) {
       setVregData<DTR>(vreg_file, rdest, 0, getVregData<DTR>(vreg_file, rsrc0, 0));
     }
-    if (isMasked(vreg_file, 0, i, vmask))
+    if (isMasked(vreg_file, 0, i, is_masked))
       continue;
     DTR first = getVregData<DTR>(vreg_file, rdest, 0);
     DT second = getVregData<DT>(vreg_file, rsrc1, i);
@@ -2126,9 +2126,9 @@ void vector_op_vv_red_wf(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint3
 }
 
 template <template <typename DT1, typename DT2> class OP, typename DT8, typename DT16, typename DT32, typename DT64>
-void vector_op_vv_red_wf(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vsew, uint32_t vl, uint32_t vmask) {
+void vector_op_vv_red_wf(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vsew, uint32_t vl, bool is_masked) {
   if (vsew == 2) {
-    vector_op_vv_red_wf<OP, DT32, DT64>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask);
+    vector_op_vv_red_wf<OP, DT32, DT64>(vreg_file, rsrc0, rsrc1, rdest, vl, is_masked);
   } else {
     std::cout << "Failed to execute VV float widening reduction for vsew: " << vsew << std::endl;
     std::abort();
@@ -2136,28 +2136,28 @@ void vector_op_vv_red_wf(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint3
 }
 
 template <typename DT>
-void vector_op_vid(VRF_t& vreg_file, uint32_t rdest, uint32_t vl, uint32_t vmask) {
+void vector_op_vid(VRF_t& vreg_file, uint32_t rdest, uint32_t vl, bool is_masked) {
   for (uint32_t i = 0; i < vl; i++) {
-    if (isMasked(vreg_file, 0, i, vmask))
+    if (isMasked(vreg_file, 0, i, is_masked))
       continue;
     DP(4, "Element Index = " << +i);
     setVregData<DT>(vreg_file, rdest, i, i);
   }
 }
 
-void vector_op_vid(VRF_t& vreg_file, uint32_t rdest, uint32_t vsew, uint32_t vl, uint32_t vmask) {
+void vector_op_vid(VRF_t& vreg_file, uint32_t rdest, uint32_t vsew, uint32_t vl, bool is_masked) {
   switch (vsew) {
   case 0:
-    vector_op_vid<uint8_t>(vreg_file, rdest, vl, vmask);
+    vector_op_vid<uint8_t>(vreg_file, rdest, vl, is_masked);
     break;
   case 1:
-    vector_op_vid<uint16_t>(vreg_file, rdest, vl, vmask);
+    vector_op_vid<uint16_t>(vreg_file, rdest, vl, is_masked);
     break;
   case 2:
-    vector_op_vid<uint32_t>(vreg_file, rdest, vl, vmask);
+    vector_op_vid<uint32_t>(vreg_file, rdest, vl, is_masked);
     break;
   case 3:
-    vector_op_vid<uint64_t>(vreg_file, rdest, vl, vmask);
+    vector_op_vid<uint64_t>(vreg_file, rdest, vl, is_masked);
     break;
   default:
     std::cout << "Failed to execute vector element index for vsew: " << vsew << std::endl;
@@ -2166,9 +2166,9 @@ void vector_op_vid(VRF_t& vreg_file, uint32_t rdest, uint32_t vsew, uint32_t vl,
 }
 
 template <template <typename DT1, typename DT2> class OP, typename DT>
-void vector_op_vv_mask(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vl, uint32_t vmask) {
+void vector_op_vv_mask(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vl, bool is_masked) {
   for (uint32_t i = 0; i < vl; i++) {
-    if (isMasked(vreg_file, 0, i, vmask))
+    if (isMasked(vreg_file, 0, i, is_masked))
       continue;
     DT first = getVregData<DT>(vreg_file, rsrc0, i);
     DT second = getVregData<DT>(vreg_file, rsrc1, i);
@@ -2184,19 +2184,19 @@ void vector_op_vv_mask(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_
 }
 
 template <template <typename DT1, typename DT2> class OP, typename DT8, typename DT16, typename DT32, typename DT64>
-void vector_op_vv_mask(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vsew, uint32_t vl, uint32_t vmask) {
+void vector_op_vv_mask(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uint32_t rdest, uint32_t vsew, uint32_t vl, bool is_masked) {
   switch (vsew) {
   case 0:
-    vector_op_vv_mask<OP, DT8>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask);
+    vector_op_vv_mask<OP, DT8>(vreg_file, rsrc0, rsrc1, rdest, vl, is_masked);
     break;
   case 1:
-    vector_op_vv_mask<OP, DT16>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask);
+    vector_op_vv_mask<OP, DT16>(vreg_file, rsrc0, rsrc1, rdest, vl, is_masked);
     break;
   case 2:
-    vector_op_vv_mask<OP, DT32>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask);
+    vector_op_vv_mask<OP, DT32>(vreg_file, rsrc0, rsrc1, rdest, vl, is_masked);
     break;
   case 3:
-    vector_op_vv_mask<OP, DT64>(vreg_file, rsrc0, rsrc1, rdest, vl, vmask);
+    vector_op_vv_mask<OP, DT64>(vreg_file, rsrc0, rsrc1, rdest, vl, is_masked);
     break;
   default:
     std::cout << "Failed to execute VV integer/float compare mask for vsew: " << vsew << std::endl;
@@ -2227,7 +2227,7 @@ void vector_op_vv_compress(VRF_t& vreg_file, uint32_t rsrc0, uint32_t rsrc1, uin
   int currPos = 0;
   for (uint32_t i = 0; i < vl; i++) {
     // Special case: use rsrc0 as mask vector register instead of default v0
-    // This instruction is always masked (vmask == 0), but encoded as unmasked (vmask == 1)
+    // This instruction is always masked (is_masked == 0), but encoded as unmasked (is_masked == 1)
     if (isMasked(vreg_file, rsrc0, i, 0))
       continue;
     DT value = getVregData<DT>(vreg_file, rsrc1, i);

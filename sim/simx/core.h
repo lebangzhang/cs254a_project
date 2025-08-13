@@ -179,6 +179,10 @@ public:
     return trace_pool_;
   }
 
+  auto& emulator() {
+    return emulator_;
+  }
+
   const PerfStats& perf_stats() const;
 
   int get_exitcode() const;

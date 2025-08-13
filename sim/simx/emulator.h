@@ -108,6 +108,14 @@ public:
 
   void dcache_write(const void* data, uint64_t addr, uint32_t size);
 
+  auto& ibuffer(uint32_t wid) {
+    return warps_.at(wid).ibuffer;
+  }
+
+  auto& instr_pool() {
+    return instr_pool_;
+  }
+
 private:
 
   uint32_t fetch(uint32_t wid, uint64_t uuid);

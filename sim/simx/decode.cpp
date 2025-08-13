@@ -506,6 +506,12 @@ void Emulator::decode(uint32_t code, uint32_t wid, uint64_t uuid) {
   // get instruction buffer
   auto& ibuffer = warps_.at(wid).ibuffer;
 
+#ifdef EXT_V_ENABLE
+  if (vec_unit_->decode(code, wid, uuid)) {
+    return; // instruction was decoded by vector unit
+  }
+#endif
+
   auto op = Opcode((code >> shift_opcode) & mask_opcode);
   auto funct2 = (code >> shift_funct2) & mask_funct2;
   auto funct3 = (code >> shift_funct3) & mask_funct3;
@@ -691,63 +697,20 @@ void Emulator::decode(uint32_t code, uint32_t wid, uint64_t uuid) {
   case Opcode::FS: {
     bool is_float = (op == Opcode::FL || op == Opcode::FS);
     bool is_load = (op == Opcode::L || op == Opcode::FL);
-  #ifdef EXT_V_ENABLE
-    if (is_float && funct3 != 0x2 && funct3 != 0x3) {
-      auto instr = std::allocate_shared<Instr>(instr_pool_, uuid, FUType::LSU);
-      IntrVlsArgs instArgs{};
-      instArgs.mew = (code >> shift_vmew) & mask_vmew;
-      instArgs.vm = (code >> shift_vm) & mask_vm;
-      instArgs.nf = (code >> shift_vnf) & mask_vnf;
-      switch (funct3) {
-      case 0: instArgs.width = 0; break;
-      case 5: instArgs.width = 1; break;
-      case 6: instArgs.width = 2; break;
-      case 7: instArgs.width = 3; break;
-      default:
-        std::abort();
-      }
-      instr->setSrcReg(0, rs1, RegType::Integer);
-      auto mop = (code >> shift_vmop) & mask_vmop;
-      switch (mop) {
-      case 0b00:
-        instr->setOpType(is_load ? VlsType::VL : VlsType::VS);
-        instArgs.umop = rs2;
-        break;
-      case 0b10:
-        instr->setOpType(is_load ? VlsType::VLS : VlsType::VSS);
-        instr->setSrcReg(1, rs2, RegType::Integer);
-        break;
-      case 0b01:
-      case 0b11:
-        instr->setOpType(is_load ? VlsType::VLX : VlsType::VSX);
-        instr->setSrcReg(1, rs2, RegType::Vector);
-        break;
-      }
-      if (is_load) {
-        instr->setDestReg(rd, RegType::Vector);
-      } else {
-        instr->setSrcReg(2, rd, RegType::Vector);
-      }
-      instr->setArgs(instArgs);
-      ibuffer.push_back(instr);
-    } else
-  #endif // EXT_V_ENABLE
-    {
-      auto instr = std::allocate_shared<Instr>(instr_pool_, uuid, FUType::LSU);
-      instr->setSrcReg(0, rs1, RegType::Integer);
-      uint32_t imm12 = 0;
-      if (is_load) {
-        imm12 = code >> shift_rs2;
-        instr->setDestReg(rd, is_float ? RegType::Float : RegType::Integer);
-      } else {
-        imm12 = (funct7 << width_reg) | rd;
-        instr->setSrcReg(1, rs2, is_float ? RegType::Float : RegType::Integer);
-      }
-      auto offset = sext(imm12, width_i_imm);
-      instr->setOpType(is_load ? LsuType::LOAD : LsuType::STORE);
-      instr->setArgs(IntrLsuArgs{funct3, is_float, offset});
-      ibuffer.push_back(instr);
+    auto instr = std::allocate_shared<Instr>(instr_pool_, uuid, FUType::LSU);
+    instr->setSrcReg(0, rs1, RegType::Integer);
+    uint32_t imm12 = 0;
+    if (is_load) {
+      imm12 = code >> shift_rs2;
+      instr->setDestReg(rd, is_float ? RegType::Float : RegType::Integer);
+    } else {
+      imm12 = (funct7 << width_reg) | rd;
+      instr->setSrcReg(1, rs2, is_float ? RegType::Float : RegType::Integer);
     }
+    auto offset = sext(imm12, width_i_imm);
+    instr->setOpType(is_load ? LsuType::LOAD : LsuType::STORE);
+    instr->setArgs(IntrLsuArgs{funct3, is_float, offset});
+    ibuffer.push_back(instr);
   } break;
   case Opcode::FENCE: {
     auto instr = std::allocate_shared<Instr>(instr_pool_, uuid, FUType::LSU);
@@ -918,84 +881,6 @@ void Emulator::decode(uint32_t code, uint32_t wid, uint64_t uuid) {
     instr->setSrcReg(2, rs3, RegType::Float);
     ibuffer.push_back(instr);
   } break;
-#ifdef EXT_V_ENABLE
-  case Opcode::VSET: {
-    auto instr = std::allocate_shared<Instr>(instr_pool_, uuid, FUType::VPU);
-    uint32_t vm = (code >> shift_vm) & mask_vm;
-    switch (funct3) {
-    case 0: { // OPIVV
-      instr->setOpType(VopType::OPIVV);
-      instr->setArgs(IntrVopArgs{vm, funct6, 0});
-      instr->setDestReg(rd, RegType::Vector);
-      instr->setSrcReg(0, rs1, RegType::Vector);
-      instr->setSrcReg(1, rs2, RegType::Vector);
-    } break;
-    case 1: { // OPFVV
-      instr->setOpType(VopType::OPFVV);
-      instr->setArgs(IntrVopArgs{vm, funct6, 0});
-      instr->setDestReg(rd, (funct6 == 16) ? RegType::Float : RegType::Vector);
-      instr->setSrcReg(0, rs1, RegType::Vector);
-      instr->setSrcReg(1, rs2, RegType::Vector);
-    } break;
-    case 2: { // OPMVV
-      instr->setOpType(VopType::OPMVV);
-      instr->setArgs(IntrVopArgs{vm, funct6, 0});
-      instr->setDestReg(rd, (funct6 == 16) ? RegType::Integer : RegType::Vector);
-      instr->setSrcReg(0, rs1, RegType::Vector);
-      instr->setSrcReg(1, rs2, RegType::Vector);
-    } break;
-    case 3: { // OPIVI
-      instr->setOpType(VopType::OPIVI);
-      instr->setArgs(IntrVopArgs{vm, funct6, rs1});
-      instr->setDestReg(rd, RegType::Vector);
-      instr->setSrcReg(1, rs2, RegType::Vector);
-    } break;
-    case 4: { // OPIVX
-      instr->setOpType(VopType::OPIVX);
-      instr->setArgs(IntrVopArgs{vm, funct6, 0});
-      instr->setDestReg(rd, RegType::Vector);
-      instr->setSrcReg(0, rs1, RegType::Integer);
-      instr->setSrcReg(1, rs2, RegType::Vector);
-    } break;
-    case 5: { // OPFVF
-      instr->setOpType(VopType::OPFVF);
-      instr->setArgs(IntrVopArgs{vm, funct6, 0});
-      instr->setDestReg(rd, RegType::Vector);
-      instr->setSrcReg(0, rs1, RegType::Float);
-      instr->setSrcReg(1, rs2, RegType::Vector);
-    } break;
-    case 6: { // OPMVX
-      instr->setOpType(VopType::OPMVX);
-      instr->setArgs(IntrVopArgs{vm, funct6, 0});
-      instr->setDestReg(rd, (funct6 == 16) ? RegType::Integer : RegType::Vector);
-      instr->setSrcReg(0, rs1, RegType::Integer);
-      instr->setSrcReg(1, rs2, RegType::Vector);
-    } break;
-    case 7: {
-      instr->setDestReg(rd, RegType::Integer);
-      if ((code >> 30) == 0b10) { // vsetvl
-        instr->setOpType(VsetType::VSETVL);
-        instr->setArgs(IntrVsetArgs{0, 0});
-        instr->setSrcReg(0, rs1, RegType::Integer);
-        instr->setSrcReg(1, rs2, RegType::Integer);
-      } else {
-        auto zimm = (code >> shift_vzimm) & mask_vzimm;
-        if ((code >> 30) == 0b11) { // vsetivli
-          instr->setOpType(VsetType::VSETIVLI);
-          instr->setArgs(IntrVsetArgs{zimm, rs1});
-        } else { // vsetvli
-          instr->setOpType(VsetType::VSETVLI);
-          instr->setArgs(IntrVsetArgs{zimm, 0});
-          instr->setSrcReg(0, rs1, RegType::Integer);
-        }
-      }
-    } break;
-    default:
-      std::abort();
-    }
-    ibuffer.push_back(instr);
-  } break;
-#endif // EXT_V_ENABLE
   case Opcode::EXT1: {
     switch (funct7) {
     case 0: {

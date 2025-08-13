@@ -47,43 +47,49 @@ public:
 		owners_.clear();
 	}
 
-	bool in_use(instr_trace_t* trace) const {
+	bool in_use(instr_trace_t* trace, std::vector<reg_use_t>* out = nullptr) const {
+		bool found = false;
 		if (trace->wb) {
 			assert(trace->dst_reg.type != RegType::None);
 			if (in_use_regs_.at(trace->wid).at((int)trace->dst_reg.type).test(trace->dst_reg.idx)) {
-				return true;
+				if (out) {
+					out->push_back(make_reg_use(trace->dst_reg, trace));
+				}
+				found = true;
 			}
 		}
 		for (uint32_t i = 0; i < trace->src_regs.size(); ++i) {
 			if (trace->src_regs[i].type != RegType::None) {
 				if (in_use_regs_.at(trace->wid).at((int)trace->src_regs[i].type).test(trace->src_regs[i].idx)) {
-					return true;
+					if (out) {
+						out->push_back(make_reg_use(trace->src_regs[i], trace));
+					}
+					found = true;
 				}
 			}
 		}
-		return false;
-	}
-
-	std::vector<reg_use_t> get_uses(instr_trace_t* trace) const {
-		std::vector<reg_use_t> out;
-		if (trace->wb) {
-			assert(trace->dst_reg.type != RegType::None);
-			if (in_use_regs_.at(trace->wid).at((int)trace->dst_reg.type).test(trace->dst_reg.idx)) {
-				uint32_t reg_id = get_reg_id(trace->dst_reg, trace->wid);
-				auto owner = owners_.at(reg_id);
-				out.push_back({trace->dst_reg.type, trace->dst_reg.idx, owner->fu_type, owner->op_type, owner->uuid});
-			}
+	#ifdef EXT_V_ENABLE
+		// explicit handling of vmask dependencies
+		bool use_vmask = false;
+		if (std::get_if<VlsType>(&trace->op_type)) {
+			auto trace_data = std::dynamic_pointer_cast<VecUnit::MemTraceData>(trace->data);
+			use_vmask = trace_data->is_masked;
+		} else
+		if (std::get_if<VopType>(&trace->op_type)) {
+			auto trace_data = std::dynamic_pointer_cast<VecUnit::ExeTraceData>(trace->data);
+			use_vmask = trace_data->is_masked;
 		}
-		for (uint32_t i = 0; i < trace->src_regs.size(); ++i) {
-			if (trace->src_regs[i].type != RegType::None) {
-				if (in_use_regs_.at(trace->wid).at((int)trace->src_regs[i].type).test(trace->src_regs[i].idx)) {
-					uint32_t reg_id = get_reg_id(trace->src_regs[i], trace->wid);
-					auto owner = owners_.at(reg_id);
-					out.push_back({trace->src_regs[i].type, trace->src_regs[i].idx, owner->fu_type, owner->op_type, owner->uuid});
+		if (use_vmask) {
+			RegOpd v0{RegType::Vector, 0};
+			if (in_use_regs_.at(trace->wid).at((int)v0.type).test(v0.idx)) {
+				if (out) {
+					out->push_back(make_reg_use(v0, trace));
 				}
+				found = true;
 			}
 		}
-		return out;
+	#endif // EXT_V_ENABLE
+		return found;
 	}
 
 	void reserve(instr_trace_t* trace) {
@@ -108,6 +114,12 @@ private:
   static uint32_t get_reg_id(const RegOpd& reg, uint32_t wid) {
     return (wid << RegOpd::ID_BITS) | reg.id();
   }
+
+	reg_use_t make_reg_use(const RegOpd& reg, instr_trace_t* trace) const {
+		uint32_t reg_id = get_reg_id(reg, trace->wid);
+		auto owner = owners_.at(reg_id);
+		return {trace->dst_reg.type, trace->dst_reg.idx, owner->fu_type, owner->op_type, owner->uuid};
+	}
 
 	std::vector<std::vector<RegMask>> in_use_regs_;
 	std::unordered_map<uint32_t, instr_trace_t*> owners_;

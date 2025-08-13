@@ -17,6 +17,7 @@ public:
     std::vector<std::vector<mem_addr_size_t>> mem_addrs;
     uint32_t vl = 0;
     uint32_t vnf = 0;
+    bool is_masked = false;
     MemTraceData(uint32_t num_threads = 0) : mem_addrs(num_threads) {}
   };
 
@@ -25,6 +26,7 @@ public:
     VpuOpType vpu_op;
     uint32_t vl = 0;
     uint32_t vlmul = 0;
+    bool is_masked = false;
   };
 
   struct PerfStats {
@@ -58,6 +60,8 @@ public:
   void reset();
 
   void tick();
+
+  bool decode(uint32_t code, uint32_t wid, uint64_t uuid);
 
   std::string dumpRegister(uint32_t wid, uint32_t tid, uint32_t reg_idx) const;
 
