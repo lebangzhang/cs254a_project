@@ -21,14 +21,14 @@ module VX_vpu_pack_mask import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
     input  wire [NUM_LANES-1:0][`XLEN-1:0] data_in,     // per-lane element value
     input  wire [NUM_LANES-1:0]            mask_in,     // per-lane predicate mask bit
     output wire [NUM_LANES-1:0][`XLEN-1:0] data_out,    // per-lane packed word
-    output wire [NUM_LANES-1:0][XLENB-1:0] mask_out     // per-lane byte mask
+    output reg  [NUM_LANES-1:0][XLENB-1:0] mask_out     // per-lane byte mask
 );
     `UNUSED_VAR (sew_type);
     `UNUSED_VAR (sew_idx);
     `UNUSED_VAR (data_in);
     `UNUSED_VAR (mask_in);
 
-    assign data_out = '0;
-    assign mask_out = '0;
+    assign data_out = 'x;
+    assign mask_out = '1;
 
 endmodule

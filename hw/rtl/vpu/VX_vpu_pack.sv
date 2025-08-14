@@ -20,8 +20,8 @@ module VX_vpu_pack import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
     input  wire [SEW_IDX_W-1:0]            sew_idx,     // element index within lane
     input  wire [NUM_LANES-1:0][`XLEN-1:0] data_in,     // per-lane element value
     input  wire [NUM_LANES-1:0]            mask_in,     // per-lane predicate mask bit
-    output wire [NUM_LANES-1:0][`XLEN-1:0] data_out,    // per-lane packed word
-    output wire [NUM_LANES-1:0][XLENB-1:0] mask_out     // per-lane byte mask
+    output reg  [NUM_LANES-1:0][`XLEN-1:0] data_out,    // per-lane packed word
+    output reg  [NUM_LANES-1:0][XLENB-1:0] mask_out     // per-lane byte mask
 );
 `ifdef XLEN_64
     for (genvar i = 0; i < NUM_LANES; ++i) begin : g_unpack

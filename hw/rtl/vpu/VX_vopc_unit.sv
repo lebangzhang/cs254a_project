@@ -357,6 +357,6 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
     assign vpu_seq_opc_if.wis   = '0;
     assign vpu_seq_opc_if.data  = '0;
 
-    assign vopc_operands_if.ready = (state == STATE_IDLE);
+    assign soperands_if.ready = (state == STATE_IDLE);
 
 endmodule

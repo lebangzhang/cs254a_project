@@ -20,7 +20,7 @@ module VX_vpu_unpack import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
     input  wire [SEW_IDX_W-1:0]            sew_idx,   // element index within lane
     input  wire                            is_signed, // need to sign-extend
     input  wire [NUM_LANES-1:0][`XLEN-1:0] data_in,   // per-lane packed word
-    output wire [NUM_LANES-1:0][`XLEN-1:0] data_out   // per-lane element value
+    output reg  [NUM_LANES-1:0][`XLEN-1:0] data_out   // per-lane element value
 );
 `ifdef XLEN_64
     for (genvar i = 0; i < NUM_LANES; ++i) begin : g_unpack
