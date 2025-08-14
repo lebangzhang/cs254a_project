@@ -1156,22 +1156,20 @@ void setVregData(std::vector<Byte>& reg_data, uint32_t eltIndex, DT value) {
 }
 
 template <typename DT>
-uint32_t getVregNo(uint32_t baseVreg, uint32_t eltIndex) {
-  uint32_t num_elts = VLENB / sizeof(DT);
-  uint32_t grp_index = eltIndex / num_elts;
-  assert(baseVreg + grp_index < 32);
-  return baseVreg + grp_index;
+uint32_t getVregNo(uint32_t eltIndex) {
+  uint32_t elems_per_reg = VLENB / sizeof(DT);
+  return eltIndex / elems_per_reg;
 }
 
 template <typename DT>
 uint32_t getVregElt(uint32_t eltIndex) {
-  uint32_t num_elts = VLENB / sizeof(DT);
-  return eltIndex % num_elts;
+  uint32_t elems_per_reg = VLENB / sizeof(DT);
+  return eltIndex % elems_per_reg;
 }
 
 template <typename DT>
 DT getVregData(const VRF_t& vreg_file, uint32_t baseVreg, uint32_t eltIndex) {
-  uint32_t reg_no  = getVregNo<DT>(baseVreg, eltIndex);
+  uint32_t reg_no  = baseVreg + getVregNo<DT>(eltIndex);
   uint32_t reg_elt = getVregElt<DT>(eltIndex);
   auto value = getVregData<DT>(vreg_file.at(reg_no), reg_elt);
   DP(4, "VRF Read: v[" << reg_no << "][" << reg_elt * sizeof(DT) << "]=0x" << std::hex << +value << std::dec);
@@ -1180,7 +1178,7 @@ DT getVregData(const VRF_t& vreg_file, uint32_t baseVreg, uint32_t eltIndex) {
 
 template <typename DT>
 void setVregData(VRF_t& vreg_file, uint32_t baseVreg, uint32_t eltIndex, DT value) {
-  uint32_t reg_no  = getVregNo<DT>(baseVreg, eltIndex);
+  uint32_t reg_no  = baseVreg + getVregNo<DT>(eltIndex);
   uint32_t reg_elt = getVregElt<DT>(eltIndex);
   DP(4, "VRF Write: v[" << reg_no << "][" << reg_elt * sizeof(DT) << "]=0x" << std::hex << +value << std::dec);
   setVregData<DT>(vreg_file.at(reg_no), reg_elt, value);
