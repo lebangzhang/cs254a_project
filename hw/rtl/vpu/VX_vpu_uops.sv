@@ -29,7 +29,7 @@ module VX_vpu_uops import VX_vpu_pkg::*, VX_gpu_pkg::*; (
 );
     `UNUSED_VAR (clk)
     `UNUSED_VAR (reset)
-    
+
     `UNUSED_VAR (ibuf_in)
     `UNUSED_VAR (start)
     `UNUSED_VAR (next)
@@ -38,8 +38,8 @@ module VX_vpu_uops import VX_vpu_pkg::*, VX_gpu_pkg::*; (
     `UNUSED_VAR (vpu_seq_opc_if.wis)
     `UNUSED_VAR (vpu_seq_opc_if.data)
 
-    assign vpu_seq_csr_if.data = '0;
-    assign ibuf_out = '0;
-    assign done = 0;
+    assign vpu_seq_csr_if.data = 'x;
+    assign ibuf_out = 'x;
+    assign done = 'x;
 
 endmodule
