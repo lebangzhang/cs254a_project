@@ -71,6 +71,7 @@ private:
   bool     wb_rsp_received = false;
   bool     lsu_flush_ = false;
   bool     is_reduction_ = false;
+  bool     is_vset = false;
   bool     done = false;
 };
 

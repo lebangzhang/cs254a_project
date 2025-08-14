@@ -16,7 +16,7 @@
 #include "math.h"
 
 
-# define VOPC_VECTOR_UOP_DELAY 3 
+# define VOPC_VECTOR_UOP_DELAY 2 
 # define VOPC_SCALAR_DELAY 2
 
 
@@ -52,6 +52,7 @@ void VOpcUnit::reset() {
   wb_rsp_received = false;
   lsu_flush_ = false; 
   is_reduction_ = false;
+  is_vset = false;
   done = false;
 }
 
@@ -86,17 +87,35 @@ void VOpcUnit::tick() {
     curr_vector_timing_counter = (scalar_stalls + VOPC_SCALAR_DELAY) + uops_vector_timing_counter + 1;
 
     
-    // Check if vector insn -> Then compute Reduction parameters
+    // Check if vector insn -> Then compute Reduction parameters and VSET parameters 
     if (trace->fu_type == FUType::VPU) {
       auto trace_data = std::dynamic_pointer_cast<VecUnit::ExeTraceData>(trace->data);
       auto vpu_op = trace_data->vpu_op;
+
+
+      // Vset Parameters
+      is_vset       = (vpu_op == VpuOpType::VSET);
+
+      // Set parameters if vset insn
+      if(is_vset){
+        curr_vector_timing_counter = (scalar_stalls + VOPC_SCALAR_DELAY) + VOPC_VECTOR_UOP_DELAY;
+      } 
+
 
       // Redution Parameters
       is_reduction_ = (vpu_op >= VpuOpType::ARITH_R);
 
       // If not fused vpu
       #ifdef NOT_FUSED_VPU
-        is_reduction_ = false;
+        vector_stalls = 0;
+        if(is_reduction_){
+          uops_vector_timing_counter = VOPC_VECTOR_UOP_DELAY;
+          curr_vector_timing_counter = (scalar_stalls + VOPC_SCALAR_DELAY) + VOPC_VECTOR_UOP_DELAY;
+          
+          // TOFIX : Hacky Temporary Fix (Only applies for 'fully vector')
+          curr_vgpr_requests = NUM_THREADS;
+        }
+        is_reduction_ = false;  // Fallback to stadnard insn timing
       #endif
 
       active_PC_ = trace->PC;
@@ -115,13 +134,18 @@ void VOpcUnit::tick() {
 
         // Set reduction tree height to 0 
         curr_red_tree_h = 0;
+        
+        // Recompute current timing for fused  
+        vector_stalls = 1;
+        curr_vector_timing_counter = (scalar_stalls + VOPC_SCALAR_DELAY) + VOPC_VECTOR_UOP_DELAY + 1;
 
         // Fetch 2x VRF for layer 0 
         if(curr_vgpr_requests >= 2){
 
           // +2 to handle the fetch and response
-          curr_vector_timing_counter += (vector_stalls + 1);
-        } 
+          curr_vector_timing_counter += (vector_stalls);
+        }
+
 
         curr_red_tree_h = 0;
         wb_rsp_received = true;
@@ -165,12 +189,27 @@ void VOpcUnit::tick() {
   // Vector instruction : State Machine Timing
   } else {
 
+    // Is a vset insn
+    if(is_vset){
+
+      // Decrement counter each CC
+      if(curr_vector_timing_counter > 0){
+        curr_vector_timing_counter -= 1;
+      }
+      
+      // When counter reaches 0 ==> Send a trace 
+      if(curr_vector_timing_counter == 0){
+          this->send_last_trace(trace);
+      }
+
+
+
+    // Standard Instruction 
     // Access GPR for 1 chunk 
     // Assume: Since subsequent GPR Chunk are concurrent with sending vector uops 
     // ==> Assume (time for GPR) < (time for uops) ==> Hence, only consider first gpr_requests, 
     //      Other gpr_requests would be ready during time vector uops are sent 
-   
-    if(!is_reduction_){
+    } else if(!is_reduction_){
       
       // Decrement counter each CC
       if(curr_vector_timing_counter > 0){
@@ -194,16 +233,16 @@ void VOpcUnit::tick() {
         // Send the last trace 
         } else {
           this->send_last_trace(trace);
-
         }
 
         // Reset curr_vector_timing_counter for the next height 
-        this->compute_red_vector_timing_counter(curr_red_tree_h);
+        curr_vector_timing_counter = uops_vector_timing_counter;
       }
     
 
     // Is a reduction instruction
-    } else {
+    // and fused architecture  
+    } else { 
 
       // Case 1: First Layer of reduction Tree
       if(curr_red_tree_h == 0){
@@ -283,7 +322,7 @@ void VOpcUnit::tick() {
           }
         }
       }
-    }
+    } 
   }
 
   // Reset parameters for next instruction 
@@ -292,6 +331,7 @@ void VOpcUnit::tick() {
     wb_rsp_received = false;
     lsu_flush_ = false; 
     is_reduction_ = false;
+    is_vset = false;
     done = false;
   }
 
@@ -312,17 +352,17 @@ void VOpcUnit::compute_red_vector_timing_counter(uint32_t red_tree_h){
   // ==> Start collecting registers, dont wait for wb
   if(red_tree_h == 0){
     
-    curr_vector_timing_counter = vector_stalls + VOPC_VECTOR_UOP_DELAY;
+    curr_vector_timing_counter = VOPC_VECTOR_UOP_DELAY;
 
     // If can fetch 2, then fetch 2 registers
     if(curr_vgpr_requests >= 2){
-      curr_vector_timing_counter += (vector_stalls + 1);
+      curr_vector_timing_counter += (1);
     }
 
   // Case 2: Next height is part of the tree  
   // Don't fetch VRF again  
   } else {
-    curr_vector_timing_counter = VOPC_VECTOR_UOP_DELAY; 
+    curr_vector_timing_counter = VOPC_VECTOR_UOP_DELAY - 1; 
   }
 
 }
@@ -499,7 +539,10 @@ uint32_t VOpcUnit::compute_total_gpr_requests(instr_trace_t* trace) {
     }
   }
 
-  return total_requests;
+  // Temporary Assumption that SIMD_WIDTH >= NUM_THREADS
+
+  /*return total_requests;*/
+  return 1;
 }
 
 

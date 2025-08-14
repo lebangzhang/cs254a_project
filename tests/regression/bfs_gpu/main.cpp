@@ -158,7 +158,7 @@ int main(int argc, char *argv[]) {
   RT_CHECK(vx_dev_open(&device));
 
   // Generate graph 
-  int max_edges_per_node = 3;
+  int max_edges_per_node = 5;
   std::vector<Node> h_nodes;
   std::vector<int> h_edges;
   generate_random_graph(size, max_edges_per_node, h_nodes, h_edges);
@@ -336,13 +336,15 @@ int main(int argc, char *argv[]) {
   std::cout << "upload kernel argument" << std::endl;
   RT_CHECK(vx_upload_bytes(device, &kernel_arg, sizeof(kernel_arg_t), &args_buffer));
 
-  // start device
-  std::cout << "start device" << std::endl;
-  RT_CHECK(vx_start(device, krnl_buffer, args_buffer));
 
-  // wait for completion
-  std::cout << "wait for completion" << std::endl;
-  RT_CHECK(vx_ready_wait(device, VX_MAX_TIMEOUT));
+    // start device
+    std::cout << "start device" << std::endl;
+    RT_CHECK(vx_start(device, krnl_buffer, args_buffer));
+    
+    // wait for completion
+    std::cout << "wait for completion" << std::endl;
+    RT_CHECK(vx_ready_wait(device, VX_MAX_TIMEOUT));
+
 
   // download destination buffer
   std::cout << "download destination buffer" << std::endl;

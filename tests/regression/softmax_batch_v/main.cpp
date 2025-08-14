@@ -129,7 +129,7 @@ int main(int argc, char *argv[]) {
 
   /*uint32_t num_cols = size;*/
   uint32_t num_cols = size;
-  uint32_t num_rows = 1;
+  uint32_t num_rows = size;
   uint32_t total_size = num_cols * num_rows;
 
   uint32_t buf_size = total_size * sizeof(TYPE);

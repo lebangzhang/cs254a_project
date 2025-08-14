@@ -162,21 +162,21 @@ int main(int argc, char *argv[]) {
   RT_CHECK(vx_dev_open(&device));
 
   // Generate graph 
-  int max_edges_per_node = 3;
+  int max_edges_per_node = 5;
   std::vector<Node> h_nodes;
   std::vector<uint32_t> h_edges;
   generate_random_graph(size, max_edges_per_node, h_nodes, h_edges);
 
-  std::cout << "Nodes:\n";
-  for (int i = 0; i < size; ++i) {
-    std::cout << "Node " << i << ": starting=" << h_nodes[i].starting << ", no_of_edges=" << h_nodes[i].no_of_edges << "\n";
-  }
-
-  std::cout << "Edges:\n";
-  for (int e : h_edges) {
-    std::cout << e << " ";
-  }
-  std::cout << "\n";
+  /*std::cout << "Nodes:\n";*/
+  /*for (int i = 0; i < size; ++i) {*/
+  /*  std::cout << "Node " << i << ": starting=" << h_nodes[i].starting << ", no_of_edges=" << h_nodes[i].no_of_edges << "\n";*/
+  /*}*/
+  /**/
+  /*std::cout << "Edges:\n";*/
+  /*for (int e : h_edges) {*/
+  /*  std::cout << e << " ";*/
+  /*}*/
+  /*std::cout << "\n";*/
 
 
   // Assignments
