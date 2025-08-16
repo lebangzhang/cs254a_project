@@ -1,7 +1,7 @@
 ROOT_DIR := $(realpath ../../..)
 include $(ROOT_DIR)/config.mk
 
-PROJECT := conv_gpu
+PROJECT := conv_v4
 
 SRC_DIR := $(VORTEX_HOME)/tests/regression/$(PROJECT)
 

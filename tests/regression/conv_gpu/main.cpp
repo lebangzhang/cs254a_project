@@ -69,40 +69,59 @@ public:
   }
 };
 
-static void matmul_cpu(TYPE* out, const TYPE* A, const TYPE* B, uint32_t width, uint32_t height) {
-  for (uint32_t row = 0; row < height; ++row) {
-    for (uint32_t col = 0; col < width; ++col) {
+static void convolution_cpu(TYPE *O, TYPE *I, TYPE *W, int32_t width, int32_t height) {
+  int kernelSize = 7;
+  int pad = kernelSize / 2;        // = 3 for 7x7
+  int paddedWidth = width + 2 * pad;
+
+  for (int32_t y = 0; y < height; ++y) {
+    for (int32_t x = 0; x < width; ++x) {
+      int paddedY = y + pad;
+      int paddedX = x + pad;
       TYPE sum(0);
-      for (uint32_t e = 0; e < width; ++e) {
-          sum += A[row * width + e] * B[e * width + col];
+
+      for (int32_t ky = -pad; ky <= pad; ++ky) {
+        for (int32_t kx = -pad; kx <= pad; ++kx) {
+          int32_t iy = paddedY + ky;
+          int32_t ix = paddedX + kx;
+
+          TYPE value = I[iy * paddedWidth + ix];
+          TYPE weight = W[(ky + pad) * kernelSize + (kx + pad)];
+          sum += value * weight;
+        }
       }
-      out[row * width + col] = sum;
+
+      O[y * width + x] = sum;
     }
   }
 }
 
 const char* kernel_file = "kernel.vxbin";
-uint32_t size = 32;
+int size = 32;
+bool use_lmem = false;
 
 vx_device_h device = nullptr;
-vx_buffer_h A_buffer = nullptr;
-vx_buffer_h B_buffer = nullptr;
-vx_buffer_h C_buffer = nullptr;
+vx_buffer_h I_buffer = nullptr;
+vx_buffer_h W_buffer = nullptr;
+vx_buffer_h O_buffer = nullptr;
 vx_buffer_h krnl_buffer = nullptr;
 vx_buffer_h args_buffer = nullptr;
 kernel_arg_t kernel_arg = {};
 
 static void show_usage() {
    std::cout << "Vortex Test." << std::endl;
-   std::cout << "Usage: [-k: kernel] [-n size] [-h: help]" << std::endl;
+   std::cout << "Usage: [-k kernel] [-l: local memory] [-n size] [-h|?: help]" << std::endl;
 }
 
 static void parse_args(int argc, char **argv) {
   int c;
-  while ((c = getopt(argc, argv, "n:k:h")) != -1) {
+  while ((c = getopt(argc, argv, "n:k:lh")) != -1) {
     switch (c) {
     case 'n':
       size = atoi(optarg);
+      break;
+    case 'l':
+      use_lmem = true;
       break;
     case 'k':
       kernel_file = optarg;
@@ -120,9 +139,9 @@ static void parse_args(int argc, char **argv) {
 
 void cleanup() {
   if (device) {
-    vx_mem_free(A_buffer);
-    vx_mem_free(B_buffer);
-    vx_mem_free(C_buffer);
+    vx_mem_free(I_buffer);
+    vx_mem_free(W_buffer);
+    vx_mem_free(O_buffer);
     vx_mem_free(krnl_buffer);
     vx_mem_free(args_buffer);
     vx_dev_close(device);
@@ -139,48 +158,93 @@ int main(int argc, char *argv[]) {
   std::cout << "open device connection" << std::endl;
   RT_CHECK(vx_dev_open(&device));
 
-  uint32_t size_sq = size * size;
-  uint32_t buf_size = size_sq * sizeof(TYPE);
-
   std::cout << "data type: " << Comparator<TYPE>::type_str() << std::endl;
   std::cout << "matrix size: " << size << "x" << size << std::endl;
 
   kernel_arg.grid_dim[0] = size;
   kernel_arg.grid_dim[1] = size;
-  kernel_arg.size = size;
+  kernel_arg.width = size;
+  kernel_arg.use_lmem = use_lmem;
+
+  int K = 7;                      // kernel size
+  int pad = K / 2;                // works for odd-sized kernels
+  uint32_t o_points = size * size;
+  uint32_t i_points = (size + 2 * pad) * (size + 2 * pad);
+  uint32_t w_points = K * K;
 
   // allocate device memory
   std::cout << "allocate device memory" << std::endl;
-  RT_CHECK(vx_mem_alloc(device, buf_size, VX_MEM_READ, &A_buffer));
-  RT_CHECK(vx_mem_address(A_buffer, &kernel_arg.A_addr));
-  RT_CHECK(vx_mem_alloc(device, buf_size, VX_MEM_READ, &B_buffer));
-  RT_CHECK(vx_mem_address(B_buffer, &kernel_arg.B_addr));
-  RT_CHECK(vx_mem_alloc(device, buf_size, VX_MEM_WRITE, &C_buffer));
-  RT_CHECK(vx_mem_address(C_buffer, &kernel_arg.C_addr));
+  size_t i_nbytes = i_points * sizeof(TYPE);
+  size_t w_nbytes = w_points * sizeof(TYPE);
+  size_t o_nbytes = o_points * sizeof(TYPE);
+  RT_CHECK(vx_mem_alloc(device, i_nbytes, VX_MEM_READ, &I_buffer));
+  RT_CHECK(vx_mem_address(I_buffer, &kernel_arg.I_addr));
+  RT_CHECK(vx_mem_alloc(device, w_nbytes, VX_MEM_READ, &W_buffer));
+  RT_CHECK(vx_mem_address(W_buffer, &kernel_arg.W_addr));
+  RT_CHECK(vx_mem_alloc(device, o_nbytes, VX_MEM_WRITE, &O_buffer));
+  RT_CHECK(vx_mem_address(O_buffer, &kernel_arg.O_addr));
 
-  std::cout << "A_addr=0x" << std::hex << kernel_arg.A_addr << std::endl;
-  std::cout << "B_addr=0x" << std::hex << kernel_arg.B_addr << std::endl;
-  std::cout << "C_addr=0x" << std::hex << kernel_arg.C_addr << std::endl;
-
-  // generate source data
-  std::vector<TYPE> h_A(size_sq);
-  std::vector<TYPE> h_B(size_sq);
-  std::vector<TYPE> h_C(size_sq);
-  for (uint32_t i = 0; i < size_sq; ++i) {
-    h_A[i] = Comparator<TYPE>::generate();
-    h_B[i] = Comparator<TYPE>::generate();
+  if (use_lmem) {
+    uint64_t dev_local_mem_size;
+    RT_CHECK(vx_dev_caps(device, VX_CAPS_LOCAL_MEM_SIZE, &dev_local_mem_size));
+    if (w_nbytes > dev_local_mem_size) {
+      std::cout << "Error: Not enough local memory: needed=" << w_nbytes << ", available=" << dev_local_mem_size << std::endl;
+      cleanup();
+      exit(1);
+    }
   }
 
-  // upload matrix A buffer
+  std::cout << "dev_argI=0x" << std::hex << kernel_arg.I_addr << std::endl;
+  std::cout << "dev_argW=0x" << std::hex << kernel_arg.W_addr << std::endl;
+  std::cout << "dev_argO=0x" << std::hex << kernel_arg.O_addr << std::endl;
+
+  // Generate input values
+  std::vector<TYPE> h_I(i_points);
+  std::vector<TYPE> h_W(w_points);
+  std::vector<TYPE> h_O(o_points);
+  
+  for (int32_t y = -pad; y < size + pad; ++y) {
+      for (int32_t x = -pad; x < size + pad; ++x) {
+          if (x >= 0 && x < size && y >= 0 && y < size) {
+              h_I[(y + pad) * (size + 2*pad) + (x + pad)] =
+                  static_cast<TYPE>(rand()) / RAND_MAX;
+          } else {
+              h_I[(y + pad) * (size + 2*pad) + (x + pad)] = 0;
+          }
+      }
+  }
+  
+  // Initialize weights
+  for (uint32_t i = 0; i < w_points; ++i) {
+      h_W[i] = static_cast<TYPE>(rand()) / RAND_MAX;
+  }
+  /**/
+  /*std::vector<TYPE> h_I(i_points);*/
+  /*std::vector<TYPE> h_W(w_points);*/
+  /*std::vector<TYPE> h_O(o_points);*/
+  /*for (int32_t y = -1; y < size+1; ++y) {*/
+  /*  for (int32_t x = -1; x < size+1; ++x) {*/
+  /*    if (x >= 0 && x < size && y >= 0 && y < size) {*/
+  /*      h_I[(y+1) * (size+2) + (x+1)] = static_cast<TYPE>(rand()) / RAND_MAX;*/
+  /*    } else {*/
+  /*      h_I[(y+1) * (size+2) + (x+1)] = 0;*/
+  /*    }*/
+  /*  }*/
+  /*}*/
+  /*for (uint32_t i = 0; i < w_points; ++i) {*/
+  /*  h_W[i] = static_cast<TYPE>(rand()) / RAND_MAX;*/
+  /*}*/
+
+  // upload input buffer
   {
-    std::cout << "upload matrix A buffer" << std::endl;
-    RT_CHECK(vx_copy_to_dev(A_buffer, h_A.data(), 0, buf_size));
+    std::cout << "upload source buffer" << std::endl;
+    RT_CHECK(vx_copy_to_dev(I_buffer, h_I.data(), 0, i_nbytes));
   }
 
-  // upload matrix B buffer
+  // upload weight buffer
   {
-    std::cout << "upload matrix B buffer" << std::endl;
-    RT_CHECK(vx_copy_to_dev(B_buffer, h_B.data(), 0, buf_size));
+    std::cout << "upload weight buffer" << std::endl;
+    RT_CHECK(vx_copy_to_dev(W_buffer, h_W.data(), 0, w_nbytes));
   }
 
   // Upload kernel binary
@@ -207,17 +271,19 @@ int main(int argc, char *argv[]) {
 
   // download destination buffer
   std::cout << "download destination buffer" << std::endl;
-  RT_CHECK(vx_copy_from_dev(h_C.data(), C_buffer, 0, buf_size));
+  RT_CHECK(vx_copy_from_dev(h_O.data(), O_buffer, 0, o_nbytes));
 
   // verify result
   std::cout << "verify result" << std::endl;
   int errors = 0;
   {
-    std::vector<TYPE> h_ref(size_sq);
-    matmul_cpu(h_ref.data(), h_A.data(), h_B.data(), size, size);
+    std::vector<TYPE> h_ref(o_points);
+    convolution_cpu(h_ref.data(), h_I.data(), h_W.data(), size, size);
 
     for (uint32_t i = 0; i < h_ref.size(); ++i) {
-      if (!Comparator<TYPE>::compare(h_C[i], h_ref[i], i, errors)) {
+      auto ref = h_ref[i];
+      auto cur = h_O[i];
+      if (!Comparator<TYPE>::compare(cur, ref, i, errors)) {
         ++errors;
       }
     }
