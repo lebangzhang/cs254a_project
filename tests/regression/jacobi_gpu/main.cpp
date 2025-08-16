@@ -228,7 +228,8 @@ int main(int argc, char *argv[]) {
   uint64_t total_instrs_per_core;
   uint64_t instrs_per_core;
 
-  uint64_t iteration = 30;
+  /*uint64_t iteration = 30;*/
+  uint64_t iteration = 1;
 
   for(uint32_t k = 0; k < iteration; k++){
 

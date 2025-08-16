@@ -16,7 +16,7 @@
 #include "math.h"
 
 
-# define VOPC_VECTOR_UOP_DELAY 2 
+# define VOPC_VECTOR_UOP_DELAY 3 
 # define VOPC_SCALAR_DELAY 2
 
 

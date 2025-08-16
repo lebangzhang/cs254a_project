@@ -16,17 +16,17 @@ void kernel_body(kernel_arg_t* __UNIFORM__ arg) {
     double sum = 0.0;
 
     // Option 1 
-    /*for (int j = 0; j < n; j++) {*/
-        /*if (j != i){*/
-            /*sum += A[index + j] * x_old[j];*/
-        /*}*/
-    /*}*/
+    for (int j = 0; j < n; j++) {
+        if (j != i){
+            sum += A[index + j] * x_old[j];
+        }
+    }
         
     // Option 2 
-    for (int j = 0; j < n; j++) {
-        sum += A[index + j] * x_old[j];
-    }
-    sum -= A[index + i] * x_old[i];
+    /*for (int j = 0; j < n; j++) {*/
+        /*sum += A[index + j] * x_old[j];*/
+    /*}*/
+    /*sum -= A[index + i] * x_old[i];*/
 
 
     x_new[i] = (b[i] - sum) / A[index + i];
