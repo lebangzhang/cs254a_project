@@ -131,9 +131,6 @@ int main(int argc, char *argv[]) {
   std::cout << "open device connection" << std::endl;
   RT_CHECK(vx_dev_open(&device));
 
-  // Temporary
-  size = 16;
-
   // Assignments
   uint32_t num_cols   = size;
   uint32_t num_rows   = size;
