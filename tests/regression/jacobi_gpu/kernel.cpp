@@ -26,7 +26,6 @@ void kernel_body(kernel_arg_t* __UNIFORM__ arg) {
     for (int j = 0; j < n; j++) {
         sum += A[index + j] * x_old[j];
     }
-    vx_printf("%f\n", sum);
     sum -= A[index + i] * x_old[i];
 
 
