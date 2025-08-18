@@ -2,6 +2,10 @@ ROOT_DIR := $(realpath ../../..)
 include $(ROOT_DIR)/config.mk
 
 SRC_DIR := $(VORTEX_HOME)/hw/syn/yosys
+LIB_DIR := $(VORTEX_HOME)/hw/syn/libs
+
+DEFAULT_LIB := $(LIB_DIR)/NangateOpenCellLibrary_typical.lib
+SYN_LIB_ENV := $(if $(LIB_TGT),LIB_TGT=$(LIB_TGT),$(if $(LIB_ROOT),LIB_ROOT=$(LIB_ROOT),LIB_TGT=$(DEFAULT_LIB)))
 
 TOP_LEVEL_ENTITY ?= Vortex
 PREFIX ?= build
@@ -44,11 +48,13 @@ endif
 
 # include paths
 FPU_INCLUDE = -I$(RTL_DIR)/fpu
-ifneq (,$(findstring -DFPU_FPNEW, $(CONFIGS)))
-	FPU_INCLUDE += -J$(THIRD_PARTY_DIR)/cvfpu/src/common_cells/include -J$(THIRD_PARTY_DIR)/cvfpu/src/common_cells/src -J$(THIRD_PARTY_DIR)/cvfpu/src/fpu_div_sqrt_mvp/hdl -J$(THIRD_PARTY_DIR)/cvfpu/src
+ifeq (,$(findstring -DEXT_F_DISABLE, $(CONFIGS)))
+	FPU_INCLUDE += -I$(THIRD_PARTY_DIR)/cvfpu/src/common_cells/include -I$(THIRD_PARTY_DIR)/cvfpu/src/common_cells/src -I$(THIRD_PARTY_DIR)/cvfpu/src/fpu_div_sqrt_mvp/hdl -I$(THIRD_PARTY_DIR)/cvfpu/src
 endif
 RTL_INCLUDE = -I$(RTL_DIR) -I$(RTL_DIR)/libs -I$(RTL_DIR)/interfaces -I$(RTL_DIR)/core -I$(RTL_DIR)/mem -I$(RTL_DIR)/cache
 RTL_INCLUDE += $(FPU_INCLUDE)
+
+RTL_INCLUDE += -I$(LIB_DIR)/no_mem
 
 # Debugging
 ifdef DEBUG
@@ -68,30 +74,54 @@ ifdef PERF
 	CFLAGS += -DPERF_ENABLE
 endif
 
-CFLAGS += -DSYNTHESIS -DYOSYS
+CFLAGS += -DSYNTHESIS -DASIC -DYOSYS
 CFLAGS += -DXLEN_$(XLEN)
 CFLAGS += $(CONFIGS)
 CFLAGS += $(RTL_INCLUDE)
 
 # Build targets
-all: clean build
+all: timing
 
-gen-sources: $(BUILD_DIR)/sources.txt
-$(BUILD_DIR)/sources.txt:
-	mkdir -p $(BUILD_DIR); cd $(BUILD_DIR); $(SCRIPT_DIR)/gen_sources.sh -P $(CFLAGS) -Csrc -Osources.txt
+gen-sources: $(BUILD_DIR)/src
+$(BUILD_DIR)/src:
+	$(SCRIPT_DIR)/gen_sources.sh -P $(CFLAGS) -C$(BUILD_DIR)/src
 
 sv2v: $(BUILD_DIR)/project.v
-$(BUILD_DIR)/project.v: gen-sources
-	cd $(BUILD_DIR); $(SCRIPT_DIR)/sv2v.sh -t$(TOP_LEVEL_ENTITY) -Isrc -oproject.v
+$(BUILD_DIR)/project.v: $(BUILD_DIR)/src
+	$(SCRIPT_DIR)/sv2v.sh -t$(TOP_LEVEL_ENTITY) -I$(BUILD_DIR)/src -o$(BUILD_DIR)/project.v
+	# Remove lines starting $finish or $display from generated source
+	sed -ri '/^[[:space:]]*[$$](finish|display)/d' $(BUILD_DIR)/project.v
 
-build: $(BUILD_DIR)/project.v
-	cd $(BUILD_DIR); $(SRC_DIR)/synth.sh -t$(TOP_LEVEL_ENTITY) -sproject.v
+gen-sources: $(BUILD_DIR)/sources.txt
+$(BUILD_DIR)/sources.txt: $(BUILD_DIR)/project.v
+	echo $(realpath $(BUILD_DIR)/project.v) > $(BUILD_DIR)/sources.txt
 
-elaborate: $(BUILD_DIR)/project.v
-	cd $(BUILD_DIR); $(SRC_DIR)/synth.sh -t$(TOP_LEVEL_ENTITY) -sproject.v -P="elaborate"
+synthesis: $(BUILD_DIR)/sources.txt
+	cd $(BUILD_DIR); TOP=$(TOP_LEVEL_ENTITY) \
+	SRC_FILE=sources.txt \
+	SDC_FILE=$(SRC_DIR)/project.sdc \
+	$(SYN_LIB_ENV) \
+	TOOL_DIR=$(SCRIPT_DIR) \
+	RUN_SYNTH=1 \
+	$(SRC_DIR)/run_synth.sh
 
-synthesis: $(BUILD_DIR)/project.v
-	cd $(BUILD_DIR); $(SRC_DIR)/synth.sh -t$(TOP_LEVEL_ENTITY) -sproject.v -P="synthesis"
+techmap: $(BUILD_DIR)/sources.txt
+	cd $(BUILD_DIR); TOP=$(TOP_LEVEL_ENTITY) \
+	SRC_FILE=sources.txt \
+	SDC_FILE=$(SRC_DIR)/project.sdc \
+	$(SYN_LIB_ENV) \
+	TOOL_DIR=$(SCRIPT_DIR) \
+	RUN_MAP=1 \
+	$(SRC_DIR)/run_synth.sh
+
+timing: $(BUILD_DIR)/sources.txt
+	cd $(BUILD_DIR); TOP=$(TOP_LEVEL_ENTITY) \
+	SRC_FILE=sources.txt \
+	SDC_FILE=$(SRC_DIR)/project.sdc \
+	$(SYN_LIB_ENV) \
+	TOOL_DIR=$(SCRIPT_DIR) \
+	RUN_STA=1 \
+	$(SRC_DIR)/run_synth.sh
 
 clean:
 	$(RMDIR) $(BUILD_DIR)
