@@ -25,7 +25,7 @@ module VX_vpu_pack import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
 );
 `ifdef XLEN_64
     for (genvar i = 0; i < NUM_LANES; ++i) begin : g_unpack
-        wire [`XLEN-1:0] data_in8  = `XLEN'(data_in[i][7:0])  << (sew_idx[2:0] * 8);
+        wire [`XLEN-1:0]  data_in8 = `XLEN'(data_in[i][7:0])  << (sew_idx[2:0] * 8);
         wire [`XLEN-1:0] data_in16 = `XLEN'(data_in[i][15:0]) << (sew_idx[1:0] * 16);
         wire [`XLEN-1:0] data_in32 = `XLEN'(data_in[i][31:0]) << (sew_idx[0:0] * 32);
         wire [`XLEN-1:0] data_in64 = data_in[i];
@@ -48,7 +48,7 @@ module VX_vpu_pack import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
     end
 `else
     for (genvar i = 0; i < NUM_LANES; ++i) begin : g_unpack
-        wire [`XLEN-1:0] data_in8  = `XLEN'(data_in[i][7:0])  << (sew_idx[1:0] * 8);
+        wire [`XLEN-1:0]  data_in8 = `XLEN'(data_in[i][7:0])  << (sew_idx[1:0] * 8);
         wire [`XLEN-1:0] data_in16 = `XLEN'(data_in[i][15:0]) << (sew_idx[0:0] * 16);
         wire [`XLEN-1:0] data_in32 = data_in[i];
         always @(*) begin

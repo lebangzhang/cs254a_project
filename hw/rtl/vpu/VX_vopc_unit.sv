@@ -106,17 +106,8 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
             .data_out (gpr_wb_data_um),
             .mask_out (gpr_wb_byteen_um)
         );
-
-        VX_vpu_pack_mask #(
-            .NUM_LANES (VL_COUNT)
-        ) pack_mask (
-            .sew_type (writeback_if.data.sew.etype),
-            .sew_idx  (writeback_if.data.sew.idx),
-            .data_in  (writeback_if.data.data[VL_COUNT * t +: VL_COUNT]),
-            .mask_in  (writeback_if.data.tmask[VL_COUNT * t +: VL_COUNT]),
-            .data_out (gpr_wb_data_m[t]),
-            .mask_out (gpr_wb_byteen_m[t])
-        );
+        assign gpr_wb_data_m[t] = gpr_wb_data_um;
+        assign gpr_wb_byteen_m[t] = gpr_wb_byteen_um;
 
         assign gpr_wb_data[t]  = writeback_if.data.sew.masked ? gpr_wb_data_m[t]  : gpr_wb_data_um;
         assign gpr_wb_byteen[t] = writeback_if.data.sew.masked ? gpr_wb_byteen_m[t] : gpr_wb_byteen_um;
@@ -170,13 +161,6 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
         .raddr (gpr_req_addr),
         .rdata (vmask)
     );
-    /*reg [VT_COUNT-1:0][VL_COUNT-1:0][XLENB-1:0] vmask_bank [(PER_ISSUE_WARPS * VSIMD_COUNT)-1:0];
-    always @ (posedge clk) begin
-        if (writeback_if.valid && writeback_if.data.rd[RV_REGS_BITS-1:0] == '0) begin
-            vmasks[gpr_wb_addr] <= gpr_wb_data_m[t];
-        end
-    end
-    wire [VT_COUNT-1:0][VL_COUNT-1:0][XLENB-1:0] vmask = vmask_bank[gpr_req_addr];*/
 
     wire [NUM_SRC_OPDS-1:0][VT_COUNT-1:0][VL_COUNT-1:0][`XLEN-1:0] unpacked_data;
     wire [VT_COUNT-1:0][VL_COUNT-1:0] unpacked_vmask;

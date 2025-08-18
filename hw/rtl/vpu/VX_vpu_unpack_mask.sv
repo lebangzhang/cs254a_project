@@ -21,11 +21,46 @@ module VX_vpu_unpack_mask import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
     input  wire [NUM_LANES-1:0][`XLEN-1:0] data_in,   // per-lane packed word
     output reg  [NUM_LANES-1:0]            data_out   // per-lane element value
 );
+    localparam INPUT_ELEMS = XLENB * NUM_LANES;
 
-    `UNUSED_VAR (sew_type);
-    `UNUSED_VAR (sew_idx);
-    `UNUSED_VAR (data_in);
+    wire [INPUT_ELEMS-1:0] elems_in;
+    for (genvar i = 0; i < INPUT_ELEMS; ++i) begin : g_unpack
+        assign elems_in[i] = data_in[i / XLENB][i % XLENB];
+    end
 
-    assign data_out = 'x;
+`ifdef XLEN_64
+    wire [NUM_LANES-1:0] data_out8, data_out16, data_out32, data_out64;
+    for (genvar i = 0; i < NUM_LANES; ++i) begin : g_unpack8
+        assign data_out8[i]  = elems_in[sew_idx[2:0] * NUM_LANES +: NUM_LANES][i];
+        assign data_out16[i] = elems_in[sew_idx[1:0] * NUM_LANES +: NUM_LANES][i];
+        assign data_out32[i] = elems_in[sew_idx[0] * NUM_LANES +: NUM_LANES][i];
+        assign data_out64[i] = elems_in[i];
+    end
+
+    always @(*) begin
+        case (sew_type)
+        2'd0: data_out = data_out8;
+        2'd1: data_out = data_out16;
+        2'd2: data_out = data_out32;
+        2'd3: data_out = data_out64;
+        endcase
+    end
+`else
+    wire [NUM_LANES-1:0] data_out8, data_out16, data_out32;
+    for (genvar i = 0; i < NUM_LANES; ++i) begin : g_unpack8
+        assign data_out8[i]  = elems_in[sew_idx[1:0] * NUM_LANES +: NUM_LANES][i];
+        assign data_out16[i] = elems_in[sew_idx[0] * NUM_LANES +: NUM_LANES][i];
+        assign data_out32[i] = elems_in[i];
+    end
+
+    always @(*) begin
+        case (sew_type)
+        2'd0: data_out = data_out8;
+        2'd1: data_out = data_out16;
+        2'd2: data_out = data_out32;
+        2'd3: data_out = 'x;
+        endcase
+    end
+`endif
 
 endmodule
