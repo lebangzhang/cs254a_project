@@ -56,6 +56,12 @@ RTL_INCLUDE += $(FPU_INCLUDE)
 
 RTL_INCLUDE += -I$(LIB_DIR)/no_mem
 
+# Add V extension sources
+ifneq (,$(findstring -DEXT_V_ENABLE, $(CONFIGS)))
+	RTL_PKGS += $(RTL_DIR)/vpu/VX_vpu_pkg.sv
+	RTL_INCLUDE += -I$(RTL_DIR)/vpu
+endif
+
 # Debugging
 ifdef DEBUG
 	CFLAGS += $(DBG_TRACE_FLAGS)
