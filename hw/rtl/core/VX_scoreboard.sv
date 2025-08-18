@@ -275,6 +275,7 @@ module VX_scoreboard import VX_gpu_pkg::*; #(
             scoreboard_if.data.op_args,
         `ifdef EXT_V_ENABLE
             scoreboard_if.data.is_rvv,
+            scoreboard_if.data.is_masked,
         `endif
             scoreboard_if.data.wb,
             scoreboard_if.data.used_rs,

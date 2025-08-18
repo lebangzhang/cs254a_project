@@ -64,6 +64,7 @@ module VX_ibuffer import VX_gpu_pkg::*; #(
                 decode_if.data.op_args,
             `ifdef EXT_V_ENABLE
                 decode_if.data.is_rvv,
+                decode_if.data.is_masked,
             `endif
                 decode_if.data.wb,
                 decode_if.data.used_rs,

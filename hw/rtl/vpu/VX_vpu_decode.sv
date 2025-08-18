@@ -13,6 +13,286 @@
 
 `include "VX_define.vh"
 
+module VX_vpu_decode_vl import VX_gpu_pkg::*, VX_vpu_pkg::*; (
+    input  wire [31:0]  instr_i,
+    output vpu_decode_t decode_o
+);
+    wire [2:0]     nf = instr_i[31:29];
+    wire          mew = instr_i[28];
+    wire [1:0]    mop = instr_i[27:26];
+    wire           vm = instr_i[25];
+    wire [4:0]   umop = instr_i[24:20];
+    wire [4:0]    rs2 = instr_i[24:20];
+    wire [4:0]    rs1 = instr_i[19:15];
+    wire [2:0]  width = instr_i[14:12];
+    wire [4:0]     rd = instr_i[11:7];
+    wire [6:0] opcode = instr_i[6:0];
+
+    `UNUSED_VAR (opcode)
+
+    reg [INST_LSU_BITS-1:0] op;
+    always @* begin
+        case (width)
+        3'b000: op  = INST_LSU_LB; // 8-bit
+        3'b001: op  = INST_LSU_LH; // 16-bit
+        3'b010: op  = INST_LSU_LW; // 32-bit
+        3'b011: op  = INST_LSU_LD; // 64-bit
+        default: op = 'x;
+        endcase
+    end
+
+    reg [NUM_SRC_OPDS:0][NUM_REGS_BITS-1:0] reg_ids;
+    reg [NUM_SRC_OPDS:0] use_regs;
+
+    wire rd_is_float   = (width == 3'b001 || width == 3'b010 || width == 3'b011 || width == 3'b100);
+    wire rs2_is_vector = (mop != 2'b10);
+    wire rs2_enable    = (mop != 2'b00);
+
+    vpu_decode_t d;
+    always @* begin
+        d = 'x;
+        d.is_masked = vm;
+        d.ex_type = EX_LSU;
+        d.op_type = op;
+        d.op_args.lsu.is_store = 0;
+        d.op_args.lsu.offset = 12'({mew, umop, mop, nf});
+        d.op_args.lsu.is_float = rd_is_float;
+        `USED_REG (rd_is_float ? REG_TYPE_F : REG_TYPE_I, rd, 1);
+        `USED_IREG (rs1);
+        `USED_REG (rs2_is_vector ? REG_TYPE_V : REG_TYPE_I, rs2, rs2_enable);
+        d.reg_ids = reg_ids;
+        d.use_regs = use_regs;
+    end
+
+    assign decode_o = d;
+
+endmodule
+
+module VX_vpu_decode_vs import VX_gpu_pkg::*, VX_vpu_pkg::*; (
+    input  wire [31:0]  instr_i,
+    output vpu_decode_t decode_o
+);
+    wire [2:0]     nf = instr_i[31:29];
+    wire          mew = instr_i[28];
+    wire [1:0]    mop = instr_i[27:26];
+    wire           vm = instr_i[25];
+    wire [4:0]   umop = instr_i[24:20];
+    wire [4:0]    rs2 = instr_i[24:20];
+    wire [4:0]    rs1 = instr_i[19:15];
+    wire [2:0]  width = instr_i[14:12];
+    wire [4:0]    rs3 = instr_i[11:7];
+    wire [6:0] opcode = instr_i[6:0];
+
+    `UNUSED_VAR (opcode)
+
+    reg [INST_LSU_BITS-1:0] op;
+    always @* begin
+        case (width)
+        3'b000: op  = INST_LSU_SB; // 8-bit
+        3'b001: op  = INST_LSU_SH; // 16-bit
+        3'b010: op  = INST_LSU_SW; // 32-bit
+        3'b011: op  = INST_LSU_SD; // 64-bit
+        default: op = 'x;
+        endcase
+    end
+
+    reg [NUM_SRC_OPDS:0][NUM_REGS_BITS-1:0] reg_ids;
+    reg [NUM_SRC_OPDS:0] use_regs;
+
+    wire rs3_is_float  = (width == 3'b001 || width == 3'b010 || width == 3'b011 || width == 3'b100);
+    wire rs2_is_vector = (mop != 2'b10);
+    wire rs2_enable    = (mop != 2'b00);
+
+    vpu_decode_t d;
+    always @* begin
+        d = 'x;
+        d.is_masked = vm;
+        d.ex_type = EX_LSU;
+        d.op_type = op;
+        d.op_args.lsu.is_store = 1;
+        d.op_args.lsu.offset = 12'({mew, umop, mop, nf});
+        d.op_args.lsu.is_float = rs3_is_float;
+        `USED_REG (rs3_is_float ? REG_TYPE_F : REG_TYPE_I, rs3, 1);
+        `USED_IREG (rs1);
+        `USED_REG (rs2_is_vector ? REG_TYPE_V : REG_TYPE_I, rs2, rs2_enable);
+        d.reg_ids = reg_ids;
+        d.use_regs = use_regs;
+    end
+
+    assign decode_o = d;
+
+endmodule
+
+module VX_vpu_decode_vop import VX_gpu_pkg::*, VX_vpu_pkg::*; (
+    input  wire [31:0]  instr_i,
+    output vpu_decode_t decode_o
+);
+    wire [5:0] funct6 = instr_i[31:26];
+    wire           vm = instr_i[25];
+    wire [4:0]    rs2 = instr_i[24:20];
+    wire [4:0]    rs1 = instr_i[19:15];
+    wire [2:0] funct3 = instr_i[14:12];
+    wire [4:0]     rd = instr_i[11:7];
+    wire [6:0] opcode = instr_i[6:0];
+
+    wire [11:0]  zimm = instr_i[31:20];
+
+    `UNUSED_VAR (opcode)
+
+    reg [NUM_SRC_OPDS:0][NUM_REGS_BITS-1:0] reg_ids;
+    reg [NUM_SRC_OPDS:0] use_regs;
+
+    reg [INST_ALU_BITS-1:0] alu_op_type;
+    reg [ALU_TYPE_BITS-1:0] alu_xtype;
+    reg [INST_FPU_BITS-1:0] fpu_op_type;
+
+    always @(*) begin
+        case (funct6)
+            6'b000000: begin alu_op_type = INST_ALU_BITS'(INST_ALU_ADD); alu_xtype = ALU_TYPE_ARITH; end
+            6'b000010: begin alu_op_type = INST_ALU_BITS'(INST_ALU_SUB); alu_xtype = ALU_TYPE_ARITH; end
+            6'b001001: begin alu_op_type = INST_ALU_BITS'(INST_ALU_AND); alu_xtype = ALU_TYPE_ARITH; end
+            6'b001010: begin alu_op_type = INST_ALU_BITS'(INST_ALU_OR); alu_xtype = ALU_TYPE_ARITH; end
+            6'b001011: begin alu_op_type = INST_ALU_BITS'(INST_ALU_XOR); alu_xtype = ALU_TYPE_ARITH; end
+            6'b011010: begin alu_op_type = INST_ALU_BITS'(INST_ALU_SLTU); alu_xtype = ALU_TYPE_ARITH; end
+            6'b011011: begin alu_op_type = INST_ALU_BITS'(INST_ALU_SLT); alu_xtype = ALU_TYPE_ARITH; end
+            6'b100000: begin alu_op_type = INST_ALU_BITS'(INST_M_DIVU); alu_xtype = ALU_TYPE_MULDIV; end
+            6'b100001: begin alu_op_type = INST_ALU_BITS'(INST_M_DIV); alu_xtype = ALU_TYPE_MULDIV; end
+            6'b100010: begin alu_op_type = INST_ALU_BITS'(INST_M_REMU); alu_xtype = ALU_TYPE_MULDIV; end
+            6'b100011: begin alu_op_type = INST_ALU_BITS'(INST_M_REM); alu_xtype = ALU_TYPE_MULDIV; end
+            6'b100100: begin alu_op_type = INST_ALU_BITS'(INST_M_MULHU); alu_xtype = ALU_TYPE_MULDIV; end
+            6'b100101: begin alu_op_type = INST_ALU_BITS'(INST_M_MUL); alu_xtype = ALU_TYPE_MULDIV; end
+            6'b100110: begin alu_op_type = INST_ALU_BITS'(INST_M_MULHSU); alu_xtype = ALU_TYPE_MULDIV; end
+            6'b100111: begin alu_op_type = INST_ALU_BITS'(INST_M_MULH); alu_xtype = ALU_TYPE_MULDIV; end
+            default: begin alu_op_type = 'x; alu_xtype= 'x; end
+        endcase
+    end
+
+    always @(*) begin
+        case (funct6)
+            6'b000000: fpu_op_type = INST_FPU_ADD;
+            6'b000010: fpu_op_type = INST_FPU_ADD;
+            6'b000100: fpu_op_type = INST_FPU_CMP;
+            6'b000101: fpu_op_type = INST_FPU_MISC;
+            6'b000110: fpu_op_type = INST_FPU_MISC;
+            6'b000111: fpu_op_type = INST_FPU_MISC;
+            6'b011010: fpu_op_type = INST_FPU_CMP;
+            6'b011011: fpu_op_type = INST_FPU_CMP;
+            default: fpu_op_type = 'x;
+        endcase
+    end
+
+     vpu_decode_t d;
+    always @* begin
+        d = 'x;
+        d.is_masked = vm;
+
+        case (funct3)
+        3'b000: begin // OPIVV
+            d.ex_type = EX_ALU;
+            d.op_type = alu_op_type;
+            d.op_args.alu.xtype = alu_xtype;
+            d.op_args.alu.use_PC = 0;
+            d.op_args.alu.use_imm = 0;
+            d.op_args.alu.is_w  = 0;
+            d.op_args.alu.imm20 = 'x;
+            `USED_VREG (rs1);
+            `USED_VREG (rs2);
+            `USED_VREG (rd);
+        end
+        3'b001: begin // OPFVV
+            d.ex_type = EX_FPU;
+            d.op_type = fpu_op_type;
+            d.op_args.fpu.frm = 0;
+            d.op_args.fpu.fmt = 0;
+            `USED_VREG (rs1);
+            `USED_VREG (rs2);
+            `USED_VREG (rd);
+        end
+        3'b010: begin // OPMVV
+            d.ex_type = EX_ALU;
+            d.op_type = alu_op_type;
+            d.op_args.alu.xtype = alu_xtype;
+            d.op_args.alu.use_PC = 0;
+            d.op_args.alu.use_imm = 0;
+            d.op_args.alu.is_w  = 0;
+            d.op_args.alu.imm20 = 'x;
+            `USED_VREG (rs1);
+            `USED_VREG (rs2);
+            `USED_VREG (rd);
+        end
+        3'b011: begin // OPIVI
+            d.ex_type = EX_ALU;
+            d.op_type = alu_op_type;
+            d.op_args.alu.xtype = alu_xtype;
+            d.op_args.alu.use_PC = 0;
+            d.op_args.alu.use_imm = 1;
+            d.op_args.alu.is_w  = 0;
+            d.op_args.alu.imm20 = 20'(rs1);
+            `USED_VREG (rs2);
+            `USED_VREG (rd);
+        end
+        3'b100: begin // OPIVX
+            d.ex_type = EX_ALU;
+            d.op_type = alu_op_type;
+            d.op_args.alu.xtype = alu_xtype;
+            d.op_args.alu.use_PC = 0;
+            d.op_args.alu.use_imm = 0;
+            d.op_args.alu.is_w  = 0;
+            d.op_args.alu.imm20 = 'x;
+            `USED_IREG (rs1);
+            `USED_VREG (rs2);
+            `USED_VREG (rd);
+        end
+        3'b101: begin // OPFVF
+            d.ex_type = EX_FPU;
+            d.op_type = fpu_op_type;
+            d.op_args.fpu.frm = 0;
+            d.op_args.fpu.fmt = 0;
+            `USED_FREG (rs1);
+            `USED_VREG (rs2);
+            `USED_VREG (rd);
+        end
+        3'b110: begin // OPMVX
+            d.ex_type = EX_ALU;
+            d.op_type = alu_op_type;
+            d.op_args.alu.xtype = alu_xtype;
+            d.op_args.alu.use_PC = 0;
+            d.op_args.alu.use_imm = 0;
+            d.op_args.alu.is_w  = 0;
+            d.op_args.alu.imm20 = 'x;
+            `USED_IREG (rs1);
+            `USED_VREG (rs2);
+            `USED_VREG (rd);
+        end
+        3'b111: begin // OPCFG
+            d.op_type = EX_SFU;
+            d.op_args.vset.use_imm = 0;
+            d.op_args.vset.use_zimm = 0;
+            d.op_args.vset.zimm = zimm;
+            `USED_IREG (rd);
+            if (zimm[11:10] == 2'b10) begin
+                `USED_IREG (rs2);
+                `USED_IREG (rs1);
+            end else begin
+                d.op_args.vset.use_zimm = 1;
+                if (zimm[10]) begin
+                    d.op_args.vset.use_imm = 1;
+                    d.op_args.vset.imm = rs1;
+                end else begin
+                    `USED_IREG (rs1);
+                end
+            end
+        end
+        endcase
+
+        d.reg_ids = reg_ids;
+        d.use_regs = use_regs;
+    end
+
+    assign decode_o = d;
+
+endmodule
+
 module VX_vpu_decode import VX_gpu_pkg::*, VX_vpu_pkg::*; (
     input  wire [31:0]  instr_i,
     output vpu_decode_t vl_o,
@@ -20,164 +300,19 @@ module VX_vpu_decode import VX_gpu_pkg::*, VX_vpu_pkg::*; (
     output vpu_decode_t vop_o
 );
 
-    `UNUSED_VAR (instr_i)
+    VX_vpu_decode_vl vl_decode (
+        .instr_i(instr_i),
+        .decode_o(vl_o)
+    );
 
-    always @(*) begin
-        vl_o = 'x;
-        vs_o = 'x;
-        vop_o = 'x;
-    end
+    VX_vpu_decode_vs vs_decode (
+        .instr_i(instr_i),
+        .decode_o(vs_o)
+    );
 
-    /*wire [2:0]    nf = instr[31:29];
-    wire         mew = instr[28];
-    wire [1:0]   mop = instr[27:26];
-    wire          vm = instr[25];
-    wire [5:0] funct6= instr[31:26];
-    wire [1:0]  vset = instr[31:30];
-    wire [7:0]  zimm = instr[27:20];*/
-
-    /*vpu_states_t [`NUM_WARPS-1:0] vpu_states;
-    `UNUSED_VAR (vpu_states)
-
-    always @(posedge clk) begin
-        if (reset) begin
-            vpu_states <= '0;
-        end else begin
-            if (vpu_seq_csr_if.valid) begin
-                vpu_states[vpu_seq_csr_if.wid] <= vpu_seq_csr_if.data;
-            end
-        end
-    end*/
-
-    /*reg [INST_VPU_OP_BITS-1:0] vop_type;
-    always @(*) begin
-        case (funct6)
-            6'd0:  vop_type = INST_OP_BITS'(INST_VPU_VADD);
-            6'd2:  vop_type = INST_OP_BITS'(INST_VPU_VSUB);
-            6'd4:  vop_type = INST_OP_BITS'(INST_VPU_VMINU);
-            6'd5:  vop_type = INST_OP_BITS'(INST_VPU_VMIN);
-            6'd6:  vop_type = INST_OP_BITS'(INST_VPU_VMAXU);
-            6'd7:  vop_type = INST_OP_BITS'(INST_VPU_VMAX);
-            6'd9:  vop_type = INST_OP_BITS'(INST_ALU_AND);
-            6'd10: vop_type = INST_OP_BITS'(INST_ALU_OR);
-            6'd11: vop_type = INST_OP_BITS'(INST_ALU_XOR);
-            6'd24: vop_type = INST_OP_BITS'(INST_VPU_VMSEQ);
-            6'd25: vop_type = INST_OP_BITS'(INST_VPU_VMSNE);
-            6'd26: vop_type = INST_OP_BITS'(INST_ALU_SLTU);
-            6'd27: vop_type = INST_OP_BITS'(INST_ALU_SLT);
-            6'd28: vop_type = INST_OP_BITS'(INST_VPU_VMSLEU);
-            6'd29: vop_type = INST_OP_BITS'(INST_VPU_VMSLE);
-            6'd30: vop_type = INST_OP_BITS'(INST_VPU_VMSGTU);
-            6'd31: vop_type = INST_OP_BITS'(INST_VPU_VMSGT);
-            default: vop_type = 'x;
-        endcase
-    end*/
-
-    /*
-    ex_type = EX_VPU;
-                    op_type = INST_OP_BITS'(INST_VPU_VLD);
-                    op_args.vpu.vls.nf = nf;
-                    op_args.vpu.vls.mop = mop;
-                    op_args.vpu.vls.mew = mew;
-                    op_args.vpu.vls.width = funct3;
-                    `USED_IREG (rs1);
-                    `USED_VREG (rd);
-                    case (mop)
-                        2'b00: begin
-                            op_args.vpu.vls.umop = rs2;
-                        end
-                        2'b10: begin
-                            `USED_IREG (rs2);
-                        end
-                        default: begin
-                            `USED_VREG (rs2);
-                        end
-                    endcase
-
-    */
-
-    /*
-    ex_type = EX_VPU;
-                    op_type = INST_OP_BITS'(INST_VPU_VST);
-                    op_args.vpu.vls.nf = nf;
-                    op_args.vpu.vls.mop = mop;
-                    op_args.vpu.vls.mew = mew;
-                    op_args.vpu.vls.width = funct3;
-                    `USED_IREG (rs1);
-                    `USED_VREG (rs3);
-                    case (mop)
-                        2'b00: begin
-                            op_args.vpu.vls.umop = rs2;
-                        end
-                        2'b10: begin
-                            `USED_IREG (rs2);
-                        end
-                        default: begin
-                            `USED_VREG (rs2);
-                        end
-                    endcase
-    */
-
-    /*
-    ex_type = EX_VPU;
-                case (funct3)
-                    3'd0, 3'd1, 3'd2: begin // OPIVV, OPFVV, OPMVV
-                        op_type = INST_OP_BITS'(INST_VPU_VOP);
-                        op_args.vpu.vop.op = vop_type;
-                        op_args.vpu.vop.vm = vm;
-                        op_args.vpu.vop.use_imm = 0;
-                        `USED_VREG (RC_RS1);
-                        `USED_VREG (RC_RS2);
-                        `USED_VREG (RC_RD);
-                    end
-                    3'd3: begin // OPIVI
-                        op_type = INST_OP_BITS'(INST_VPU_VOP);
-                        op_args.vpu.vop.op = vop_type;
-                        op_args.vpu.vop.vm = vm;
-                        op_args.vpu.vop.use_imm = 1;
-                        op_args.vpu.vop.imm = rs1;
-                        `USED_VREG (RC_RS2);
-                        `USED_VREG (RC_RD);
-                    end
-                    3'd4, 3'd6: begin // OPIVX, OPIVV
-                        op_type = INST_OP_BITS'(INST_VPU_VOP);
-                        op_args.vpu.vop.op = vop_type;
-                        op_args.vpu.vop.vm = vm;
-                        op_args.vpu.vop.use_imm = 0;
-                        `USED_IREG (RC_RS1);
-                        `USED_VREG (RC_RS2);
-                        `USED_VREG (RC_RD);
-                    end
-                    3'd5: begin // OPFVF
-                        op_type = INST_OP_BITS'(INST_VPU_VOP);
-                        op_args.vpu.vop.op = vop_type;
-                        op_args.vpu.vop.vm = vm;
-                        op_args.vpu.vop.use_imm = 0;
-                        `USED_FREG (RC_RS1);
-                        `USED_VREG (RC_RS2);
-                        `USED_VREG (RC_RD);
-                    end
-                    3'd7: begin // VSETX
-                        op_type = INST_OP_BITS'(INST_VPU_VSET);
-                        op_args.vpu.vset.vset = vset;
-                        op_args.vpu.vset.use_imm = 0;
-                        op_args.vpu.vset.use_zimm = 0;
-                        `USED_IREG (RC_RD);
-                        if(vset == 2'b10) begin
-                            `USED_IREG (RC_RS2);
-                            `USED_IREG (RC_RS1);
-                        end else begin
-                            op_args.vpu.vset.use_zimm = 1;
-                            op_args.vpu.vset.zimm = zimm;
-                            if (vset[0]) begin
-                                op_args.vpu.vset.use_imm = 1;
-                                op_args.vpu.vset.imm = rs1;
-                            end else begin
-                                `USED_IREG (RC_RS1);
-                            end
-                        end
-                    end
-                endcase
-    */
+    VX_vpu_decode_vop vop_decode (
+        .instr_i(instr_i),
+        .decode_o(vop_o)
+    );
 
 endmodule

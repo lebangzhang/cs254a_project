@@ -82,40 +82,10 @@ package VX_vpu_pkg;
     localparam INST_VPU_BITS =      2;*/
 
     typedef struct packed {
-        logic       vma;
-        logic       vta;
-        logic [2:0] vsew;
-        logic [2:0] vlmul;
-     } vpu_zimm_t;
-
-    typedef struct packed {
-        logic [2:0] nf;
-        logic       mew;
-        logic [1:0] mop;
-        logic       vm;
-        logic [4:0] umop;
-        logic [2:0] width;
-    } vpu_insn_ls_t;
-
-    typedef struct packed {
-        logic [3:0] op;
-        logic       vm;
-        logic       use_imm;
-        logic [4:0] imm;
-    } vpu_insn_vop_t;
-
-    typedef struct packed {
-        logic       use_imm;
-        logic       use_zimm;
-        logic [4:0] imm;
-        logic [1:0] vset;
-        vpu_zimm_t  zimm;
-    } vpu_insn_vset_t;
-
-    typedef struct packed {
         logic [EX_BITS-1:0]      ex_type;
         logic [INST_OP_BITS-1:0] op_type;
         op_args_t                op_args;
+        logic                    is_masked;
         logic [NUM_SRC_OPDS:0][NUM_REGS_BITS-1:0] reg_ids;
         logic [NUM_SRC_OPDS:0]   use_regs;
     } vpu_decode_t;

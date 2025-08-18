@@ -131,6 +131,7 @@ module VX_decode import
 
 `ifdef EXT_V_ENABLE
     reg          is_rvv;
+    reg          is_masked;
     vpu_decode_t vpu_vl;
     vpu_decode_t vpu_vs;
     vpu_decode_t vpu_vop;
@@ -153,6 +154,7 @@ module VX_decode import
         is_wstall = 0;
     `ifdef EXT_V_ENABLE
         is_rvv    = 0;
+        is_masked = 0;
     `endif
 
         case (opcode)
@@ -329,6 +331,7 @@ module VX_decode import
                     `USED_FREG (rd);
                 end else begin
                     is_rvv   = 1;
+                    is_masked= vpu_vl.is_masked;
                     ex_type  = vpu_vl.ex_type;
                     op_type  = vpu_vl.op_type;
                     op_args  = vpu_vl.op_args;
@@ -364,6 +367,7 @@ module VX_decode import
                     `USED_FREG (rs2);
                 end else begin
                     is_rvv   = 1;
+                    is_masked= vpu_vs.is_masked;
                     ex_type  = vpu_vs.ex_type;
                     op_type  = vpu_vs.op_type;
                     op_args  = vpu_vs.op_args;
@@ -503,6 +507,7 @@ module VX_decode import
         `ifdef EXT_V_ENABLE
             INST_V: begin
                 is_rvv   = 1;
+                is_masked= vpu_vop.is_masked;
                 ex_type  = vpu_vop.ex_type;
                 op_type  = vpu_vop.op_type;
                 op_args  = vpu_vop.op_args;
@@ -597,8 +602,8 @@ module VX_decode import
         .valid_in  (fetch_if.valid),
         .ready_in  (fetch_if.ready),
     `ifdef EXT_V_ENABLE
-        .data_in   ({fetch_if.data.uuid,  fetch_if.data.wid,  fetch_if.data.tmask,  fetch_if.data.PC,  ex_type,                op_type,                op_args,                is_rvv,                wb,                use_regs[3:1],          reg_ids[RV_RD],    reg_ids[RV_RS1],    reg_ids[RV_RS2],    reg_ids[RV_RS3]}),
-        .data_out  ({decode_if.data.uuid, decode_if.data.wid, decode_if.data.tmask, decode_if.data.PC, decode_if.data.ex_type, decode_if.data.op_type, decode_if.data.op_args, decode_if.data.is_rvv, decode_if.data.wb, decode_if.data.used_rs, decode_if.data.rd, decode_if.data.rs1, decode_if.data.rs2, decode_if.data.rs3}),
+        .data_in   ({fetch_if.data.uuid,  fetch_if.data.wid,  fetch_if.data.tmask,  fetch_if.data.PC,  ex_type,                op_type,                op_args,                is_rvv,                is_masked,                wb,                use_regs[3:1],          reg_ids[RV_RD],    reg_ids[RV_RS1],    reg_ids[RV_RS2],    reg_ids[RV_RS3]}),
+        .data_out  ({decode_if.data.uuid, decode_if.data.wid, decode_if.data.tmask, decode_if.data.PC, decode_if.data.ex_type, decode_if.data.op_type, decode_if.data.op_args, decode_if.data.is_rvv, decode_if.data.is_masked, decode_if.data.wb, decode_if.data.used_rs, decode_if.data.rd, decode_if.data.rs1, decode_if.data.rs2, decode_if.data.rs3}),
     `else
         .data_in   ({fetch_if.data.uuid,  fetch_if.data.wid,  fetch_if.data.tmask,  fetch_if.data.PC,  ex_type,                op_type,                op_args,                wb,                use_regs[3:1],          reg_ids[RV_RD],    reg_ids[RV_RS1],    reg_ids[RV_RS2],    reg_ids[RV_RS3]}),
         .data_out  ({decode_if.data.uuid, decode_if.data.wid, decode_if.data.tmask, decode_if.data.PC, decode_if.data.ex_type, decode_if.data.op_type, decode_if.data.op_args, decode_if.data.wb, decode_if.data.used_rs, decode_if.data.rd, decode_if.data.rs1, decode_if.data.rs2, decode_if.data.rs3}),

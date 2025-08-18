@@ -237,11 +237,11 @@ package VX_gpu_pkg;
     localparam INST_ALU_SLL =    4'b1111;
     localparam INST_ALU_BITS =   4;
 
-    localparam ALU_TYPE_BITS =   2;
     localparam ALU_TYPE_ARITH =  0;
     localparam ALU_TYPE_BRANCH = 1;
     localparam ALU_TYPE_MULDIV = 2;
     localparam ALU_TYPE_OTHER =  3;
+    localparam ALU_TYPE_BITS  =  2;
 
     function automatic logic [1:0] inst_alu_class(input logic [INST_ALU_BITS-1:0] op);
         return op[3:2];
@@ -501,7 +501,6 @@ package VX_gpu_pkg;
     typedef struct packed {
         vpu_type_t           vtype;
         logic [VL_MAX_W-1:0] vl;
-        logic [VL_MAX_W-1:0] vlmax;
     } vpu_states_t;
 
     typedef struct packed {
@@ -582,17 +581,10 @@ package VX_gpu_pkg;
     `PACKAGE_ASSERT($bits(fpu_args_t) == INST_ARGS_BITS)
 
     typedef struct packed {
-    `ifdef EXT_V_ENABLE
-        logic [(INST_ARGS_BITS-1-1-12-3)-1:0] __padding;
-    `else
         logic [(INST_ARGS_BITS-1-1-12)-1:0] __padding;
-    `endif
         logic is_store;
         logic is_float;
         logic [11:0] offset;
-    `ifdef EXT_V_ENABLE
-        logic [2:0] nf;
-    `endif
     } lsu_args_t;
     `PACKAGE_ASSERT($bits(lsu_args_t) == INST_ARGS_BITS)
 
@@ -606,12 +598,11 @@ package VX_gpu_pkg;
 
 `ifdef EXT_V_ENABLE
     typedef struct packed {
-        logic [(INST_ARGS_BITS-1-1-5-8-2)-1:0] __padding;
-        logic       use_imm;
-        logic       use_zimm;
-        logic [4:0] imm;
-        logic [7:0] zimm;
-        logic [1:0] vset;
+        logic [(INST_ARGS_BITS-1-1-5-12)-1:0] __padding;
+        logic        use_imm;
+        logic        use_zimm;
+        logic [4:0]  imm;
+        logic [11:0] zimm;
     } vset_args_t;
     `PACKAGE_ASSERT($bits(vset_args_t) == INST_ARGS_BITS)
 `endif
@@ -668,6 +659,7 @@ package VX_gpu_pkg;
         op_args_t                   op_args;
     `ifdef EXT_V_ENABLE
         logic                       is_rvv;
+        logic                       is_masked;
     `endif
         logic                       wb;
         logic [NUM_SRC_OPDS-1:0]    used_rs;
@@ -686,6 +678,7 @@ package VX_gpu_pkg;
         op_args_t                   op_args;
     `ifdef EXT_V_ENABLE
         logic                       is_rvv;
+        logic                       is_masked;
     `endif
         logic                       wb;
         logic [NUM_SRC_OPDS-1:0]    used_rs;
@@ -705,6 +698,7 @@ package VX_gpu_pkg;
         op_args_t                   op_args;
     `ifdef EXT_V_ENABLE
         logic                       is_rvv;
+        logic                       is_masked;
     `endif
         logic                       wb;
         logic [NUM_SRC_OPDS-1:0]    used_rs;
