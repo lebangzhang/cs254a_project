@@ -339,7 +339,7 @@
 `ifdef EXT_V_ENABLE
 `define SIMD_WIDTH      `MAX(`NUM_THREADS, (`VLEN / `XLEN))
 `else
-`define SIMD_WIDTH      `MIN(`NUM_THREADS, 16)
+`define SIMD_WIDTH      `NUM_THREADS
 `endif
 `endif
 
@@ -437,9 +437,9 @@
 `define IBUF_SIZE   4
 `endif
 
-// LSU line size
+// LSU line size (4-channels coalescing)
 `ifndef LSU_LINE_SIZE
-`define LSU_LINE_SIZE   `MIN(`NUM_LSU_LANES * (`XLEN / 8), `L1_LINE_SIZE)
+`define LSU_LINE_SIZE   `MIN(`MIN(`NUM_LSU_LANES, 4) * (`XLEN / 8), `L1_LINE_SIZE)
 `endif
 
 // Size of LSU Core Request Queue
@@ -539,22 +539,22 @@
 
 // FDIV Bandwidth ratio
 `ifndef FDIV_PE_RATIO
-`define FDIV_PE_RATIO 8
+`define FDIV_PE_RATIO 1
 `endif
 
 // FSQRT Bandwidth ratio
 `ifndef FSQRT_PE_RATIO
-`define FSQRT_PE_RATIO 8
+`define FSQRT_PE_RATIO 1
 `endif
 
 // FCVT Bandwidth ratio
 `ifndef FCVT_PE_RATIO
-`define FCVT_PE_RATIO 8
+`define FCVT_PE_RATIO 1
 `endif
 
 // FNCP Bandwidth ratio
 `ifndef FNCP_PE_RATIO
-`define FNCP_PE_RATIO 2
+`define FNCP_PE_RATIO 1
 `endif
 
 // Icache Configurable Knobs //////////////////////////////////////////////////
