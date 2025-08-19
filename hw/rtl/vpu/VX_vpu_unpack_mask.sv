@@ -24,40 +24,27 @@ module VX_vpu_unpack_mask import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
     localparam INPUT_ELEMS = XLENB * NUM_LANES;
 
     wire [INPUT_ELEMS-1:0] elems_in;
+
+    // input data stores mask as 1 byte per element
     for (genvar i = 0; i < INPUT_ELEMS; ++i) begin : g_unpack
         assign elems_in[i] = data_in[i / XLENB][i % XLENB];
     end
 
 `ifdef XLEN_64
-    wire [NUM_LANES-1:0] data_out8, data_out16, data_out32, data_out64;
-    for (genvar i = 0; i < NUM_LANES; ++i) begin : g_unpack8
-        assign data_out8[i]  = elems_in[sew_idx[2:0] * NUM_LANES +: NUM_LANES][i];
-        assign data_out16[i] = elems_in[sew_idx[1:0] * NUM_LANES +: NUM_LANES][i];
-        assign data_out32[i] = elems_in[sew_idx[0] * NUM_LANES +: NUM_LANES][i];
-        assign data_out64[i] = elems_in[i];
-    end
-
     always @(*) begin
         case (sew_type)
-        2'd0: data_out = data_out8;
-        2'd1: data_out = data_out16;
-        2'd2: data_out = data_out32;
-        2'd3: data_out = data_out64;
+        2'd0: data_out = elems_in[sew_idx[2:0] * NUM_LANES +: NUM_LANES];
+        2'd1: data_out = elems_in[sew_idx[1:0] * NUM_LANES +: NUM_LANES];
+        2'd2: data_out = elems_in[sew_idx[0] * NUM_LANES +: NUM_LANES];
+        2'd3: data_out = elems_in[0 +: NUM_LANES];
         endcase
     end
 `else
-    wire [NUM_LANES-1:0] data_out8, data_out16, data_out32;
-    for (genvar i = 0; i < NUM_LANES; ++i) begin : g_unpack8
-        assign data_out8[i]  = elems_in[sew_idx[1:0] * NUM_LANES +: NUM_LANES][i];
-        assign data_out16[i] = elems_in[sew_idx[0] * NUM_LANES +: NUM_LANES][i];
-        assign data_out32[i] = elems_in[i];
-    end
-
     always @(*) begin
         case (sew_type)
-        2'd0: data_out = data_out8;
-        2'd1: data_out = data_out16;
-        2'd2: data_out = data_out32;
+        2'd0: data_out = elems_in[sew_idx[1:0] * NUM_LANES +: NUM_LANES];
+        2'd1: data_out = elems_in[sew_idx[0] * NUM_LANES +: NUM_LANES];
+        2'd2: data_out = elems_in[0 +: NUM_LANES];
         2'd3: data_out = 'x;
         endcase
     end
