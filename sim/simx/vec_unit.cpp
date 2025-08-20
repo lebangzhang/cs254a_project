@@ -110,8 +110,6 @@ public:
     auto rd  = (code >> shift_rd)  & mask_reg;
     auto rs1 = (code >> shift_rs1) & mask_reg;
     auto rs2 = (code >> shift_rs2) & mask_reg;
-    auto rs3 = (code >> shift_rs3) & mask_reg;
-
     uint32_t vm = (code >> shift_vm) & mask_vm;
 
     switch (op) {
