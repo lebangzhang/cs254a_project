@@ -678,8 +678,6 @@ public:
     uint32_t rsrc0 = instr.getSrcReg(0).idx;
     uint32_t rsrc1 = instr.getSrcReg(1).idx;
 
-    VpuOpType vpu_op;
-
     auto vop_type = std::get<VopType>(op_type);
     auto vopArgs = std::get<IntrVopArgs>(instrArgs);
 
@@ -687,6 +685,8 @@ public:
     uint32_t uimmsrc = vopArgs.imm;
     uint32_t funct6 = vopArgs.funct6;
     Word immsrc = sext<Word>(vopArgs.imm, width_reg);
+
+    VpuOpType vpu_op = VpuOpType::ARITH;
 
     switch (vop_type) {
     case VopType::OPIVV: { // vector-vector
@@ -1200,7 +1200,6 @@ public:
       }
     } break;
     case VopType::OPIVI: { // vector-immmediate
-      vpu_op = VpuOpType::ARITH;
       switch (funct6) {
       case 0: { // vadd.vi
         vector_op_vix<Add, int8_t, int16_t, int32_t, int64_t>(immsrc, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
@@ -1320,7 +1319,6 @@ public:
       }
     } break;
     case VopType::OPIVX: { // vector-scalar
-      vpu_op = VpuOpType::ARITH;
       auto rs1_value = rs1_data.at(tid).i;
       switch (funct6) {
       case 0: { // vadd.vx
@@ -1637,7 +1635,6 @@ public:
       }
     } break;
     case VopType::OPMVX: { // vector-scalar
-      vpu_op = VpuOpType::ARITH;
       auto rs1_value = rs1_data.at(tid).i;
       switch (funct6) {
       case 8: {             // vaaddu.vx
