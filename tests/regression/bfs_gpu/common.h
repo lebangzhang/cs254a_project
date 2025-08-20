@@ -1,63 +1,24 @@
 #ifndef _COMMON_H_
 #define _COMMON_H_
 
-#ifndef TYPE
-/*#define TYPE float*/
-#define TYPE int
-#endif
-
+#define MAX_NODES 100000
 
 struct Node {
-    int starting;
-    int no_of_edges;
+  int starting;
+  int no_of_edges;
 };
-
 
 typedef struct {
   uint32_t num_nodes;
   uint32_t num_edges;
 
-  uint64_t src0_addr;  // Node          Buffer
-  uint64_t src1_addr;  // Edge          Buffer 
-  uint64_t src2_addr;  // Mask          Buffer 
-  uint64_t src3_addr;  // Update Mask   Buffer 
-  uint64_t src4_addr;  // Visited       Buffer 
-  uint64_t src5_addr;  // Thread Update Buffer 
-  uint64_t dst_addr;   // Cost Buffer
+  uint64_t nodes_addr;  // Node          Buffer
+  uint64_t edges_addr;  // Edge          Buffer
+  uint64_t mask_addr;  // Mask          Buffer
+  uint64_t nextmask_addr;  // Update Mask   Buffer
+  uint64_t visit_addr;  // Visited       Buffer
+  uint64_t frontier_addr;  // Thread Update Buffer
+  uint64_t cost_addr;   // Cost Buffer
 } kernel_arg_t;
-
-
-
-#define MAX_NODES 100000
-void bfs_cpu(Node graph_nodes[], int graph_edges[], int num_nodes, int source, int cost[]) {
-    int queue[MAX_NODES];
-    int head = 0, tail = 0;
-
-    // Initialize cost array to -1 (unvisited)
-    for (int i = 0; i < num_nodes; i++) {
-        cost[i] = -1;
-    }
-
-    // Start node cost = 0 and enqueue it
-    cost[source] = 0;
-    queue[tail++] = source;
-
-    while (head < tail) {
-        int current = queue[head++];
-        Node node = graph_nodes[current];
-        int start = node.starting;
-        int end = start + node.no_of_edges;
-
-        for (int i = start; i < end; i++) {
-            int neighbor = graph_edges[i];
-            if (cost[neighbor] == -1) {  // Not visited yet
-                cost[neighbor] = cost[current] + 1;
-                queue[tail++] = neighbor;
-            }
-        }
-    }
-}
-
-
 
 #endif

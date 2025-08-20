@@ -2,112 +2,80 @@
 #include "common.h"
 #include "vx_print.h"
 
+static void kernel_body(kernel_arg_t *__UNIFORM__ arg) {
+  auto *__restrict nodes = reinterpret_cast<Node *>(arg->nodes_addr);
+  auto *__restrict edges = reinterpret_cast<int32_t *>(arg->edges_addr);
+  auto *__restrict visit = reinterpret_cast<uint8_t *>(arg->visit_addr);
+  auto *__restrict nextmask = reinterpret_cast<uint8_t *>(arg->nextmask_addr);
+  auto *__restrict frontier = reinterpret_cast<uint32_t *>(arg->frontier_addr);
+  auto *__restrict cost = reinterpret_cast<int32_t *>(arg->cost_addr);
 
-void kernel_body(kernel_arg_t* __UNIFORM__ arg) {
-	auto node          = reinterpret_cast<TYPE*>(arg->src0_addr);
-	auto edge          = reinterpret_cast<TYPE*>(arg->src1_addr);
-	auto mask          = reinterpret_cast<TYPE*>(arg->src2_addr);
-	auto update        = reinterpret_cast<TYPE*>(arg->src3_addr);
-	auto visit         = reinterpret_cast<TYPE*>(arg->src4_addr);
-    auto thread_update = reinterpret_cast<TYPE*>(arg->src5_addr);
-	auto cost          = reinterpret_cast<TYPE*>(arg->dst_addr);
-    auto num_nodes = arg->num_nodes;
+  uint32_t tid = blockIdx.x;
+  uint32_t v = frontier[tid];
+  uint32_t start = nodes[v].starting;
+  uint32_t deg = nodes[v].no_of_edges;
+  uint32_t end = start + deg;
 
-    uint32_t tid   = blockIdx.x;
-    uint32_t index = tid * 2;       // x2 because each Node has 2 elements
-   
-    /*dst[tid] = node[index]; */
+  int32_t cv = cost[v] + 1;
 
-    if ( (tid < num_nodes) && (mask[tid])) {
-        
-        mask[tid] = 0;
-
-        int start = node[index];
-        int edges = node[index + 1];
-        int end = start + edges; 
-
-        /*vx_printf("Start: %d\n", start);*/
-        /*vx_printf("End  : %d\n", end);*/
-
-        for (int i = start; i < end; i++) {
-
-            int nid     = edge[i];
-            int visited = visit[nid];
-            /*vx_printf("NID: %d\n", nid);*/
-
-            if (!visited){
-                /*vx_printf("NID: %d\n", nid);*/
-                cost[nid] = cost[tid] + 1;
-                update[nid] = 1;
-                thread_update[tid] = 1;    // Indicate thread did something
-            }
-        }
+  for (uint32_t i = start; i < end; ++i) {
+    uint32_t nid = edges[i];
+    if (!visit[nid]) {    // skips already-visited from prior levels
+      nextmask[nid] = 1;  // idempotent
+      cost[nid] = cv;     // same cv from any parent at this level
     }
+  }
 }
 
-void update_frontier(kernel_arg_t* __UNIFORM__ arg) {
-	auto mask          = reinterpret_cast<TYPE*>(arg->src2_addr);
-	auto update        = reinterpret_cast<TYPE*>(arg->src3_addr);
-	auto visit         = reinterpret_cast<TYPE*>(arg->src4_addr);
-    auto thread_update = reinterpret_cast<TYPE*>(arg->src5_addr);
-    auto num_nodes = arg->num_nodes;
-
-    uint32_t tid   = blockIdx.x;
-
-    if ((tid < num_nodes) and (update[tid]) ) {
-        mask[tid] = 1;   // move to next frontier
-        visit[tid] = 1;
-        update[tid] = 0;
-    }
-
-    // Reset workload
-    thread_update[tid] = 0;
+inline uint32_t build_initial_frontier_from_mask(uint8_t *__restrict mask,
+                                                 uint8_t *__restrict visit,
+                                                 uint32_t *__restrict frontier,
+                                                 uint32_t __UNIFORM__ num_nodes) {
+  uint32_t out = 0;
+  for (uint32_t v = 0; v < num_nodes; ++v) {
+    if (!mask[v])
+      continue;
+    frontier[out++] = v;
+    visit[v] = 1;
+    mask[v] = 0;
+  }
+  return out;
 }
 
+inline uint32_t compact_next_frontier(uint8_t *__restrict next_mask,
+                                      uint8_t *__restrict visit,
+                                      uint32_t *__restrict frontier_out,
+                                      uint32_t __UNIFORM__ num_nodes) {
+  uint32_t out = 0;
+  for (uint32_t v = 0; v < num_nodes; ++v) {
+    if (next_mask[v] && !visit[v]) {
+      visit[v] = 1;
+      frontier_out[out++] = v;
+    }
+    next_mask[v] = 0;
+  }
+  return out;
+}
 
 int main() {
-	kernel_arg_t* arg = (kernel_arg_t*)csr_read(VX_CSR_MSCRATCH);
+  auto *__UNIFORM__ arg = (kernel_arg_t *)csr_read(VX_CSR_MSCRATCH);
 
-	auto mask          = reinterpret_cast<TYPE*>(arg->src2_addr);
-	auto update        = reinterpret_cast<TYPE*>(arg->src3_addr);
-	auto visit         = reinterpret_cast<TYPE*>(arg->src4_addr);
-    auto thread_update = reinterpret_cast<TYPE*>(arg->src5_addr);
-    auto num_nodes = arg->num_nodes;
+  auto *__restrict mask = reinterpret_cast<uint8_t *>(arg->mask_addr);
+  auto *__restrict next_mask = reinterpret_cast<uint8_t *>(arg->nextmask_addr);
+  auto *__restrict visit = reinterpret_cast<uint8_t *>(arg->visit_addr);
+  auto *__restrict frontier = reinterpret_cast<uint32_t *>(arg->frontier_addr);
 
-    int continue_flag = 0;
+  const uint32_t N = arg->num_nodes;
 
-    do{
-        continue_flag = 0;
+  for (uint32_t i = 0; i < N; ++i) {
+    next_mask[i] = 0;
+  }
 
-        // 1. Current iteration 
-        vx_spawn_threads(1, &arg->num_nodes, nullptr, (vx_kernel_func_cb)kernel_body, arg);
-
-        // 2. Check to stop 
-        for(int i=0; i < num_nodes; i++){
-            if(thread_update[i]){
-                continue_flag = 1;
-                break;
-            }
-        }
-
-        // 3. Prepare next iteration
-        
-        // Original Code
-        /*vx_spawn_threads(1, &arg->num_nodes, nullptr, (vx_kernel_func_cb)update_frontier, arg);*/
-
-        // For Vector
-        // Moved update_frontier into current main loop because tid isn't working for other loop
-        for(uint32_t tid = 0; tid < arg->num_nodes; tid++){
-            if ((tid < num_nodes) and (update[tid]) ) {
-                mask[tid] = 1;   // move to next frontier
-                visit[tid] = 1;
-                update[tid] = 0;
-            }
-            // Reset workload
-            thread_update[tid] = 0;
-        }
-
-
-    } while(continue_flag);
+  uint32_t frontier_size = build_initial_frontier_from_mask(mask, visit, frontier, N);
+  while (frontier_size > 0) {
+    uint32_t grid_dim[1] = {frontier_size};
+    uint32_t block_dim[1] = {1};
+    vx_spawn_threads(1, grid_dim, block_dim, (vx_kernel_func_cb)kernel_body, arg);
+    frontier_size = compact_next_frontier(next_mask, visit, frontier, N);
+  }
 }
-
