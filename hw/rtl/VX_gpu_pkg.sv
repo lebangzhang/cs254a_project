@@ -613,9 +613,9 @@ package VX_gpu_pkg;
     } wctl_args_t;
     `PACKAGE_ASSERT($bits(wctl_args_t) == INST_ARGS_BITS)
 
- `ifdef EXT_TCU_ENABLE
+`ifdef EXT_TCU_ENABLE
     typedef struct packed {
-        logic [($bits(alu_args_t)-16)-1:0] __padding;
+        logic [(INST_ARGS_BITS-16)-1:0] __padding;
         logic [3:0] fmt_d;
         logic [3:0] fmt_s;
         logic [3:0] step_n;
@@ -788,9 +788,14 @@ package VX_gpu_pkg;
         logic [PC_BITS-1:0]                 PC;
     } schedule_t;
 
-    `DECL_EXECUTE_T (alu, `NUM_ALU_LANES);
-    `DECL_EXECUTE_T (lsu, `NUM_LSU_LANES);
-    `DECL_EXECUTE_T (sfu, `NUM_SFU_LANES);
+    `DECL_EXECUTE_T (alu_exe_t, `NUM_ALU_LANES);
+    `DECL_RESULT_T  (alu_res_t, `NUM_ALU_LANES);
+
+    `DECL_EXECUTE_T (lsu_exe_t, `NUM_LSU_LANES);
+    `DECL_RESULT_T (lsu_res_t, `NUM_LSU_LANES);
+
+    `DECL_EXECUTE_T (sfu_exe_t, `NUM_SFU_LANES);
+    `DECL_RESULT_T (sfu_res_t, `NUM_SFU_LANES);
 
     //////////////////////////// Perf counter types ///////////////////////////
 
@@ -986,10 +991,10 @@ package VX_gpu_pkg;
         input logic [INST_OP_BITS-1:0] op_type
     );
         case (op_type)
-        INST_SFU_CSRRW,
-        INST_SFU_CSRRS,
-        INST_SFU_CSRRC: op_to_sfu_type = SFU_CSRS;
-        default: op_to_sfu_type = SFU_WCTL;
+            INST_SFU_CSRRW,
+            INST_SFU_CSRRS,
+            INST_SFU_CSRRC: op_to_sfu_type = SFU_CSRS;
+            default: op_to_sfu_type = SFU_WCTL;
         endcase
     endfunction
 

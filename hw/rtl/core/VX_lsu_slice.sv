@@ -39,11 +39,11 @@ module VX_lsu_slice import VX_gpu_pkg::*; #(
     localparam TAG_WIDTH = $bits(lsu_header_t) + INST_LSU_BITS + (NUM_LANES * REQ_ASHIFT) + LSUQ_SIZEW + 1;
 
     VX_result_if #(
-        .data_t (lsu_result_t)
+        .data_t (lsu_res_t)
     ) result_rsp_if();
 
     VX_result_if #(
-        .data_t (lsu_result_t)
+        .data_t (lsu_res_t)
     ) result_no_rsp_if();
 
     `UNUSED_VAR (execute_if.data.rs3_data)
