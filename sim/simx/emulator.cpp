@@ -21,7 +21,6 @@
 #include "emulator.h"
 #include "instr_trace.h"
 #include "instr.h"
-#include "dcrs.h"
 #include "core.h"
 #include "socket.h"
 #include "cluster.h"
@@ -36,11 +35,14 @@ warp_t::warp_t(uint32_t num_threads)
   , tmask(num_threads)
   , PC(0)
   , uuid(0)
-{}
+  , mscratch(0)
+  , cta_csrs()
+{
+}
 
-void warp_t::reset(uint64_t startup_addr) {
+void warp_t::reset() {
   this->tmask.reset();
-  this->PC = startup_addr;
+  this->PC   = 0;
   this->uuid = 0;
   this->fcsr = 0;
 
@@ -72,19 +74,14 @@ void warp_t::reset(uint64_t startup_addr) {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-Emulator::Emulator(const Arch &arch, const DCRS &dcrs, Core* core)
+Emulator::Emulator(const Arch &arch, Core* core)
     : arch_(arch)
-    , dcrs_(dcrs)
     , core_(core)
+    , mpm_class_(0)
+    , cta_dispatcher_(core)
     , warps_(arch.num_warps(), arch.num_threads())
-    , barriers_(arch.num_barriers(), 0)
+    , barriers_(arch.num_warps() * arch.num_barriers())
     , ipdom_size_(arch.num_threads()-1)
-  #ifdef EXT_TCU_ENABLE
-    , tensor_unit_(core->tensor_unit())
-  #endif
-  #ifdef EXT_V_ENABLE
-    , vec_unit_(core->vec_unit())
-  #endif
 {
   std::srand(50);
   this->reset();
@@ -95,37 +92,57 @@ Emulator::~Emulator() {
 }
 
 void Emulator::reset() {
-  uint64_t startup_addr = dcrs_.base_dcrs.read(VX_DCR_BASE_STARTUP_ADDR0);
-#if (XLEN == 64)
-  startup_addr |= (uint64_t(dcrs_.base_dcrs.read(VX_DCR_BASE_STARTUP_ADDR1)) << 32);
-#endif
-
-  uint64_t startup_arg = dcrs_.base_dcrs.read(VX_DCR_BASE_STARTUP_ARG0);
-#if (XLEN == 64)
-  startup_arg |= (uint64_t(dcrs_.base_dcrs.read(VX_DCR_BASE_STARTUP_ARG1)) << 32);
-#endif
-
   for (auto& warp : warps_) {
-    warp.reset(startup_addr);
+    warp.reset();
   }
 
   for (auto& barrier : barriers_) {
     barrier.reset();
   }
 
-#ifdef EXT_V_ENABLE
-  vec_unit_->reset();
-#endif
-
-  csr_mscratch_ = startup_arg;
-
   stalled_warps_.reset();
   active_warps_.reset();
-
-  // activate first warp and thread
-  active_warps_.set(0);
-  warps_[0].tmask.set(0);
   wspawn_.valid = false;
+
+  cta_dispatcher_.reset();
+}
+
+void Emulator::activate_warp(uint32_t wid, const cta_warp_record_t& rec) {
+  auto& warp = warps_[wid];
+
+  // if executing next CTA on same warp, we can skip prolog and jump to kernel_main at PC-12 (see vx_start.S)
+  warp.PC       = rec.do_init ? rec.PC : (warp.PC - 12);
+  warp.tmask    = rec.tmask;
+  warp.mscratch = rec.mscratch;
+
+  warp.cta_csrs.cta_id        = rec.cta_id;
+  warp.cta_csrs.cta_rank      = rec.cta_rank;
+  warp.cta_csrs.cta_size      = rec.cta_size;
+  warp.cta_csrs.thread_idx[0] = rec.thread_idx[0];
+  warp.cta_csrs.thread_idx[1] = rec.thread_idx[1];
+  warp.cta_csrs.thread_idx[2] = rec.thread_idx[2];
+  warp.cta_csrs.block_idx[0]  = rec.block_idx[0];
+  warp.cta_csrs.block_idx[1]  = rec.block_idx[1];
+  warp.cta_csrs.block_idx[2]  = rec.block_idx[2];
+  warp.cta_csrs.block_dim[0]  = rec.block_dim[0];
+  warp.cta_csrs.block_dim[1]  = rec.block_dim[1];
+  warp.cta_csrs.block_dim[2]  = rec.block_dim[2];
+  warp.cta_csrs.grid_dim[0]   = rec.grid_dim[0];
+  warp.cta_csrs.grid_dim[1]   = rec.grid_dim[1];
+  warp.cta_csrs.grid_dim[2]   = rec.grid_dim[2];
+  warp.cta_csrs.lmem_addr     = rec.lmem_addr;
+
+  warp.ibuffer.clear();
+  while (!warp.ipdom_stack.empty()) warp.ipdom_stack.pop();
+
+  active_warps_.set(wid);
+  stalled_warps_.reset(wid);
+
+  DP(3, "*** dispatch CTA warp: cid=" << core_->id()
+     << ", wid=" << wid << ", cta_id=" << warp.cta_csrs.cta_id
+     << ", rank=" << warp.cta_csrs.cta_rank << "/" << warp.cta_csrs.cta_size
+     << ", tmask=" << warp.tmask
+     << ", PC=0x" << std::hex << warp.PC << std::dec);
 }
 
 void Emulator::attach_ram(RAM* ram) {
@@ -152,17 +169,30 @@ uint32_t Emulator::fetch(uint32_t wid, uint64_t uuid) {
 instr_trace_t* Emulator::step() {
   int scheduled_warp = -1;
 
-  // process pending wspawn
+  // Dispatch one CTA warp
+  {
+    uint32_t wid;
+    cta_warp_record_t rec;
+    if (cta_dispatcher_.step(active_warps_, &wid, &rec)) {
+      activate_warp(wid, rec);
+    }
+  }
+
+  // process pending wspawn when we are down to a single active warp
   if (wspawn_.valid && active_warps_.count() == 1) {
     DP(3, "*** Activate " << (wspawn_.num_warps-1) << " warps at PC: " << std::hex << wspawn_.nextPC << std::dec);
+    auto spawning_mscratch = warps_.at(0).mscratch;
     for (uint32_t i = 1; i < wspawn_.num_warps; ++i) {
       auto& warp = warps_.at(i);
       warp.PC = wspawn_.nextPC;
       warp.tmask.set(0);
+      warp.mscratch = spawning_mscratch;
       active_warps_.set(i);
+      stalled_warps_.reset(i);
+      DT(3, core_->name() << " warp-state: wid=" << i << ", active=true, stalled=false, tmask=" << warp.tmask);
     }
     wspawn_.valid = false;
-    stalled_warps_.reset(0);
+    this->resume(0);
   }
 
   // find next ready warp
@@ -175,6 +205,7 @@ instr_trace_t* Emulator::step() {
     }
   }
 
+  // Any active warp to schedule ?
   if (scheduled_warp == -1)
     return nullptr;
 
@@ -188,9 +219,9 @@ instr_trace_t* Emulator::step() {
   #ifndef NDEBUG
     {
       // generate unique universal instruction ID
-      uint32_t instr_uuid = warp.uuid++;
+      uint32_t instr_id = warp.uuid++;
       uint32_t g_wid = core_->id() * arch_.num_warps() + scheduled_warp;
-      uuid = (uint64_t(g_wid) << 32) | instr_uuid;
+      uuid = (uint64_t(g_wid) << 32) | instr_id;
     }
   #endif
 
@@ -216,7 +247,7 @@ instr_trace_t* Emulator::step() {
 }
 
 bool Emulator::running() const {
-  return active_warps_.any();
+  return active_warps_.any() || cta_dispatcher_.running();
 }
 
 int Emulator::get_exitcode() const {
@@ -224,71 +255,168 @@ int Emulator::get_exitcode() const {
 }
 
 void Emulator::suspend(uint32_t wid) {
+  assert(active_warps_.test(wid));
   assert(!stalled_warps_.test(wid));
   stalled_warps_.set(wid);
+  DT(3, core_->name() << " warp-state: wid=" << wid << ", stalled=true");
 }
 
 void Emulator::resume(uint32_t wid) {
-  if (wid != 0xffffffff) {
-    assert(stalled_warps_.test(wid));
-    stalled_warps_.reset(wid);
-  } else {
-    stalled_warps_.reset();
+  assert(active_warps_.test(wid));
+  assert(stalled_warps_.test(wid));
+  stalled_warps_.reset(wid);
+  DT(3, core_->name() << " warp-state: wid=" << wid << ", stalled=false");
+}
+
+bool Emulator::setTmask(uint32_t wid, const ThreadMask& tmask) {
+  auto& warp = warps_.at(wid);
+  if (warp.tmask != tmask) {
+    DT(3, core_->name() << " warp-state: wid=" << wid << ", tmask=" << tmask);
   }
+  warp.tmask = tmask;
+  // deactivate warp if no active threads
+  if (!tmask.any()) {
+    active_warps_.reset(wid);
+    cta_dispatcher_.warp_done(wid);
+    return false;
+  }
+  return true;
 }
 
 bool Emulator::wspawn(uint32_t num_warps, Word nextPC) {
   num_warps = std::min<uint32_t>(num_warps, arch_.num_warps());
   if (num_warps < 2 && active_warps_.count() == 1)
-    return true;
+    return true; // nothing to do
+  // schedule wspawn
   wspawn_.valid = true;
   wspawn_.num_warps = num_warps;
   wspawn_.nextPC = nextPC;
   return false;
 }
 
-bool Emulator::barrier(uint32_t bar_id, uint32_t count, uint32_t wid) {
-  if (count < 2)
-    return true;
+uint32_t Emulator::get_barrier_phase(uint32_t bar_id) const {
+  auto bar_index = bar_id & 0x7fffffff;
+  return barriers_.at(bar_index).phase;
+}
 
-  uint32_t bar_idx = bar_id & 0x7fffffff;
+// Mark warp arrival at a barrier and return the phase generation number
+void Emulator::barrier_arrive(uint32_t bar_id, uint32_t count, uint32_t wid, bool is_sync_bar) {
   bool is_global = (bar_id >> 31);
+  auto bar_index = bar_id & 0x7fffffff;
 
-  auto& barrier = barriers_.at(bar_idx);
-  barrier.set(wid);
-  DP(3, "*** Suspend core #" << core_->id() << ", warp #" << wid << " at barrier #" << bar_idx);
+  auto& barrier = barriers_.at(bar_index);
+
+  DP(4, "*** Barrier arrive: core #" << core_->id() << ", warp #" << wid << " at barrier #" << bar_id << ", phase=" << barrier.phase << ", wait_mask=" << barrier.wait_mask << ", count=" << barrier.count << ", events=" << barrier.events);
 
   if (is_global) {
-    // global barrier handling
-    if (barrier.count() == active_warps_.count()) {
-      core_->socket()->barrier(bar_idx, count, core_->id());
+    barrier.count = count; // save core count
+    barrier.wait_mask.set(wid); // mark warp arrival
+    if (barrier.wait_mask.count() == active_warps_.count() && barrier.events == 0) {
+      // notify global barrier
+      core_->socket()->global_barrier_arrive(bar_id, count, core_->id());
       barrier.reset();
     }
   } else {
+    if (is_sync_bar) {
+      barrier.wait_mask.set(wid);
+    }
     // local barrier handling
-    if (barrier.count() == (size_t)count) {
-      // resume suspended warps
+    auto barrier_count_p1 = barrier.count + 1;
+    if (barrier_count_p1 == count && barrier.events == 0) {
+      // resume waiting warps
       for (uint32_t i = 0; i < arch_.num_warps(); ++i) {
-        if (barrier.test(i)) {
-          DP(3, "*** Resume core #" << core_->id() << ", warp #" << i << " at barrier #" << bar_idx);
-          stalled_warps_.reset(i);
+        if (barrier.wait_mask.test(i)) {
+          DP(3, "*** Resume core #" << core_->id() << ", warp #" << i << " at barrier #" << bar_id);
+          this->resume(i);
         }
       }
-      barrier.reset();
+      // reset barrier and advance phase
+      barrier.wait_mask.reset();
+      ++barrier.phase;
+    }
+    // update count and wrap around
+    if (count == 0) {
+      std::cout << "BUG: barrier_arrive count=0: core=" << core_->id() << " wid=" << wid << " bar_id=0x" << std::hex << bar_id << std::dec << " bar_index=" << bar_index << " is_sync=" << is_sync_bar << std::endl;
+      std::abort();
+    }
+    barrier.count = barrier_count_p1 % count;
+  }
+}
+
+// Async barrier wait: suspend warp until arrival phase is complete
+// phase: the value returned by barrier_arrive
+bool Emulator::barrier_wait(uint32_t bar_id, uint32_t phase, uint32_t wid) {
+  auto bar_index = bar_id & 0x7fffffff;
+
+  auto& barrier = barriers_.at(bar_index);
+  bool wait = (barrier.phase == phase);
+
+  DP(4, "*** Barrier wait: core #" << core_->id() << ", warp #" << wid << " at barrier #" << bar_id << ", wait=" << wait);
+
+  if (wait) {
+    // add warp to wait list
+    barrier.wait_mask.set(wid);
+    DP(3, "*** Suspend core #" << core_->id() << ", warp #" << wid << " at barrier #" << bar_id);
+  }
+
+  return wait;
+}
+
+void Emulator::global_barrier_resume(uint32_t bar_id) {
+  auto bar_index = bar_id & 0x7fffffff;
+  auto& barrier = barriers_.at(bar_index);
+  for (uint32_t i = 0; i < arch_.num_warps(); ++i) {
+    if (active_warps_.test(i)) {
+      DP(3, "*** Resume core #" << core_->id() << ", warp #" << i << " at barrier #" << bar_id);
+      this->resume(i);
     }
   }
-  return false;
+  barrier.wait_mask.reset();
+  ++barrier.phase;
+}
+
+void Emulator::barrier_event_attach(uint32_t bar_id) {
+  auto bar_index = bar_id & 0x7fffffff;
+  auto& barrier = barriers_.at(bar_index);
+  ++barrier.events;
+}
+
+void Emulator::barrier_event_release(uint32_t bar_id) {
+  bool is_global = (bar_id >> 31);
+  auto bar_index = bar_id & 0x7fffffff;
+  auto& barrier = barriers_.at(bar_index);
+  assert(barrier.events > 0);
+  --barrier.events;
+  if (barrier.events == 0) {
+    if (is_global) {
+      if (barrier.wait_mask.count() == active_warps_.count()) {
+        uint32_t num_cores = barrier.count; // was saved in barrier_arrive
+        // notify global barrier
+        core_->socket()->global_barrier_arrive(bar_id, num_cores, core_->id());
+        barrier.reset();
+      }
+    } else {
+      if (barrier.count == 0) {
+        // resume waiting warps
+        for (uint32_t i = 0; i < arch_.num_warps(); ++i) {
+          if (barrier.wait_mask.test(i)) {
+            DP(3, "*** Resume core #" << core_->id() << ", warp #" << i << " at barrier #" << bar_id);
+            this->resume(i);
+          }
+        }
+        // reset barrier and advance phase
+        barrier.wait_mask.reset();
+        ++barrier.phase;
+      }
+    }
+  }
 }
 
 #ifdef VM_ENABLE
 void Emulator::icache_read(void *data, uint64_t addr, uint32_t size) {
-  DP(3, "*** icache_read 0x" << std::hex << addr << ", size = 0x "  << size);
-  try
-  {
+  try {
     mmu_.read(data, addr, size, ACCESS_TYPE::FETCH);
-  }
-  catch (Page_Fault_Exception& page_fault)
-  {
+  } catch (Page_Fault_Exception& page_fault) {
     std::cout<<page_fault.what()<<std::endl;
     throw;
   }
@@ -306,20 +434,15 @@ void Emulator::set_satp(uint64_t satp) {
 }
 #endif
 
-
 #ifdef VM_ENABLE
 void Emulator::dcache_read(void *data, uint64_t addr, uint32_t size) {
-  DP(1, "*** dcache_read 0x" << std::hex << addr << ", size = 0x "  << size);
   auto type = get_addr_type(addr);
   if (type == AddrType::Shared) {
     core_->local_mem()->read(data, addr, size);
   } else {
-    try
-    {
+    try {
       mmu_.read(data, addr, size, ACCESS_TYPE::LOAD);
-    }
-    catch (Page_Fault_Exception& page_fault)
-    {
+    } catch (Page_Fault_Exception& page_fault) {
       std::cout<<page_fault.what()<<std::endl;
       throw;
     }
@@ -340,7 +463,6 @@ void Emulator::dcache_read(void *data, uint64_t addr, uint32_t size) {
 
 #ifdef VM_ENABLE
 void Emulator::dcache_write(const void* data, uint64_t addr, uint32_t size) {
-  DP(1, "*** dcache_write 0x" << std::hex << addr << ", size = 0x "  << size);
   auto type = get_addr_type(addr);
   if (addr >= uint64_t(IO_COUT_ADDR)
    && addr < (uint64_t(IO_COUT_ADDR) + IO_COUT_SIZE)) {
@@ -349,13 +471,10 @@ void Emulator::dcache_write(const void* data, uint64_t addr, uint32_t size) {
     if (type == AddrType::Shared) {
       core_->local_mem()->write(data, addr, size);
     } else {
-      try
-      {
+      try {
         // mmu_.write(data, addr, size, 0);
         mmu_.write(data, addr, size, ACCESS_TYPE::STORE);
-      }
-      catch (Page_Fault_Exception& page_fault)
-      {
+      } catch (Page_Fault_Exception& page_fault) {
         std::cout<<page_fault.what()<<std::endl;
         throw;
       }
@@ -379,6 +498,38 @@ void Emulator::dcache_write(const void* data, uint64_t addr, uint32_t size) {
   DPH(2, "Mem Write: addr=0x" << std::hex << addr << ", data=0x" << ByteStream(data, size) << std::dec << " (size=" << size << ", type=" << type << ")" << std::endl);
 }
 #endif
+
+int Emulator::dcr_write(uint32_t addr, uint32_t value) {
+  __unused(addr);
+  __unused(value);
+  // KMU DCRs are handled at ProcessorImpl level and never reach here.
+  return 0;
+}
+
+int Emulator::dcr_read(uint32_t addr, uint32_t tag, uint32_t* value) {
+  // tag arrives as (mpm_class << 6) | mpm_tag_idx after socket strips core_id
+  switch (addr) {
+  case VX_DCR_BASE_CACHE_FLUSH:
+    // no-op in SimX (no real cache to flush)
+    *value = 0;
+    break;
+  case VX_DCR_BASE_MPM_VALUE: {
+    uint32_t mpm_class   = tag >> 6;
+    uint32_t mpm_tag_idx = tag & 0x3f;
+    bool     is_hi       = (mpm_tag_idx >> 5) & 1;
+    uint32_t idx         = mpm_tag_idx & 0x1f;
+    uint32_t csr_addr    = is_hi ? (VX_CSR_MPM_BASE_H + idx) : (VX_CSR_MPM_BASE + idx);
+    auto saved_class = mpm_class_;
+    mpm_class_ = mpm_class;
+    *value = static_cast<uint32_t>(get_csr(csr_addr, 0, 0));
+    mpm_class_ = saved_class;
+    break;
+  }
+  default:
+    break;
+  }
+  return 0;
+}
 
 void Emulator::dcache_amo_reserve(uint64_t addr) {
   auto type = get_addr_type(addr);
@@ -461,51 +612,92 @@ Word Emulator::get_csr(uint32_t addr, uint32_t wid, uint32_t tid) {
   case VX_CSR_NUM_WARPS:  return arch_.num_warps();
   case VX_CSR_NUM_CORES:  return uint32_t(arch_.num_cores()) * arch_.num_clusters();
   case VX_CSR_LOCAL_MEM_BASE: return arch_.local_mem_base();
-  case VX_CSR_MSCRATCH:   return csr_mscratch_;
+  case VX_CSR_NUM_BARRIERS: return arch_.num_barriers();
+  case VX_CSR_MSCRATCH:   return warps_.at(wid).mscratch;
+
+  case VX_CSR_CTA_ID:       return warps_.at(wid).cta_csrs.cta_id;
+  case VX_CSR_CTA_RANK:     return warps_.at(wid).cta_csrs.cta_rank;
+  case VX_CSR_CTA_SIZE:     return warps_.at(wid).cta_csrs.cta_size;
+  case VX_CSR_CTA_THREAD_ID_X:
+  case VX_CSR_CTA_THREAD_ID_Y:
+  case VX_CSR_CTA_THREAD_ID_Z: {
+    auto& cta = warps_.at(wid).cta_csrs;
+    uint32_t x = cta.thread_idx[0] + tid;
+    uint32_t y = cta.thread_idx[1] + x / cta.block_dim[0];
+    uint32_t z = cta.thread_idx[2] + y / cta.block_dim[1];
+    x %= cta.block_dim[0];
+    y %= cta.block_dim[1];
+    if (addr == VX_CSR_CTA_THREAD_ID_X) return x;
+    if (addr == VX_CSR_CTA_THREAD_ID_Y) return y;
+    return z;
+  }
+  case VX_CSR_CTA_BLOCK_ID_X:  return warps_.at(wid).cta_csrs.block_idx[0];
+  case VX_CSR_CTA_BLOCK_ID_Y:  return warps_.at(wid).cta_csrs.block_idx[1];
+  case VX_CSR_CTA_BLOCK_ID_Z:  return warps_.at(wid).cta_csrs.block_idx[2];
+  case VX_CSR_CTA_BLOCK_DIM_X: return warps_.at(wid).cta_csrs.block_dim[0];
+  case VX_CSR_CTA_BLOCK_DIM_Y: return warps_.at(wid).cta_csrs.block_dim[1];
+  case VX_CSR_CTA_BLOCK_DIM_Z: return warps_.at(wid).cta_csrs.block_dim[2];
+  case VX_CSR_CTA_GRID_DIM_X:  return warps_.at(wid).cta_csrs.grid_dim[0];
+  case VX_CSR_CTA_GRID_DIM_Y:  return warps_.at(wid).cta_csrs.grid_dim[1];
+  case VX_CSR_CTA_GRID_DIM_Z:  return warps_.at(wid).cta_csrs.grid_dim[2];
+  case VX_CSR_CTA_LMEM_ADDR:   return warps_.at(wid).cta_csrs.lmem_addr;
 
   CSR_READ_64(VX_CSR_MCYCLE, core_perf.cycles);
   CSR_READ_64(VX_CSR_MINSTRET, core_perf.instrs);
   default:
   #ifdef EXT_V_ENABLE
     Word value = 0;
-    if (vec_unit_->get_csr(addr, wid, tid, &value))
+    if (core_->vec_unit()->get_csr(addr, wid, tid, &value))
       return value;
   #endif
     if ((addr >= VX_CSR_MPM_BASE && addr < (VX_CSR_MPM_BASE + 32))
      || (addr >= VX_CSR_MPM_BASE_H && addr < (VX_CSR_MPM_BASE_H + 32))) {
       // user-defined MPM CSRs
-      auto perf_class = dcrs_.base_dcrs.read(VX_DCR_BASE_MPM_CLASS);
+      auto proc_perf = core_->socket()->cluster()->processor()->perf_stats();
+      auto perf_class = mpm_class_;
       switch (perf_class) {
-      case VX_DCR_MPM_CLASS_NONE:
+      case VX_DCR_MPM_CLASS_BASE:
         break;
       case VX_DCR_MPM_CLASS_CORE: {
         switch (addr) {
-        CSR_READ_64(VX_CSR_MPM_SCHED_ID, core_perf.sched_idle);
-        CSR_READ_64(VX_CSR_MPM_SCHED_ST, core_perf.sched_stalls);
-        CSR_READ_64(VX_CSR_MPM_IBUF_ST, core_perf.ibuf_stalls);
-        CSR_READ_64(VX_CSR_MPM_SCRB_ST, core_perf.scrb_stalls);
-        CSR_READ_64(VX_CSR_MPM_OPDS_ST, core_perf.opds_stalls);
-        CSR_READ_64(VX_CSR_MPM_SCRB_ALU, core_perf.scrb_alu);
-        CSR_READ_64(VX_CSR_MPM_SCRB_FPU, core_perf.scrb_fpu);
-        CSR_READ_64(VX_CSR_MPM_SCRB_LSU, core_perf.scrb_lsu);
-        CSR_READ_64(VX_CSR_MPM_SCRB_SFU, core_perf.scrb_sfu);
+        CSR_READ_64(VX_CSR_MPM_SCHED_IDLE, core_perf.sched_idle);
+        CSR_READ_64(VX_CSR_MPM_ACTIVE_WARPS, core_perf.active_warps);
+        CSR_READ_64(VX_CSR_MPM_STALLED_WARPS, core_perf.stalled_warps);
+        CSR_READ_64(VX_CSR_MPM_ISSUED_WARPS, core_perf.issued_warps);
+        CSR_READ_64(VX_CSR_MPM_ISSUED_THREADS, core_perf.issued_threads);
+        CSR_READ_64(VX_CSR_MPM_STALL_FETCH, core_perf.fetch_stalls);
+        CSR_READ_64(VX_CSR_MPM_STALL_IBUF, core_perf.ibuf_stalls);
+        CSR_READ_64(VX_CSR_MPM_STALL_SCRB, core_perf.scrb_stalls);
+        CSR_READ_64(VX_CSR_MPM_STALL_OPDS, core_perf.opds_stalls);
+        CSR_READ_64(VX_CSR_MPM_STALL_ALU, core_perf.alu_stalls);
+        CSR_READ_64(VX_CSR_MPM_STALL_FPU, core_perf.fpu_stalls);
+        CSR_READ_64(VX_CSR_MPM_STALL_LSU, core_perf.lsu_stalls);
+        CSR_READ_64(VX_CSR_MPM_STALL_SFU, core_perf.sfu_stalls);
       #ifdef EXT_TCU_ENABLE
-        CSR_READ_64(VX_CSR_MPM_SCRB_TCU, core_perf.scrb_tcu);
+        CSR_READ_64(VX_CSR_MPM_STALL_TCU, core_perf.tcu_stalls);
       #endif
       #ifdef EXT_V_ENABLE
         CSR_READ_64(VX_CSR_MPM_SCRB_VPU, core_perf.scrb_vpu);
       #endif
-        CSR_READ_64(VX_CSR_MPM_SCRB_CSRS, core_perf.scrb_csrs);
-        CSR_READ_64(VX_CSR_MPM_SCRB_WCTL, core_perf.scrb_wctl);
+        CSR_READ_64(VX_CSR_MPM_BRANCHES, core_perf.branches);
+        CSR_READ_64(VX_CSR_MPM_DIVERGENCE, core_perf.divergence);
+        CSR_READ_64(VX_CSR_MPM_INSTR_ALU, core_perf.alu_instrs);
+        CSR_READ_64(VX_CSR_MPM_INSTR_FPU, core_perf.fpu_instrs);
+        CSR_READ_64(VX_CSR_MPM_INSTR_LSU, core_perf.lsu_instrs);
+        CSR_READ_64(VX_CSR_MPM_INSTR_SFU, core_perf.sfu_instrs);
+      #ifdef EXT_TCU_ENABLE
+        CSR_READ_64(VX_CSR_MPM_INSTR_TCU, core_perf.tcu_instrs);
+      #endif
+        CSR_READ_64(VX_CSR_MPM_MEM_READS, proc_perf.mem_reads);
+        CSR_READ_64(VX_CSR_MPM_MEM_WRITES, proc_perf.mem_writes);
         CSR_READ_64(VX_CSR_MPM_IFETCHES, core_perf.ifetches);
+        CSR_READ_64(VX_CSR_MPM_IFETCH_LT, core_perf.ifetch_latency);
         CSR_READ_64(VX_CSR_MPM_LOADS, core_perf.loads);
         CSR_READ_64(VX_CSR_MPM_STORES, core_perf.stores);
-        CSR_READ_64(VX_CSR_MPM_IFETCH_LT, core_perf.ifetch_latency);
         CSR_READ_64(VX_CSR_MPM_LOAD_LT, core_perf.load_latency);
         }
       } break;
       case VX_DCR_MPM_CLASS_MEM: {
-        auto proc_perf = core_->socket()->cluster()->processor()->perf_stats();
         auto cluster_perf = core_->socket()->cluster()->perf_stats();
         auto socket_perf = core_->socket()->perf_stats();
         auto lmem_perf = core_->local_mem()->perf_stats();
@@ -579,7 +771,7 @@ void Emulator::set_csr(uint32_t addr, Word value, uint32_t wid, uint32_t tid) {
     warps_.at(wid).fcsr = value & 0xff;
     break;
   case VX_CSR_MSCRATCH:
-    csr_mscratch_ = value;
+    warps_.at(wid).mscratch = value;
     break;
   case VX_CSR_SATP:
   #ifdef VM_ENABLE
@@ -599,7 +791,7 @@ void Emulator::set_csr(uint32_t addr, Word value, uint32_t wid, uint32_t tid) {
     break;
   default: {
     #ifdef EXT_V_ENABLE
-      if (vec_unit_->set_csr(addr, wid, tid, value))
+      if (core_->vec_unit()->set_csr(addr, wid, tid, value))
         return;
     #endif
       std::cerr << "Error: invalid CSR write addr=0x" << std::hex << addr << ", value=0x" << value << std::dec << std::endl;

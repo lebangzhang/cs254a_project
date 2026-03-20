@@ -26,7 +26,6 @@
 using namespace vortex;
 namespace vt = tensor;
 
-static bool g_enable_sparse = false;
 ///////////////////////////////////////////////////////////////////////////////
 
 static void convert_row_to_col_major_4bit(uint8_t *dst, uint32_t width, uint32_t height, const uint8_t *src) {
@@ -100,6 +99,24 @@ struct data_accessor_t<vt::uint4> {
     return odd ? (value8 >> 4) : (value8 & 0x0f); // to nibble
   }
   static void write(uint8_t *ptr, uint32_t offset, int32_t value) {
+    uint32_t row_off = offset / 2;
+    bool odd = offset & 0x1;
+    uint8_t old_value = ptr[row_off];
+    uint8_t new_value = odd ? ((old_value & 0x0f) | (value << 4))
+                            : ((old_value & 0xf0) | (value & 0x0f));
+    ptr[offset / 2] = new_value;
+  }
+};
+
+template <>
+struct data_accessor_t<vt::nvfp4> {
+  static uint8_t read(const uint8_t *ptr, uint32_t offset) {
+    uint32_t row_off = offset / 2;
+    bool odd = offset & 0x1;
+    uint8_t value8 = ptr[row_off];
+    return odd ? (value8 >> 4) : (value8 & 0x0f); // extract nibble
+  }
+  static void write(uint8_t *ptr, uint32_t offset, uint8_t value) {
     uint32_t row_off = offset / 2;
     bool odd = offset & 0x1;
     uint8_t old_value = ptr[row_off];
@@ -183,6 +200,23 @@ public:
 };
 
 template <>
+class Comparator<vt::mxint8> {
+public:
+  static int8_t generate() {
+    return (int8_t)(rand() % 256 - 128);
+  }
+  static bool compare(int8_t a, int8_t b, int index, int errors) {
+    if (a != b) {
+      if (errors < MAX_ERRORS) {
+        printf("*** error: [%d] expected=0x%x, actual=0x%x\n", index, b, a);
+      }
+      return false;
+    }
+    return true;
+  }
+};
+
+template <>
 class Comparator<vt::int32> {
 public:
   static int32_t generate() {
@@ -236,27 +270,149 @@ public:
 };
 
 template <>
+class Comparator<vt::fp8> {
+public:
+  static uint8_t generate() {
+    auto fvalue = float(rand()) / RAND_MAX;
+    return rv_ftoe4m3_s(bit_cast<uint32_t>(fvalue), 0, nullptr);
+  }
+  static bool compare(uint8_t a, uint8_t b, int index, int errors) {
+    if (a != b) {
+      if (errors < MAX_ERRORS) {
+        printf("*** error: [%d] expected=0x%x, actual=0x%x\n", index, b, a);
+      }
+      return false;
+    }
+    return true;
+  }
+};
+
+template <>
+class Comparator<vt::bf8> {
+public:
+  static uint8_t generate() {
+    auto fvalue = float(rand()) / RAND_MAX;
+    return rv_ftoe5m2_s(bit_cast<uint32_t>(fvalue), 0, nullptr);
+  }
+  static bool compare(uint8_t a, uint8_t b, int index, int errors) {
+    if (a != b) {
+      if (errors < MAX_ERRORS) {
+        printf("*** error: [%d] expected=0x%x, actual=0x%x\n", index, b, a);
+      }
+      return false;
+    }
+    return true;
+  }
+};
+
+template <>
+class Comparator<vt::tf32> {
+public:
+  static uint32_t generate() {
+    auto fvalue = float(rand()) / RAND_MAX;
+    return rv_ftotf32_s(bit_cast<uint32_t>(fvalue), 0, nullptr);
+  }
+  static bool compare(uint32_t a, uint32_t b, int index, int errors) {
+    if (a != b) {
+      if (errors < MAX_ERRORS) {
+        printf("*** error: [%d] expected=0x%x, actual=0x%x\n", index, b, a);
+      }
+      return false;
+    }
+    return true;
+  }
+};
+
+// TODO: temp arbitrarily hardcoded scale factors
+constexpr uint8_t SCALE_FACTOR_E8M0_A = 129;  // val = 4, bias = 127
+constexpr uint8_t SCALE_FACTOR_E8M0_B = 131;  // val = 16
+constexpr uint8_t SCALE_FACTOR_E4M3_A = 0x41; // val = 2.25, bias = 7
+constexpr uint8_t SCALE_FACTOR_E4M3_B = 0x33; // val = 0.6875
+
+template <>
+class Comparator<vt::mxfp8> {
+public:
+  static uint8_t generate() {
+    return generate_with_scale(SCALE_FACTOR_E8M0_A);
+  }
+
+  static uint8_t generate_with_scale(uint8_t scale_factor) {
+    auto fvalue = float(rand()) / RAND_MAX;
+    return rv_ftomxfp8_s(bit_cast<uint32_t>(fvalue), scale_factor, 0, nullptr);
+  }
+
+  static bool compare(uint8_t a, uint8_t b, int index, int errors) {
+    if (a != b) {
+      if (errors < MAX_ERRORS) {
+        printf("*** error: [%d] expected=0x%x, actual=0x%x\n", index, b, a);
+      }
+      return false;
+    }
+    return true;
+  }
+};
+
+template <>
+class Comparator<vt::nvfp4> {
+public:
+  static uint8_t generate() {
+    return generate_with_scale(SCALE_FACTOR_E4M3_A);
+  }
+
+  static uint8_t generate_with_scale(uint8_t scale_factor) {
+    auto fvalue = float(rand()) / RAND_MAX;
+    return rv_ftonvfp4_s(bit_cast<uint32_t>(fvalue), scale_factor, 0, nullptr);
+  }
+
+  static bool compare(uint8_t a, uint8_t b, int index, int errors) {
+    if (a != b) {
+      if (errors < MAX_ERRORS) {
+        printf("*** error: [%d] expected=0x%x, actual=0x%x\n", index, b, a);
+      }
+      return false;
+    }
+    return true;
+  }
+};
+
+template <>
 class Comparator<vt::fp32> {
 public:
   static float generate() {
     return static_cast<float>(rand()) / RAND_MAX;
   }
   static bool compare(float a, float b, int index, int errors) {
-    union fi_t {
-      float f;
-      int32_t i;
-    };
-    fi_t fa, fb;
-    fa.f = a;
-    fb.f = b;
-    auto d = std::abs(fa.i - fb.i);
-    if (d > FLOAT_ULP) {
+    if constexpr (std::is_same<vt::ITYPE, vt::fp8>::value || std::is_same<vt::ITYPE, vt::bf8>::value ||
+                  std::is_same<vt::ITYPE, vt::mxfp8>::value || std::is_same<vt::ITYPE, vt::nvfp4>::value) {
+      if (a == 0.0f && b == 0.0f) {
+        return true;
+      }
+      //relative error tolerance
+      auto diff = std::abs((a - b)/b);
+      if (diff < 0.01f) {
+        return true;
+      }
       if (errors < MAX_ERRORS) {
-        printf("*** error: [%d] expected=%f, actual=%f\n", index, fb.f, fa.f);
+        printf("*** error: [%d] expected=%f, actual=%f\n", index, b, a);
       }
       return false;
+    } else {
+      union fi_t {
+        float f;
+        int32_t i;
+      };
+      fi_t fa, fb;
+      fa.f = a;
+      fb.f = b;
+      auto d = std::abs(fa.i - fb.i);
+      if (d > FLOAT_ULP) {
+        if (errors < MAX_ERRORS) {
+          printf("*** error: [%d] expected=%f, actual=%f\n", index, fb.f, fa.f);
+        }
+        return false;
+      }
+      return true;
     }
-    return true;
   }
 };
 
@@ -312,6 +468,112 @@ struct muladd_t<vt::bf16, vt::bf16> {
 };
 
 template <>
+struct muladd_t<vt::fp8, vt::fp32> {
+  static float eval(uint8_t a, uint8_t b, float c) {
+    auto fa = bit_cast<float>(rv_e4m3tof_s(a, 0, nullptr));
+    auto fb = bit_cast<float>(rv_e4m3tof_s(b, 0, nullptr));
+    return fa * fb + c;
+  }
+};
+
+template <>
+struct muladd_t<vt::fp8, vt::fp8> {
+  static uint8_t eval(uint8_t a, uint8_t b, uint8_t c) {
+    auto fa = bit_cast<float>(rv_e4m3tof_s(a, 0, nullptr));
+    auto fb = bit_cast<float>(rv_e4m3tof_s(b, 0, nullptr));
+    auto fc = bit_cast<float>(rv_e4m3tof_s(c, 0, nullptr));
+    auto fd = fa * fb + fc;
+    return rv_ftoe4m3_s(bit_cast<uint32_t>(fd), 0, nullptr);
+  }
+};
+
+template <>
+struct muladd_t<vt::bf8, vt::fp32> {
+  static float eval(uint8_t a, uint8_t b, float c) {
+    auto fa = bit_cast<float>(rv_e5m2tof_s(a, 0, nullptr));
+    auto fb = bit_cast<float>(rv_e5m2tof_s(b, 0, nullptr));
+    return fa * fb + c;
+  }
+};
+
+template <>
+struct muladd_t<vt::bf8, vt::bf8> {
+  static uint8_t eval(uint8_t a, uint8_t b, uint8_t c) {
+    auto fa = bit_cast<float>(rv_e5m2tof_s(a, 0, nullptr));
+    auto fb = bit_cast<float>(rv_e5m2tof_s(b, 0, nullptr));
+    auto fc = bit_cast<float>(rv_e5m2tof_s(c, 0, nullptr));
+    auto fd = fa * fb + fc;
+    return rv_ftoe5m2_s(bit_cast<uint32_t>(fd), 0, nullptr);
+  }
+};
+
+template <>
+struct muladd_t<vt::tf32, vt::fp32> {
+  static float eval(uint32_t a, uint32_t b, float c) {
+    auto fa = bit_cast<float>(rv_tf32tof_s(a, 0, nullptr));
+    auto fb = bit_cast<float>(rv_tf32tof_s(b, 0, nullptr));
+    return fa * fb + c;
+  }
+};
+
+template <>
+struct muladd_t<vt::tf32, vt::tf32> {
+  static uint32_t eval(uint32_t a, uint32_t b, uint32_t c) {
+    auto fa = bit_cast<float>(rv_tf32tof_s(a, 0, nullptr));
+    auto fb = bit_cast<float>(rv_tf32tof_s(b, 0, nullptr));
+    auto fc = bit_cast<float>(rv_tf32tof_s(c, 0, nullptr));
+    auto fd = fa * fb + fc;
+    return rv_ftotf32_s(bit_cast<uint32_t>(fd), 0, nullptr);
+  }
+};
+
+template <>
+struct muladd_t<vt::mxfp8, vt::fp32> {
+  static float eval(uint8_t a, uint8_t b, float c) {
+    constexpr uint8_t sf_a = SCALE_FACTOR_E8M0_A;
+    constexpr uint8_t sf_b = SCALE_FACTOR_E8M0_B;
+    auto fa = bit_cast<float>(rv_mxfp8tof_s(a, sf_a, 0, nullptr));
+    auto fb = bit_cast<float>(rv_mxfp8tof_s(b, sf_b, 0, nullptr));
+    return fa * fb + c;
+  }
+};
+
+template <>
+struct muladd_t<vt::mxfp8, vt::mxfp8> {
+  static uint8_t eval(uint8_t a, uint8_t b, uint8_t c) {
+    constexpr uint8_t sf = SCALE_FACTOR_E8M0_A;
+    auto fa = bit_cast<float>(rv_mxfp8tof_s(a, sf, 0, nullptr));
+    auto fb = bit_cast<float>(rv_mxfp8tof_s(b, sf, 0, nullptr));
+    auto fc = bit_cast<float>(rv_mxfp8tof_s(c, sf, 0, nullptr));
+    auto fd = fa * fb + fc;
+    return rv_ftomxfp8_s(bit_cast<uint32_t>(fd), sf, 0, nullptr);
+  }
+};
+
+template <>
+struct muladd_t<vt::nvfp4, vt::fp32> {
+  static float eval(uint8_t a, uint8_t b, float c) {
+    constexpr uint8_t sf_a = SCALE_FACTOR_E4M3_A;
+    constexpr uint8_t sf_b = SCALE_FACTOR_E4M3_B;
+    auto fa = bit_cast<float>(rv_nvfp4tof_s(a, sf_a, 0, nullptr));
+    auto fb = bit_cast<float>(rv_nvfp4tof_s(b, sf_b, 0, nullptr));
+    return fa * fb + c;
+  }
+};
+
+template <>
+struct muladd_t<vt::nvfp4, vt::nvfp4> {
+  static uint8_t eval(uint8_t a, uint8_t b, uint8_t c) {
+    constexpr uint8_t sf = SCALE_FACTOR_E4M3_A;
+    auto fa = bit_cast<float>(rv_nvfp4tof_s(a, sf, 0, nullptr));
+    auto fb = bit_cast<float>(rv_nvfp4tof_s(b, sf, 0, nullptr));
+    auto fc = bit_cast<float>(rv_nvfp4tof_s(c, sf, 0, nullptr));
+    auto fd = fa * fb + fc;
+    return rv_ftonvfp4_s(bit_cast<uint32_t>(fd), sf, 0, nullptr);
+  }
+};
+
+template <>
 struct muladd_t<vt::int4, vt::int32> {
   static int32_t eval(uint8_t a, uint8_t b, int32_t c) {
     int32_t a_val = a & 0xF;
@@ -335,6 +597,42 @@ struct muladd_t<vt::uint4, vt::int32> {
   }
 };
 
+template <>
+struct muladd_t<vt::mxint8, vt::int32> {
+  static int32_t eval(int8_t a, int8_t b, int32_t c) {
+    constexpr uint8_t sf_a = SCALE_FACTOR_E8M0_A;
+    constexpr uint8_t sf_b = SCALE_FACTOR_E8M0_B;
+    int32_t scale_exp_a = (int32_t)sf_a - 133;
+    float scale_factor_a = std::ldexp(1.0f, scale_exp_a);
+    int32_t scale_exp_b = (int32_t)sf_b - 133;
+    float scale_factor_b = std::ldexp(1.0f, scale_exp_b);
+    float product = (float)a * scale_factor_a * (float)b * scale_factor_b;
+    return (int32_t)product + c;
+  }
+};
+
+template<typename T>
+inline typename T::dtype generate_A_value() {
+  if constexpr (std::is_same_v<T, vt::mxfp8>) {
+    return Comparator<T>::generate_with_scale(SCALE_FACTOR_E8M0_A);
+  } else if constexpr (std::is_same_v<T, vt::nvfp4>) {
+    return Comparator<T>::generate_with_scale(SCALE_FACTOR_E4M3_A);
+  } else {
+    return Comparator<T>::generate();
+  }
+}
+
+template<typename T>
+inline typename T::dtype generate_B_value() {
+  if constexpr (std::is_same_v<T, vt::mxfp8>) {
+    return Comparator<T>::generate_with_scale(SCALE_FACTOR_E8M0_B);
+  } else if constexpr (std::is_same_v<T, vt::nvfp4>) {
+    return Comparator<T>::generate_with_scale(SCALE_FACTOR_E4M3_B);
+  } else {
+    return Comparator<T>::generate();
+  }
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 
 using cfg = vt::wmma_config_t<NUM_THREADS, vt::ITYPE, vt::OTYPE>;
@@ -342,14 +640,6 @@ using cfg = vt::wmma_config_t<NUM_THREADS, vt::ITYPE, vt::OTYPE>;
 using itype_t = typename vt::ITYPE::dtype;
 using otype_t = typename vt::OTYPE::dtype;
 
-struct SparseMat {
-  std::vector<itype_t> values;   // non-zeros
-  std::vector<uint8_t> meta;     // Array of row-masks: 1 byte marks the columns
-                                  // of the 4 elements in the block that are non-zero.
-                                  // e.g. 0b0101 means 2nd and 4th elements are non-zero.
-
-  uint32_t rows, cols;           // original A dims (M × K)
-};
 
 static void matmul_cpu(otype_t *C, const itype_t *A, const itype_t *B, uint32_t M, uint32_t N, uint32_t K) {
   uint32_t subbytes = 8 / vt::ITYPE::bits;
@@ -367,61 +657,13 @@ static void matmul_cpu(otype_t *C, const itype_t *A, const itype_t *B, uint32_t 
   }
 }
 
-/*
-static void matmul_cpu_sparseA(
-      otype_t*               C,      // [M × N]   output
-      const SparseMat&       A,      // sparse-A
-      const itype_t*         B,      // [K × N]   dense-B
-      uint32_t               N)      // number of columns of B/C
-{
-  const uint32_t M = A.rows;
-  const uint32_t K = A.cols;
-
-  const uint32_t subbytes = 8 / vt::ITYPE::bits;
-
-  // --- helper lambdas to index sparse arrays by row ---
-  auto row_values = [&](uint32_t m) {
-      return A.values.data() + m * (K / 2);   // two kept per block
-  };
-  auto row_meta   = [&](uint32_t m) {
-      return A.meta  .data() + m * (K / 4);
-  };
-
-  for (uint32_t m = 0; m < M; ++m) {
-
-    const itype_t* Avals = row_values(m);
-    const uint8_t* Ameta = row_meta  (m);
-    size_t         v_idx = 0;                 // cursor inside values[]
-
-    for (uint32_t n = 0; n < N; ++n) {
-      otype_t sum(0);
-      for (uint32_t blk = 0; blk < K; blk += 4) {
-        uint8_t mask = *(Ameta++);
-        assert(mask);
-        for (uint32_t i = 0; i < 4; ++i) {
-          if (mask & (1u << i)) {
-            auto a_val = Avals[v_idx++];
-            uint32_t k  = blk + i;                  // logical K index
-            uint32_t kk = subbytes ? k * subbytes   // packed-layout idx
-                                   : k;
-            auto b_val = data_accessor_t<vt::ITYPE>::read(
-                            B, kk * N + n);
-            sum = muladd_t<vt::ITYPE, vt::OTYPE>::eval(a_val, b_val, sum);
-          }
-        }
-      }
-      data_accessor_t<vt::OTYPE>::write(C, m * N + n, sum);
-    }
-  }
-}*/
-
 ///////////////////////////////////////////////////////////////////////////////
 
 const char *kernel_file = "kernel.vxbin";
 
-uint32_t xm = 4;
-uint32_t xn = 8;
-uint32_t xk = 2;
+uint32_t xm = 32;
+uint32_t xn = 32;
+uint32_t xk = 32;
 
 vx_device_h device = nullptr;
 vx_buffer_h A_buffer = nullptr;
@@ -431,12 +673,9 @@ vx_buffer_h krnl_buffer = nullptr;
 vx_buffer_h args_buffer = nullptr;
 kernel_arg_t kernel_arg = {};
 
-std::string last_build_options;
-
 static void show_usage() {
   std::cout << "Vortex Sgemm TCU Test." << std::endl;
-  std::cout << "Usage: [-m: m] [-n N] [-k: K] [-s] [-h: help]" << std::endl;
-  std::cout << "  -s  Enable 2:4 structured sparsity " << std::endl;
+  std::cout << "Usage: [-m: m] [-n N] [-k: K] [-h: help]" << std::endl;
 }
 
 static void parse_args(int argc, char **argv) {
@@ -451,10 +690,6 @@ static void parse_args(int argc, char **argv) {
       break;
     case 'k':
       xk = atoi(optarg);
-      break;
-    case 's':
-      g_enable_sparse = true;
-      std::cout << "Sparse mode enabled (-s)" << std::endl;
       break;
     case 'h':
       show_usage();
@@ -478,73 +713,9 @@ void cleanup() {
   }
 }
 
-
-static SparseMat pruneAndCompressMatrixA(const std::vector<itype_t>& denseA,
-                                         uint32_t M, uint32_t K) {
-  SparseMat out;
-  out.rows = M;
-  out.cols = K;
-  out.values.reserve(M * K / 2); // Select 2 values every 4 values
-  out.meta.reserve(M * K / 4); // 1 byte for every 4 values
-
-  const itype_t* src = denseA.data();
-
-  for (uint32_t r = 0; r < M; ++r) {
-    for (uint32_t c = 0; c < K; c += 4) {
-      itype_t blk[4] = {src[r * K + c],
-                        src[r * K + c + 1],
-                        src[r * K + c + 2],
-                        src[r * K + c + 3]};
-
-      uint32_t idx[4] = {0, 1, 2, 3};
-      std::sort(idx, idx + 4,
-        [&](uint32_t a, uint32_t b) {
-          return std::abs((int)blk[a]) < std::abs((int)blk[b]);
-        }); //Sort the 4 elements by absolute value, ascending order
-
-      uint8_t keep0 = idx[3];
-      uint8_t keep1 = idx[2]; //idx of largest 2 elements
-
-      out.values.push_back(blk[keep0]);
-      out.values.push_back(blk[keep1]);
-
-      uint8_t m = (1u << keep0) | (1u << keep1);  // e.g. 0b0101
-      out.meta.push_back(m);
-    }
-  }
-  return out;
-}
-
-void test_pruneA() {
-  const uint32_t M = 4, K = 8;
-  std::vector<itype_t> denseA(M * K);
-  for (auto& v : denseA) v = Comparator<vt::ITYPE>::generate();
-
-  auto spA = pruneAndCompressMatrixA(denseA, M, K);
-
-  std::vector<itype_t> recovered(M * K, 0);
-  size_t v_idx = 0, m_idx = 0;
-  for (uint32_t r = 0; r < M; ++r)
-    for (uint32_t c = 0; c < K; c += 4) {
-      uint8_t m = spA.meta[m_idx++];
-      for (uint32_t i = 0; i < 4; ++i)
-        if (m & (1u << i))
-          recovered[r * K + c + i] = spA.values[v_idx++];
-    }
-
-  for (uint32_t i = 0; i < M * K; ++i)
-    assert(recovered[i] == denseA[i] || recovered[i] == 0); //Either the value is preserved or pruned
-  std::cout << "pruneAndCompressMatrixA passed\n";
-}
-
-
 int main(int argc, char *argv[]) {
   // parse command arguments
   parse_args(argc, argv);
-
-  if(g_enable_sparse) {
-    test_pruneA(); // Test the pruning function
-  }
 
   std::srand(50);
 
@@ -568,28 +739,30 @@ int main(int argc, char *argv[]) {
     return -1;
   }
 
-  uint32_t M = xm * cfg::tileM;
-  uint32_t N = xn * cfg::tileN;
-  uint32_t K = xk = cfg::tileK;
+  uint32_t M = xm;
+  uint32_t N = xn;
+  uint32_t K = xk;
 
   if ((M % cfg::tileM) != 0) {
-    std::cout << "Error: M must be a multiple of tensor tileM!" << std::endl;
+    std::cout << "Error: M must be a multiple of tensor tileM=" << cfg::tileM << "!" << std::endl;
     return -1;
   }
 
   if ((N % cfg::tileN) != 0) {
-    std::cout << "Error: M must be a multiple of tensor tileN!" << std::endl;
+    std::cout << "Error: N must be a multiple of tensor tileN=" << cfg::tileN << "!" << std::endl;
     return -1;
   }
 
   if ((K % cfg::tileK) != 0) {
-    std::cout << "Error: M must be a multiple of tensor tileK!" << std::endl;
+    std::cout << "Error: K must be a multiple of tensor tileK=" << cfg::tileK << "!" << std::endl;
     return -1;
   }
 
   size_t sizeA = M * K;
   size_t sizeB = K * N;
   size_t sizeC = M * N;
+  uint32_t grid_dim[2]  = {N / cfg::tileN, M / cfg::tileM};
+  uint32_t block_dim[2] = {(uint32_t)NT, 1};
 
   std::cout << "input data type: " << vt::ITYPE::name << " (id=" << vt::ITYPE::id << ")" << std::endl;
   std::cout << "output data type: " << vt::OTYPE::name << " (id=" << vt::OTYPE::id << ")" << std::endl;
@@ -598,12 +771,6 @@ int main(int argc, char *argv[]) {
   std::cout << "matrix A: " << M << "x" << K << std::endl;
   std::cout << "matrix B: " << K << "x" << N << std::endl;
   std::cout << "matrix C: " << M << "x" << N << std::endl;
-
-  // set block size to warp size
-  kernel_arg.grid_dim[0] = N / cfg::tileN;
-  kernel_arg.grid_dim[1] = M / cfg::tileM;
-  kernel_arg.block_dim[0] = NT; // warp sizeb
-  kernel_arg.block_dim[1] = 1;
 
   // set matrix dimensions
   kernel_arg.M = M;
@@ -627,10 +794,10 @@ int main(int argc, char *argv[]) {
   std::vector<itype_t> h_A(sizeA);
   std::vector<itype_t> h_B(sizeB);
   for (uint32_t i = 0; i < sizeA; ++i) {
-    h_A[i] = Comparator<vt::ITYPE>::generate();
+    h_A[i] = generate_A_value<vt::ITYPE>();
   }
   for (uint32_t i = 0; i < sizeB; ++i) {
-    h_B[i] = Comparator<vt::ITYPE>::generate();
+    h_B[i] = generate_B_value<vt::ITYPE>();
   }
 
   // upload matrix A buffer
@@ -642,7 +809,9 @@ int main(int argc, char *argv[]) {
   // upload matrix B buffer
   {
     std::cout << "upload matrix B buffer" << std::endl;
-    if constexpr (std::is_same<vt::ITYPE, vt::int4>::value || std::is_same<vt::ITYPE, vt::uint4>::value) {
+    if constexpr (std::is_same<vt::ITYPE, vt::int4>::value ||
+                  std::is_same<vt::ITYPE, vt::uint4>::value ||
+                  std::is_same<vt::ITYPE, vt::nvfp4>::value) {
       // sub-byte matrix B must be in col-major format
       // we convert the 4-bit row-major to col-major here
       std::vector<uint8_t> h_B_col(sizeB);
@@ -665,7 +834,7 @@ int main(int argc, char *argv[]) {
 
   // start device
   std::cout << "start device" << std::endl;
-  RT_CHECK(vx_start(device, krnl_buffer, args_buffer));
+  RT_CHECK(vx_start_wg(device, krnl_buffer, args_buffer, 2, grid_dim, block_dim, 0));
 
   // wait for completion
   std::cout << "wait for completion" << std::endl;

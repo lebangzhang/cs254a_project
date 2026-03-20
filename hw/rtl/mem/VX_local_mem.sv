@@ -44,6 +44,13 @@ module VX_local_mem import VX_gpu_pkg::*; #(
 `endif
 
     VX_mem_bus_if.slave mem_bus_if [NUM_REQS]
+`ifdef EXT_DXA_ENABLE
+    ,
+    VX_dxa_bank_wr_if.slave   dxa_bank_wr_if,
+    output wire               dxa_done_valid,
+    input  wire               dxa_done_ready,
+    output wire [BAR_ADDR_W-1:0] dxa_done_bar_addr
+`endif
 );
     `UNUSED_SPARAM (INSTANCE_ID)
 
@@ -147,6 +154,30 @@ module VX_local_mem import VX_gpu_pkg::*; #(
         } = per_bank_req_data_aos[i];
     end
 
+`ifdef EXT_DXA_ENABLE
+    // DXA bank writes: always accepted (priority over LSU at each bank SRAM)
+    assign dxa_bank_wr_if.wr_ready = 1'b1;
+
+    // DXA completion detection: derive per-bank fire from shared valid + byteen
+    wire [NUM_BANKS-1:0] dxa_bank_wr_fire;
+    for (genvar i = 0; i < NUM_BANKS; ++i) begin : g_dxa_fire
+        assign dxa_bank_wr_fire[i] = dxa_bank_wr_if.wr_valid && (|dxa_bank_wr_if.wr_byteen[i]);
+    end
+
+    VX_dxa_completion_detect #(
+        .NUM_BANKS(NUM_BANKS),
+        .TAG_WIDTH(DXA_BANK_WR_TAG_WIDTH)
+    ) dxa_completion_detect (
+        .clk            (clk),
+        .reset          (reset),
+        .bank_wr_fire   (dxa_bank_wr_fire),
+        .bank_wr_tag    (dxa_bank_wr_if.wr_tag),
+        .done_valid     (dxa_done_valid),
+        .done_ready     (dxa_done_ready),
+        .done_bar_addr  (dxa_done_bar_addr)
+    );
+`endif
+
     // banks access
 
     wire [NUM_BANKS-1:0]                per_bank_rsp_valid;
@@ -158,6 +189,21 @@ module VX_local_mem import VX_gpu_pkg::*; #(
     for (genvar i = 0; i < NUM_BANKS; ++i) begin : g_data_store
         wire bank_rsp_valid, bank_rsp_ready;
 
+        // DXA bank writes: priority over LSU at each bank SRAM
+    `ifdef EXT_DXA_ENABLE
+        wire dxa_wr_b = dxa_bank_wr_if.wr_valid && (|dxa_bank_wr_if.wr_byteen[i]);
+        wire [BANK_ADDR_WIDTH-1:0] bank_sram_addr  = dxa_wr_b ? dxa_bank_wr_if.wr_addr : per_bank_req_addr[i];
+        wire [WORD_WIDTH-1:0]      bank_sram_wdata = dxa_wr_b ? dxa_bank_wr_if.wr_data[i]   : per_bank_req_data[i];
+        wire [WORD_SIZE-1:0]       bank_sram_wren  = dxa_wr_b ? dxa_bank_wr_if.wr_byteen[i] : per_bank_req_byteen[i];
+    `else
+        wire dxa_wr_b = 1'b0;
+        wire [BANK_ADDR_WIDTH-1:0] bank_sram_addr  = per_bank_req_addr[i];
+        wire [WORD_WIDTH-1:0]      bank_sram_wdata = per_bank_req_data[i];
+        wire [WORD_SIZE-1:0]       bank_sram_wren  = per_bank_req_byteen[i];
+    `endif
+
+        wire lsu_active = per_bank_req_valid[i] && per_bank_req_ready[i];
+
         VX_sp_ram #(
             .DATAW (WORD_WIDTH),
             .SIZE  (WORDS_PER_BANK),
@@ -167,30 +213,30 @@ module VX_local_mem import VX_gpu_pkg::*; #(
         ) lmem_store (
             .clk   (clk),
             .reset (reset),
-            .read  (per_bank_req_valid[i] && per_bank_req_ready[i] && ~per_bank_req_rw[i]),
-            .write (per_bank_req_valid[i] && per_bank_req_ready[i] && per_bank_req_rw[i]),
-            .wren  (per_bank_req_byteen[i]),
-            .addr  (per_bank_req_addr[i]),
-            .wdata (per_bank_req_data[i]),
+            .read  (lsu_active && ~per_bank_req_rw[i]),
+            .write (dxa_wr_b || (lsu_active && per_bank_req_rw[i])),
+            .wren  (bank_sram_wren),
+            .addr  (bank_sram_addr),
+            .wdata (bank_sram_wdata),
             .rdata (per_bank_rsp_data[i])
         );
 
-        // read-during-write hazard detection
+        // read-during-write hazard detection (includes DXA writes)
         reg [BANK_ADDR_WIDTH-1:0] last_wr_addr;
         reg last_wr_valid;
         always @(posedge clk) begin
             if (reset) begin
                 last_wr_valid <= 0;
             end else begin
-                last_wr_valid <= per_bank_req_valid[i] && per_bank_req_ready[i] && per_bank_req_rw[i];
+                last_wr_valid <= dxa_wr_b || (lsu_active && per_bank_req_rw[i]);
             end
-            last_wr_addr <= per_bank_req_addr[i];
+            last_wr_addr <= bank_sram_addr;
         end
         wire is_rdw_hazard = last_wr_valid && ~per_bank_req_rw[i] && (per_bank_req_addr[i] == last_wr_addr);
 
-        // drop write response
-        assign bank_rsp_valid = per_bank_req_valid[i] && ~per_bank_req_rw[i] && ~is_rdw_hazard;
-        assign per_bank_req_ready[i] = (bank_rsp_ready || per_bank_req_rw[i]) && ~is_rdw_hazard;
+        // drop write response; block LSU when DXA writes to this bank
+        assign bank_rsp_valid = per_bank_req_valid[i] && ~dxa_wr_b && ~per_bank_req_rw[i] && ~is_rdw_hazard;
+        assign per_bank_req_ready[i] = ~dxa_wr_b && (bank_rsp_ready || per_bank_req_rw[i]) && ~is_rdw_hazard;
 
         // register BRAM output
         VX_pipe_buffer #(
@@ -287,6 +333,93 @@ module VX_local_mem import VX_gpu_pkg::*; #(
     assign lmem_perf.bank_stalls = perf_collisions;
     assign lmem_perf.crsp_stalls = perf_crsp_stalls;
 
+`endif
+
+`ifdef DBG_TRACE_DXA
+`ifdef EXT_DXA_ENABLE
+    // ---- DXA write monitoring at local_mem level ----
+    reg [31:0] dxa_lm_cycle_ctr_r;
+    reg [31:0] dxa_lm_wr_count_r;
+    reg [31:0] dxa_lm_wr_eff_bytes_r;
+    reg [31:0] dxa_lm_back_to_back_r;
+    reg        dxa_lm_prev_fire_r;
+    reg [31:0] dxa_lm_first_wr_cycle_r;
+    reg [31:0] dxa_lm_last_wr_cycle_r;
+    reg        dxa_lm_has_wr_r;
+
+    wire dxa_lm_any_fire = dxa_bank_wr_if.wr_valid && (|{dxa_bank_wr_fire});
+
+    always @(posedge clk) begin
+        if (reset) begin
+            dxa_lm_cycle_ctr_r     <= '0;
+            dxa_lm_wr_count_r      <= '0;
+            dxa_lm_wr_eff_bytes_r  <= '0;
+            dxa_lm_back_to_back_r  <= '0;
+            dxa_lm_prev_fire_r     <= 1'b0;
+            dxa_lm_first_wr_cycle_r <= '0;
+            dxa_lm_last_wr_cycle_r  <= '0;
+            dxa_lm_has_wr_r         <= 1'b0;
+        end else begin
+            dxa_lm_cycle_ctr_r <= dxa_lm_cycle_ctr_r + 32'd1;
+            dxa_lm_prev_fire_r <= dxa_lm_any_fire;
+
+            if (dxa_lm_any_fire) begin
+                // Count effective bytes across all banks
+                automatic int eff = 0;
+                for (int b = 0; b < NUM_BANKS; ++b) begin
+                    for (int e = 0; e < WORD_SIZE; ++e) begin
+                        if (dxa_bank_wr_if.wr_byteen[b][e]) eff = eff + 1;
+                    end
+                end
+                dxa_lm_wr_count_r <= dxa_lm_wr_count_r + 32'd1;
+                dxa_lm_wr_eff_bytes_r <= dxa_lm_wr_eff_bytes_r + 32'(eff);
+                dxa_lm_last_wr_cycle_r <= dxa_lm_cycle_ctr_r;
+                if (!dxa_lm_has_wr_r) begin
+                    dxa_lm_first_wr_cycle_r <= dxa_lm_cycle_ctr_r;
+                    dxa_lm_has_wr_r <= 1'b1;
+                end
+                if (dxa_lm_prev_fire_r) begin
+                    dxa_lm_back_to_back_r <= dxa_lm_back_to_back_r + 32'd1;
+                end
+
+                $display("%0t: %s DXA_LMEM_WR addr=0x%0h eff_bytes=%0d banks_active=%0d b2b=%0b",
+                    $time, INSTANCE_ID, dxa_bank_wr_if.wr_addr, eff,
+                    $countones(dxa_bank_wr_fire), dxa_lm_prev_fire_r);
+            end
+
+            // Summary on completion — use "next" values since dxa_done_valid
+            // fires on the same cycle as the last write (registered counters
+            // haven't been updated yet).
+            if (dxa_done_valid) begin
+                automatic int done_eff = 0;
+                for (int b2 = 0; b2 < NUM_BANKS; ++b2) begin
+                    for (int e2 = 0; e2 < WORD_SIZE; ++e2) begin
+                        if (dxa_bank_wr_if.wr_byteen[b2][e2]) done_eff = done_eff + 1;
+                    end
+                end
+                begin
+                    automatic logic [31:0] wr_cnt_next = dxa_lm_wr_count_r + 32'(dxa_lm_any_fire);
+                    automatic logic [31:0] eff_next = dxa_lm_wr_eff_bytes_r + (dxa_lm_any_fire ? 32'(done_eff) : 32'd0);
+                    automatic logic [31:0] b2b_next = dxa_lm_back_to_back_r + 32'(dxa_lm_any_fire && dxa_lm_prev_fire_r);
+                    automatic logic [31:0] last_cyc = dxa_lm_any_fire ? dxa_lm_cycle_ctr_r : dxa_lm_last_wr_cycle_r;
+                    automatic logic [31:0] first_cyc = dxa_lm_has_wr_r ? dxa_lm_first_wr_cycle_r : dxa_lm_cycle_ctr_r;
+                    automatic logic has_any = dxa_lm_has_wr_r || dxa_lm_any_fire;
+                    $display("%0t: %s DXA_LMEM_SUMMARY writes=%0d eff_bytes=%0d span=%0d_cyc b2b=%0d pipelined=%0d%%",
+                        $time, INSTANCE_ID,
+                        wr_cnt_next, eff_next,
+                        has_any ? (last_cyc - first_cyc + 32'd1) : 32'd0,
+                        b2b_next,
+                        (wr_cnt_next > 1) ? (b2b_next * 100 / (wr_cnt_next - 32'd1)) : 32'd0);
+                end
+                // Reset for next transaction
+                dxa_lm_wr_count_r      <= '0;
+                dxa_lm_wr_eff_bytes_r  <= '0;
+                dxa_lm_back_to_back_r  <= '0;
+                dxa_lm_has_wr_r        <= 1'b0;
+            end
+        end
+    end
+`endif
 `endif
 
 `ifdef DBG_TRACE_MEM

@@ -143,7 +143,7 @@ module VX_cache_cluster import VX_gpu_pkg::*; #(
         end
     end
 
-     for (genvar i = 0; i < NUM_CACHES; ++i) begin : g_cache_wrap
+    for (genvar i = 0; i < NUM_CACHES; ++i) begin : g_cache_wrap
         VX_cache_wrap #(
             .INSTANCE_ID  (`SFORMATF(("%s%0d", INSTANCE_ID, i))),
             .CACHE_SIZE   (CACHE_SIZE),

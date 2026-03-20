@@ -207,13 +207,13 @@ module VX_cache_mshr import VX_gpu_pkg::*; #(
         next_table    <= next_table_n;
     end
 
-    `RUNTIME_ASSERT(~(allocate_fire && valid_table[allocate_id_r]), ("%t: *** %s inuse allocation: addr=0x%0h, id=%0d (#%0d)", $time, INSTANCE_ID,
+    `RUNTIME_ASSERT(~(allocate_fire && valid_table[allocate_id_r]), ("*** %s inuse allocation: addr=0x%0h, id=%0d (#%0d)", INSTANCE_ID,
         `CS_BANK_TO_FULL_ADDR(allocate_addr, BANK_ID), allocate_id_r, alc_req_uuid))
 
-    `RUNTIME_ASSERT(~(finalize_valid && ~valid_table[finalize_id]), ("%t: *** %s invalid release: addr=0x%0h, id=%0d (#%0d)", $time, INSTANCE_ID,
+    `RUNTIME_ASSERT(~(finalize_valid && ~valid_table[finalize_id]), ("*** %s invalid release: addr=0x%0h, id=%0d (#%0d)", INSTANCE_ID,
         `CS_BANK_TO_FULL_ADDR(addr_table[finalize_id], BANK_ID), finalize_id, fin_req_uuid))
 
-    `RUNTIME_ASSERT(~(fill_valid && ~valid_table[fill_id]), ("%t: *** %s invalid fill: addr=0x%0h, id=%0d", $time, INSTANCE_ID,
+    `RUNTIME_ASSERT(~(fill_valid && ~valid_table[fill_id]), ("*** %s invalid fill: addr=0x%0h, id=%0d", INSTANCE_ID,
         `CS_BANK_TO_FULL_ADDR(addr_table[fill_id], BANK_ID), fill_id))
 
     VX_dp_ram #(
@@ -278,7 +278,7 @@ module VX_cache_mshr import VX_gpu_pkg::*; #(
                 `CS_BANK_TO_FULL_ADDR(dequeue_addr, BANK_ID), dequeue_id_r, deq_req_uuid))
         end
         if (show_table) begin
-            `TRACE(3, ("%t: %s table", $time, INSTANCE_ID))
+            `TRACE(3, ("%t: %s table: ", $time, INSTANCE_ID))
             for (integer i = 0; i < MSHR_SIZE; ++i) begin
                 if (valid_table[i]) begin
                     `TRACE(3, (" %0d=0x%0h", i, `CS_BANK_TO_FULL_ADDR(addr_table[i], BANK_ID)))

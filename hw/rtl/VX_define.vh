@@ -18,6 +18,10 @@
 `include "VX_config.vh"
 `include "VX_types.vh"
 
+`ifdef SV_DPI
+`include "dpi_util.vh"
+`endif
+
 `ifdef ICACHE_ENABLE
     `define L1_ENABLE
 `endif
@@ -390,24 +394,6 @@
     assign itf.rsp_data  = '0; \
     `UNUSED_VAR (itf.rsp_ready)
 
-`define BUFFER_DCR_BUS_IF(dst, src, ena, latency) \
-    /* verilator lint_off GENUNNAMED */ \
-    if (latency != 0) begin \
-        VX_pipe_register #( \
-            .DATAW (1 + VX_DCR_ADDR_WIDTH + VX_DCR_DATA_WIDTH), \
-            .DEPTH (latency) \
-        ) pipe_reg ( \
-            .clk      (clk), \
-            .reset    (1'b0), \
-            .enable   (1'b1), \
-            .data_in  ({src.write_valid && ena, src.write_addr, src.write_data}), \
-            .data_out ({dst.write_valid, dst.write_addr, dst.write_data}) \
-        ); \
-    end else begin \
-        assign {dst.write_valid, dst.write_addr, dst.write_data} = {src.write_valid && ena, src.write_addr, src.write_data}; \
-    end \
-    /* verilator lint_on GENUNNAMED */
-
 `define PERF_COUNTER_ADD(dst, src, field, width, count, reg_enable) \
     /* verilator lint_off GENUNNAMED */ \
     if ((count) > 1) begin \
@@ -469,11 +455,13 @@
         vpu_sew_t                        sew; \
         logic [PC_BITS-1:0]              PC; \
         logic                            wb; \
+        logic [NUM_XREGS-1:0]            wr_xregs; \
         logic [NUM_REGS_BITS-1:0]        rd; \
+        logic [BYTESEL_BITS-1:0]         bytesel; \
     } __name__``_header_t; \
     typedef struct packed { \
         __name__``_header_t              header; \
-        logic [INST_ALU_BITS-1:0]        op_type; \
+        logic [INST_OP_BITS-1:0]         op_type; \
         op_args_t                        op_args; \
         logic [__lanes__-1:0][`XLEN-1:0] rs1_data; \
         logic [__lanes__-1:0][`XLEN-1:0] rs2_data; \
@@ -486,6 +474,7 @@
 
 `else
 
+// warning: this layout should not be modified without updating VX_dispatch_unit!!!
 `define DECL_EXECUTE_T(__name__, __lanes__) \
     typedef struct packed { \
         logic [UUID_WIDTH-1:0]           uuid; \
@@ -496,11 +485,13 @@
         logic                            eop; \
         logic [PC_BITS-1:0]              PC; \
         logic                            wb; \
+        logic [NUM_XREGS-1:0]            wr_xregs; \
         logic [NUM_REGS_BITS-1:0]        rd; \
+        logic [BYTESEL_BITS-1:0]         bytesel; \
     } __name__``_header_t; \
     typedef struct packed { \
         __name__``_header_t              header; \
-        logic [INST_ALU_BITS-1:0]        op_type; \
+        logic [INST_OP_BITS-1:0]         op_type; \
         op_args_t                        op_args; \
         logic [__lanes__-1:0][`XLEN-1:0] rs1_data; \
         logic [__lanes__-1:0][`XLEN-1:0] rs2_data; \

@@ -17,13 +17,13 @@
 using namespace vortex;
 
 Socket::Socket(const SimContext& ctx,
+                const char* name,
                 uint32_t socket_id,
                 Cluster* cluster,
-                const Arch &arch,
-                const DCRS &dcrs)
-  : SimObject(ctx, StrFormat("socket%d", socket_id))
-  , mem_req_ports(L1_MEM_PORTS, this)
-  , mem_rsp_ports(L1_MEM_PORTS, this)
+                const Arch &arch)
+  : SimObject(ctx, name)
+  , mem_req_out(L1_MEM_PORTS, this)
+  , mem_rsp_in(L1_MEM_PORTS, this)
   , socket_id_(socket_id)
   , cluster_(cluster)
   , cores_(arch.socket_size())
@@ -31,7 +31,7 @@ Socket::Socket(const SimContext& ctx,
   auto cores_per_socket = cores_.size();
 
   char sname[100];
-  snprintf(sname, 100, "%s-icaches", this->name().c_str());
+  snprintf(sname, 100, "%s-icache", name);
   icaches_ = CacheCluster::Create(sname, cores_per_socket, NUM_ICACHES, CacheSim::Config{
     !ICACHE_ENABLED,
     log2ceil(ICACHE_SIZE),  // C
@@ -45,10 +45,10 @@ Socket::Socket(const SimContext& ctx,
     false,                  // write-back
     false,                  // write response
     ICACHE_MSHR_SIZE,       // mshr size
-    2,                      // pipeline latency
+    1,                      // pipeline latency
   });
 
-  snprintf(sname, 100, "%s-dcaches", this->name().c_str());
+  snprintf(sname, 100, "%s-dcache", name);
   dcaches_ = CacheCluster::Create(sname, cores_per_socket, NUM_DCACHES, CacheSim::Config{
     !DCACHE_ENABLED,
     log2ceil(DCACHE_SIZE),  // C
@@ -62,35 +62,35 @@ Socket::Socket(const SimContext& ctx,
     DCACHE_WRITEBACK,       // write-back
     false,                  // write response
     DCACHE_MSHR_SIZE,       // mshr size
-    2,                      // pipeline latency
+    1,                      // pipeline latency
   });
 
   // find overlap
-  uint32_t overlap = MIN(ICACHE_MEM_PORTS, L1_MEM_PORTS);
+  uint32_t overlap = __MIN(ICACHE_MEM_PORTS, L1_MEM_PORTS);
 
   // connect l1 caches to outgoing memory interfaces
   for (uint32_t i = 0; i < L1_MEM_PORTS; ++i) {
-    snprintf(sname, 100, "%s-l1_arb%d", this->name().c_str(), i);
+    snprintf(sname, 100, "%s-l1_arb%d", name, i);
     auto l1_arb = MemArbiter::Create(sname, ArbiterType::RoundRobin, 2 * overlap, overlap);
 
     if (i < overlap) {
-      icaches_->MemReqPorts.at(i).bind(&l1_arb->ReqIn.at(i));
-      l1_arb->RspIn.at(i).bind(&icaches_->MemRspPorts.at(i));
+      icaches_->mem_req_out.at(i).bind(&l1_arb->ReqIn.at(i));
+      l1_arb->RspOut.at(i).bind(&icaches_->mem_rsp_in.at(i));
 
-      dcaches_->MemReqPorts.at(i).bind(&l1_arb->ReqIn.at(overlap + i));
-      l1_arb->RspIn.at(overlap + i).bind(&dcaches_->MemRspPorts.at(i));
+      dcaches_->mem_req_out.at(i).bind(&l1_arb->ReqIn.at(overlap + i));
+      l1_arb->RspOut.at(overlap + i).bind(&dcaches_->mem_rsp_in.at(i));
 
-      l1_arb->ReqOut.at(i).bind(&this->mem_req_ports.at(i));
-      this->mem_rsp_ports.at(i).bind(&l1_arb->RspOut.at(i));
+      l1_arb->ReqOut.at(i).bind(&this->mem_req_out.at(i));
+      this->mem_rsp_in.at(i).bind(&l1_arb->RspIn.at(i));
     } else {
       if (L1_MEM_PORTS > ICACHE_MEM_PORTS) {
         // if more dcache ports
-        dcaches_->MemReqPorts.at(i).bind(&this->mem_req_ports.at(i));
-        this->mem_rsp_ports.at(i).bind(&dcaches_->MemRspPorts.at(i));
+        dcaches_->mem_req_out.at(i).bind(&this->mem_req_out.at(i));
+        this->mem_rsp_in.at(i).bind(&dcaches_->mem_rsp_in.at(i));
       } else {
         // if more icache ports
-        icaches_->MemReqPorts.at(i).bind(&this->mem_req_ports.at(i));
-        this->mem_rsp_ports.at(i).bind(&icaches_->MemRspPorts.at(i));
+        icaches_->mem_req_out.at(i).bind(&this->mem_req_out.at(i));
+        this->mem_rsp_in.at(i).bind(&icaches_->mem_rsp_in.at(i));
       }
     }
   }
@@ -98,17 +98,18 @@ Socket::Socket(const SimContext& ctx,
   // create cores
   for (uint32_t i = 0; i < cores_per_socket; ++i) {
     uint32_t core_id = socket_id * cores_per_socket + i;
-    cores_.at(i) = Core::Create(core_id, this, arch, dcrs);
+    snprintf(sname, 100, "%s-core%d", name, i);
+    cores_.at(i) = Core::Create(sname, core_id, this, arch);
   }
 
   // connect cores to caches
   for (uint32_t i = 0; i < cores_per_socket; ++i) {
-    cores_.at(i)->icache_req_ports.at(0).bind(&icaches_->CoreReqPorts.at(i).at(0));
-    icaches_->CoreRspPorts.at(i).at(0).bind(&cores_.at(i)->icache_rsp_ports.at(0));
+      cores_.at(i)->icache_req_out.at(0).bind(&icaches_->core_req_in.at(i).at(0));
+      icaches_->core_rsp_out.at(i).at(0).bind(&cores_.at(i)->icache_rsp_in.at(0));
 
     for (uint32_t j = 0; j < DCACHE_NUM_REQS; ++j) {
-      cores_.at(i)->dcache_req_ports.at(j).bind(&dcaches_->CoreReqPorts.at(i).at(j));
-      dcaches_->CoreRspPorts.at(i).at(j).bind(&cores_.at(i)->dcache_rsp_ports.at(j));
+      cores_.at(i)->dcache_req_out.at(j).bind(&dcaches_->core_req_in.at(i).at(j));
+      dcaches_->core_rsp_out.at(i).at(j).bind(&cores_.at(i)->dcache_rsp_in.at(j));
     }
   }
 }
@@ -118,7 +119,9 @@ Socket::~Socket() {
 }
 
 void Socket::reset() {
-  //--
+  for (auto& core : cores_) {
+    core->reset();
+  }
 }
 
 void Socket::tick() {
@@ -155,12 +158,12 @@ int Socket::get_exitcode() const {
   return exitcode;
 }
 
-void Socket::barrier(uint32_t bar_id, uint32_t count, uint32_t core_id) {
-  cluster_->barrier(bar_id, count, socket_id_ * cores_.size() + core_id);
+void Socket::global_barrier_arrive(uint32_t bar_id, uint32_t count, uint32_t core_id) {
+  cluster_->global_barrier_arrive(bar_id, count, core_id);
 }
 
-void Socket::resume(uint32_t core_index) {
-  cores_.at(core_index)->resume(-1);
+void Socket::global_barrier_resume(uint32_t bar_id, uint32_t core_index) {
+  cores_.at(core_index)->global_barrier_resume(bar_id);
 }
 
 Socket::PerfStats Socket::perf_stats() const {
@@ -168,4 +171,26 @@ Socket::PerfStats Socket::perf_stats() const {
   perf_stats.icache = icaches_->perf_stats();
   perf_stats.dcache = dcaches_->perf_stats();
   return perf_stats;
+}
+
+int Socket::dcr_write(uint32_t addr, uint32_t value) {
+  for (auto& core : cores_) {
+    int ret = core->dcr_write(addr, value);
+    if (ret != 0)
+      return ret;
+  }
+  return 0;
+}
+
+int Socket::dcr_read(uint32_t addr, uint32_t tag, uint32_t* value) {
+  for (auto& core : cores_) {
+    uint16_t core_id = tag & 0xfffff;
+    if (core_id != core->id())
+      continue; // skip cores that don't match the tag
+    uint32_t tag_value = tag >> 16;
+    int ret = core->dcr_read(addr, tag_value, value);
+    if (ret != 0)
+      return ret;
+  }
+  return 0;
 }

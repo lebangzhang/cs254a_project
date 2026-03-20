@@ -6,6 +6,8 @@ OBJ_DIR = $(DESTDIR)/obj
 CONFIG_FILE = $(DESTDIR)/simx_config.stamp
 SRC_DIR = $(VORTEX_HOME)/sim/simx
 
+XCONFIGS := $(shell python3 $(ROOT_DIR)/ci/gen_config.py --config $(VORTEX_HOME)/hw/VX_config.toml --cflags '-DSV_DPI $(CONFIGS)')
+
 CXXFLAGS += -std=c++17 -Wall -Wextra -Wfatal-errors
 CXXFLAGS += -fPIC -Wno-maybe-uninitialized
 CXXFLAGS += -I$(SRC_DIR) -I$(SW_COMMON_DIR) -I$(ROOT_DIR)/hw
@@ -21,15 +23,15 @@ LDFLAGS += -Wl,-rpath,$(THIRD_PARTY_DIR)/ramulator -L$(THIRD_PARTY_DIR)/ramulato
 
 # Source files definition
 SRCS = $(SW_COMMON_DIR)/util.cpp $(SW_COMMON_DIR)/mem.cpp $(SW_COMMON_DIR)/softfloat_ext.cpp $(SW_COMMON_DIR)/rvfloats.cpp $(SW_COMMON_DIR)/dram_sim.cpp
-SRCS += $(SRC_DIR)/processor.cpp $(SRC_DIR)/cluster.cpp $(SRC_DIR)/socket.cpp $(SRC_DIR)/core.cpp $(SRC_DIR)/emulator.cpp
+SRCS += $(SRC_DIR)/processor.cpp $(SRC_DIR)/cluster.cpp $(SRC_DIR)/socket.cpp $(SRC_DIR)/core.cpp $(SRC_DIR)/emulator.cpp $(SRC_DIR)/kmu.cpp $(SRC_DIR)/cta_dispatcher.cpp
 SRCS += $(SRC_DIR)/decode.cpp $(SRC_DIR)/opc_unit.cpp $(SRC_DIR)/dispatcher.cpp
 SRCS += $(SRC_DIR)/execute.cpp $(SRC_DIR)/func_unit.cpp
 SRCS += $(SRC_DIR)/cache_sim.cpp $(SRC_DIR)/mem_sim.cpp $(SRC_DIR)/local_mem.cpp $(SRC_DIR)/mem_coalescer.cpp
-SRCS += $(SRC_DIR)/dcrs.cpp $(SRC_DIR)/types.cpp
+SRCS += $(SRC_DIR)/types.cpp
 
 # Add V extension sources
-ifneq ($(findstring -DEXT_V_ENABLE, $(CONFIGS)),)
-  	ifneq ($(findstring -DVPU_ARA2, $(CONFIGS)),)
+ifneq ($(filter -DEXT_V_ENABLE, $(XCONFIGS)),)
+  	ifneq ($(filter -DVPU_ARA2, $(XCONFIGS)),)
 		SRCS += $(SRC_DIR)/ara_operands.cpp
 		SRCS += $(SRC_DIR)/ara_opc_unit.cpp
 		SRCS += $(SRC_DIR)/ara_vopc_unit.cpp
@@ -43,8 +45,13 @@ else
 	SRCS += $(SRC_DIR)/operands.cpp
 endif
 # Add TCU extension sources
-ifneq ($(findstring -DEXT_TCU_ENABLE, $(CONFIGS)),)
+ifneq ($(filter -DEXT_TCU_ENABLE, $(XCONFIGS)),)
   	SRCS += $(SRC_DIR)/tensor_unit.cpp
+endif
+
+# Add DXA extension sources
+ifneq ($(filter -DEXT_DXA_ENABLE, $(XCONFIGS)),)
+	SRCS += $(SRC_DIR)/dxa_core.cpp
 endif
 
 # Debugging

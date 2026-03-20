@@ -37,7 +37,7 @@ VX_LIBS += $(LIBCRT_VORTEX)/lib/baremetal/libclang_rt.builtins-riscv$(XLEN).a
 
 VX_CFLAGS  += -O3 -mcmodel=medany --sysroot=$(RISCV_SYSROOT) --gcc-toolchain=$(RISCV_TOOLCHAIN_PATH)
 VX_CFLAGS  += -fno-rtti -fno-exceptions -nostartfiles -nostdlib -fdata-sections -ffunction-sections
-VX_CFLAGS  += -I$(ROOT_DIR)/hw -I$(VORTEX_HOME)/kernel/include -DXLEN_$(XLEN) -DNDEBUG $(CONFIGS)
+VX_CFLAGS  += -I$(ROOT_DIR)/hw -I$(VORTEX_HOME)/kernel/include -DXLEN_$(XLEN) -DNDEBUG $(CONFIGS) -D__VORTEX__
 VX_CFLAGS  += -Xclang -target-feature -Xclang +vortex
 VX_CFLAGS  += -Xclang -target-feature -Xclang +zicond
 VX_CFLAGS  += -mllvm -disable-loop-idiom-all	# disable memset/memcpy loop replacement
@@ -91,7 +91,7 @@ all: $(PROJECT)
 %.c.o: $(SRC_DIR)/%.c
 	$(CC) $(CXXFLAGS) -c $< -o $@
 
-$(PROJECT): $(OBJS)
+$(PROJECT): $(OBJS) $(VORTEX_KN_PATH)/libvortex.a
 	$(CXX) $(CXXFLAGS) $(OBJS) $(LDFLAGS) -L$(VORTEX_RT_PATH) -lvortex -L$(POCL_PATH)/lib -lOpenCL -o $@
 
 $(PROJECT).host: $(OBJS)

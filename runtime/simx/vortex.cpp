@@ -90,6 +90,15 @@ public:
     case VX_CAPS_NUM_CORES:
       _value = NUM_CORES * NUM_CLUSTERS;
       break;
+    case VX_CAPS_NUM_CLUSTERS:
+      _value = NUM_CLUSTERS;
+      break;
+    case VX_CAPS_SOCKET_SIZE:
+      _value = SOCKET_SIZE;
+      break;
+    case VX_CAPS_ISSUE_WIDTH:
+      _value = ISSUE_WIDTH;
+      break;
     case VX_CAPS_CACHE_LINE_SIZE:
       _value = CACHE_BLOCK_SIZE;
       break;
@@ -107,6 +116,12 @@ public:
       break;
     case VX_CAPS_MEM_BANK_SIZE:
       _value = 1ull << (MEM_ADDR_WIDTH / PLATFORM_MEMORY_NUM_BANKS);
+      break;
+    case VX_CAPS_CLOCK_RATE:
+      _value = PLATFORM_CLOCK_RATE;
+      break;
+    case VX_CAPS_PEAK_MEM_BW:
+      _value = PLATFORM_MEMORY_PEAK_BW;
       break;
     default:
       std::cout << "invalid caps id: " << caps_id << std::endl;
@@ -299,6 +314,14 @@ public:
     src_addr = pAddr; // Overwirte
 #endif
 
+    // flush GPU caches before reading back results
+    {
+      uint32_t dummy;
+      for (uint32_t cid = 0; cid < NUM_CORES * NUM_CLUSTERS; ++cid) {
+        this->dcr_read(VX_DCR_BASE_CACHE_FLUSH, cid, &dummy);
+      }
+    }
+
     ram_.enable_acl(false);
     ram_.read((uint8_t *)dest, src_addr, size);
     ram_.enable_acl(true);
@@ -311,23 +334,37 @@ public:
     return 0;
   }
 
-  int start(uint64_t krnl_addr, uint64_t args_addr) {
+  int start_wg(uint64_t krnl_addr, uint64_t args_addr, uint32_t dimension,
+               const uint32_t *grid_dim, const uint32_t *block_dim, uint32_t lmem_size) {
     // ensure prior run completed
     if (future_.valid()) {
       future_.wait();
     }
 
-    // set kernel info
-    this->dcr_write(VX_DCR_BASE_STARTUP_ADDR0, krnl_addr & 0xffffffff);
-    this->dcr_write(VX_DCR_BASE_STARTUP_ADDR1, krnl_addr >> 32);
-    this->dcr_write(VX_DCR_BASE_STARTUP_ARG0, args_addr & 0xffffffff);
-    this->dcr_write(VX_DCR_BASE_STARTUP_ARG1, args_addr >> 32);
+    // setup kernel launch parameters
+    uint32_t block_size, warp_step_x, warp_step_y, warp_step_z;
+    prepare_kernel_launch_params(arch_.num_threads(), dimension, block_dim,
+        &block_size, &warp_step_x, &warp_step_y, &warp_step_z);
+
+    // configure kernel launch
+    this->dcr_write(VX_DCR_KMU_STARTUP_ADDR0, krnl_addr & 0xffffffff);
+    this->dcr_write(VX_DCR_KMU_STARTUP_ADDR1, krnl_addr >> 32);
+    this->dcr_write(VX_DCR_KMU_STARTUP_ARG0, args_addr & 0xffffffff);
+    this->dcr_write(VX_DCR_KMU_STARTUP_ARG1, args_addr >> 32);
+    uint32_t grid_regs[] = {VX_DCR_KMU_GRID_DIM_X, VX_DCR_KMU_GRID_DIM_Y, VX_DCR_KMU_GRID_DIM_Z};
+    uint32_t block_regs[] = {VX_DCR_KMU_BLOCK_DIM_X, VX_DCR_KMU_BLOCK_DIM_Y, VX_DCR_KMU_BLOCK_DIM_Z};
+    for (uint32_t i = 0; i < 3; ++i) {
+      this->dcr_write(grid_regs[i], (i < dimension) ? grid_dim[i] : 1);
+      this->dcr_write(block_regs[i], (i < dimension && block_dim) ? block_dim[i] : 1);
+    }
+    this->dcr_write(VX_DCR_KMU_LMEM_SIZE, lmem_size);
+    this->dcr_write(VX_DCR_KMU_BLOCK_SIZE, block_size);
+    this->dcr_write(VX_DCR_KMU_WARP_STEP_X, warp_step_x);
+    this->dcr_write(VX_DCR_KMU_WARP_STEP_Y, warp_step_y);
+    this->dcr_write(VX_DCR_KMU_WARP_STEP_Z, warp_step_z);
 
     // start new run
     future_ = std::async(std::launch::async, [&] { processor_.run(); });
-
-    // clear mpm cache
-    mpm_cache_.clear();
 
     return 0;
   }
@@ -352,28 +389,16 @@ public:
     if (future_.valid()) {
       future_.wait(); // ensure prior run completed
     }
-    processor_.dcr_write(addr, value);
-    dcrs_.write(addr, value);
-    return 0;
+    return processor_.dcr_write(addr, value);
   }
 
-  int dcr_read(uint32_t addr, uint32_t *value) const {
-    return dcrs_.read(addr, value);
-  }
-
-  int mpm_query(uint32_t addr, uint32_t core_id, uint64_t *value) {
-    uint32_t offset = addr - VX_CSR_MPM_BASE;
-    if (offset > 31)
-      return -1;
-    if (mpm_cache_.count(core_id) == 0) {
-      uint64_t mpm_mem_addr = IO_MPM_ADDR + core_id * 32 * sizeof(uint64_t);
-      CHECK_ERR(this->download(mpm_cache_[core_id].data(), mpm_mem_addr, 32 * sizeof(uint64_t)), {
-        return err;
-      });
+  int dcr_read(uint32_t addr, uint32_t tag, uint32_t *value) {
+    if (future_.valid()) {
+      future_.wait(); // ensure prior run completed
     }
-    *value = mpm_cache_.at(core_id).at(offset);
-    return 0;
+    return processor_.dcr_read(addr, tag, value);
   }
+
 #ifdef VM_ENABLE
   /* VM Management */
 
@@ -610,9 +635,7 @@ private:
   RAM ram_;
   Processor processor_;
   MemoryAllocator global_mem_;
-  DeviceConfig dcrs_;
   std::future<void> future_;
-  std::unordered_map<uint32_t, std::array<uint64_t, 32>> mpm_cache_;
 #ifdef VM_ENABLE
   std::unordered_map<uint64_t, uint64_t> addr_mapping; // HW: key: ppn; value: vpn
   MemoryAllocator *page_table_mem_;

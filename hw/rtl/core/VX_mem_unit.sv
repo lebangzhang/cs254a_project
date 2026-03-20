@@ -24,7 +24,13 @@ module VX_mem_unit import VX_gpu_pkg::*; #(
     output coalescer_perf_t coalescer_perf,
 `endif
 
+`ifdef EXT_DXA_ENABLE
+    VX_dxa_bank_wr_if.slave dxa_bank_wr_if,
+    VX_txbar_bus_if.master  dxa_txbar_bus_if,
+`endif
+
     VX_lsu_mem_if.slave     lsu_mem_if [`NUM_LSU_BLOCKS],
+    VX_dcr_flush_if.slave   dcr_flush_if,
     VX_mem_bus_if.master    dcache_bus_if [DCACHE_NUM_REQS]
 );
     VX_lsu_mem_if #(
@@ -73,6 +79,9 @@ module VX_mem_unit import VX_gpu_pkg::*; #(
         .NUM_LANES  (`NUM_LSU_LANES),
         .DATA_SIZE  (LSU_WORD_SIZE),
         .TAG_WIDTH  (LSU_TAG_WIDTH),
+    `ifdef EXT_DXA_ENABLE
+        .OUT_TAG_WIDTH(LMEM_TAG_WIDTH),
+    `endif
         .TAG_SEL_IDX(0),
         .ARBITER    ("R"),
         .REQ_OUT_BUF(0),
@@ -104,6 +113,46 @@ module VX_mem_unit import VX_gpu_pkg::*; #(
         .mem_bus_if (lmem_adapt_if)
     );
 
+`ifdef EXT_DXA_ENABLE
+    wire dxa_done_valid;
+    wire [BAR_ADDR_W-1:0] dxa_done_bar_addr;
+
+    // DXA bank-native writes bypass LSU crossbar — dedicated port to VX_local_mem
+    VX_local_mem #(
+        .INSTANCE_ID(`SFORMATF(("%s-lmem", INSTANCE_ID))),
+        .SIZE       (1 << `LMEM_LOG_SIZE),
+        .NUM_REQS   (`NUM_LSU_LANES),
+        .NUM_BANKS  (`LMEM_NUM_BANKS),
+        .WORD_SIZE  (LSU_WORD_SIZE),
+        .ADDR_WIDTH (LMEM_ADDR_WIDTH),
+        .TAG_WIDTH  (LMEM_TAG_WIDTH),
+        .OUT_BUF    (3)
+    ) local_mem (
+        .clk        (clk),
+        .reset      (reset),
+    `ifdef PERF_ENABLE
+        .lmem_perf  (lmem_perf),
+    `endif
+        .mem_bus_if (lmem_adapt_if),
+        .dxa_bank_wr_if(dxa_bank_wr_if),
+        .dxa_done_valid(dxa_done_valid),
+        .dxa_done_ready(dxa_txbar_bus_if.ready),
+        .dxa_done_bar_addr(dxa_done_bar_addr)
+    );
+
+    // Connect DXA completion to txbar interface
+    assign dxa_txbar_bus_if.valid = dxa_done_valid;
+    assign dxa_txbar_bus_if.data.addr = dxa_done_bar_addr;
+    assign dxa_txbar_bus_if.data.is_done = 1'b1;
+`ifdef DBG_TRACE_DXA
+    always @(posedge clk) begin
+        if (dxa_done_valid && !reset) begin
+            `TRACE(2, ("%t: %s-mem_unit: dxa_done_valid=1 bar_addr=0x%0h ready=%b\n",
+                $time, INSTANCE_ID, dxa_done_bar_addr, dxa_txbar_bus_if.ready))
+        end
+    end
+`endif
+`else
     VX_local_mem #(
         .INSTANCE_ID(`SFORMATF(("%s-lmem", INSTANCE_ID))),
         .SIZE       (1 << `LMEM_LOG_SIZE),
@@ -121,6 +170,7 @@ module VX_mem_unit import VX_gpu_pkg::*; #(
     `endif
         .mem_bus_if (lmem_adapt_if)
     );
+`endif
 
 `else
 
@@ -132,12 +182,24 @@ module VX_mem_unit import VX_gpu_pkg::*; #(
         `ASSIGN_VX_MEM_BUS_IF (lsu_dcache_if[i], lsu_mem_if[i]);
     end
 
+`ifdef EXT_DXA_ENABLE
+    assign dxa_txbar_bus_if.valid = 1'b0;
+    assign dxa_txbar_bus_if.data.addr = '0;
+    assign dxa_txbar_bus_if.data.is_done = 1'b0;
+    assign dxa_bank_wr_if.wr_ready = 1'b1;
+    `UNUSED_VAR (dxa_bank_wr_if.wr_valid)
+    `UNUSED_VAR (dxa_bank_wr_if.wr_addr)
+    `UNUSED_VAR (dxa_bank_wr_if.wr_data)
+    `UNUSED_VAR (dxa_bank_wr_if.wr_byteen)
+    `UNUSED_VAR (dxa_bank_wr_if.wr_tag)
+`endif
+
 `endif
 
     VX_lsu_mem_if #(
         .NUM_LANES (DCACHE_CHANNELS),
         .DATA_SIZE (DCACHE_WORD_SIZE),
-        .TAG_WIDTH (DCACHE_TAG_WIDTH)
+        .TAG_WIDTH (DCACHE_CORE_TAG_WIDTH)
     ) dcache_coalesced_if[`NUM_LSU_BLOCKS]();
 
 `ifdef PERF_ENABLE
@@ -231,14 +293,14 @@ module VX_mem_unit import VX_gpu_pkg::*; #(
 
         VX_mem_bus_if #(
             .DATA_SIZE (DCACHE_WORD_SIZE),
-            .TAG_WIDTH (DCACHE_TAG_WIDTH)
+            .TAG_WIDTH (DCACHE_CORE_TAG_WIDTH)
         ) dcache_bus_tmp_if[DCACHE_CHANNELS]();
 
         VX_lsu_adapter #(
             .NUM_LANES    (DCACHE_CHANNELS),
             .DATA_SIZE    (DCACHE_WORD_SIZE),
-            .TAG_WIDTH    (DCACHE_TAG_WIDTH),
-            .TAG_SEL_BITS (DCACHE_TAG_WIDTH - UUID_WIDTH),
+            .TAG_WIDTH    (DCACHE_CORE_TAG_WIDTH),
+            .TAG_SEL_BITS (DCACHE_CORE_TAG_WIDTH - UUID_WIDTH),
             .ARBITER      ("P"),
             .REQ_OUT_BUF  (0),
             .RSP_OUT_BUF  (0)
@@ -250,7 +312,24 @@ module VX_mem_unit import VX_gpu_pkg::*; #(
         );
 
         for (genvar j = 0; j < DCACHE_CHANNELS; ++j) begin : g_dcache_bus_if
-            `ASSIGN_VX_MEM_BUS_IF (dcache_bus_if[i * DCACHE_CHANNELS + j], dcache_bus_tmp_if[j]);
+            if (i == 0 && j == 0) begin : g_flush_port
+                // Port 0: route through VX_dcr_flush to inject flush requests
+                VX_dcr_flush #(
+                    .WORD_SIZE (DCACHE_WORD_SIZE),
+                    .TAG_WIDTH (DCACHE_CORE_TAG_WIDTH)
+                ) dcr_flush (
+                    .clk          (clk),
+                    .reset        (reset),
+                    .dcr_flush_if (dcr_flush_if),
+                    .core_bus_if  (dcache_bus_tmp_if[j]),
+                    .dcache_bus_if(dcache_bus_if[0])
+                );
+            end else begin : g_passthru_port
+                // Ports 1+: pass through; tag is zero-extended from
+                // DCACHE_CORE_TAG_WIDTH to DCACHE_TAG_WIDTH on request,
+                // and MSB-stripped on response.
+                `ASSIGN_VX_MEM_BUS_IF_EX (dcache_bus_if[i * DCACHE_CHANNELS + j], dcache_bus_tmp_if[j], DCACHE_TAG_WIDTH, DCACHE_CORE_TAG_WIDTH, 0);
+            end
         end
 
     end

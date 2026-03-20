@@ -14,7 +14,23 @@
 #include "processor.h"
 #include "processor_impl.h"
 
+#include <cstdlib>
+#include <execinfo.h>
+
 using namespace vortex;
+
+static void simx_print_backtrace() {
+  void* addrs[64];
+  int count = ::backtrace(addrs, int(std::size(addrs)));
+  char** symbols = ::backtrace_symbols(addrs, count);
+  if (symbols == nullptr)
+    return;
+  std::cerr << "Backtrace (" << count << " frames):" << std::endl;
+  for (int i = 0; i < count; ++i) {
+    std::cerr << "  " << symbols[i] << std::endl;
+  }
+  std::free(symbols);
+}
 
 ProcessorImpl::ProcessorImpl(const Arch& arch)
   : arch_(arch)
@@ -32,9 +48,12 @@ ProcessorImpl::ProcessorImpl(const Arch& arch)
     MEM_CLOCK_RATIO
   });
 
+  char sname[100];
+
   // create clusters
   for (uint32_t i = 0; i < arch.num_clusters(); ++i) {
-    clusters_.at(i) = Cluster::Create(i, this, arch, dcrs_);
+    snprintf(sname, 100, "cluster%d", i);
+    clusters_.at(i) = Cluster::Create(sname, i, this, arch);
   }
 
   // create L3 cache
@@ -58,26 +77,26 @@ ProcessorImpl::ProcessorImpl(const Arch& arch)
   // connect L3 core interfaces
   for (uint32_t i = 0; i < arch.num_clusters(); ++i) {
     for (uint32_t j = 0; j < L2_MEM_PORTS; ++j) {
-      clusters_.at(i)->mem_req_ports.at(j).bind(&l3cache_->CoreReqPorts.at(i * L2_MEM_PORTS + j));
-      l3cache_->CoreRspPorts.at(i * L2_MEM_PORTS + j).bind(&clusters_.at(i)->mem_rsp_ports.at(j));
+      clusters_.at(i)->mem_req_out.at(j).bind(&l3cache_->core_req_in.at(i * L2_MEM_PORTS + j));
+      l3cache_->core_rsp_out.at(i * L2_MEM_PORTS + j).bind(&clusters_.at(i)->mem_rsp_in.at(j));
     }
   }
 
   // connect L3 memory interfaces
   for (uint32_t i = 0; i < L3_MEM_PORTS; ++i) {
-    l3cache_->MemReqPorts.at(i).bind(&memsim_->MemReqPorts.at(i));
-    memsim_->MemRspPorts.at(i).bind(&l3cache_->MemRspPorts.at(i));
+    l3cache_->mem_req_out.at(i).bind(&memsim_->mem_req_in.at(i));
+    memsim_->mem_rsp_out.at(i).bind(&l3cache_->mem_rsp_in.at(i));
   }
 
   // set up memory profiling
   for (uint32_t i = 0; i < L3_MEM_PORTS; ++i) {
-    memsim_->MemReqPorts.at(i).tx_callback([&](const MemReq& req, uint64_t cycle){
+    memsim_->mem_req_in.at(i).tx_callback([&](const MemReq& req, uint64_t cycle){
       __unused (cycle);
       perf_mem_reads_  += !req.write;
       perf_mem_writes_ += req.write;
       perf_mem_pending_reads_ += !req.write;
     });
-    memsim_->MemRspPorts.at(i).tx_callback([&](const MemRsp&, uint64_t cycle){
+    memsim_->mem_rsp_out.at(i).tx_callback([&](const MemRsp&, uint64_t cycle){
       __unused (cycle);
       --perf_mem_pending_reads_;
     });
@@ -117,8 +136,8 @@ void ProcessorImpl::set_satp(uint64_t satp) {
 #endif
 
 int ProcessorImpl::run() {
-  SimPlatform::instance().reset();
   this->reset();
+  kmu_.start();
 
   bool done;
   int exitcode = 0;
@@ -139,14 +158,34 @@ int ProcessorImpl::run() {
 }
 
 void ProcessorImpl::reset() {
+  SimPlatform::instance().reset();
   perf_mem_reads_ = 0;
   perf_mem_writes_ = 0;
   perf_mem_latency_ = 0;
   perf_mem_pending_reads_ = 0;
 }
 
-void ProcessorImpl::dcr_write(uint32_t addr, uint32_t value) {
-  dcrs_.write(addr, value);
+int ProcessorImpl::dcr_write(uint32_t addr, uint32_t value) {
+  // KMU DCRs are stored in the processor-level KMU and not broadcast to cores
+  if (addr >= VX_DCR_KMU_STATE_BEGIN && addr < VX_DCR_KMU_STATE_END) {
+    kmu_.dcr_write(addr, value);
+    return 0;
+  }
+  for (auto& cluster : clusters_) {
+    int ret = cluster->dcr_write(addr, value);
+    if (ret != 0)
+      return ret;
+  }
+  return 0;
+}
+
+int ProcessorImpl::dcr_read(uint32_t addr, uint32_t tag, uint32_t* value) {
+  for (auto& cluster : clusters_) {
+    int ret = cluster->dcr_read(addr, tag, value);
+    if (ret != 0)
+      return ret;
+  }
+  return 0;
 }
 
 ProcessorImpl::PerfStats ProcessorImpl::perf_stats() const {
@@ -181,19 +220,33 @@ void Processor::attach_ram(RAM* mem) {
   impl_->attach_ram(mem);
 }
 
+void Processor::reset() {
+  impl_->reset();
+}
+
 int Processor::run() {
   try {
     return impl_->run();
   } catch (const std::exception& e) {
     std::cerr << "Error: exception: " << e.what() << std::endl;
+    if (std::getenv("SIMX_BACKTRACE") != nullptr) {
+      simx_print_backtrace();
+    }
   } catch (...) {
     std::cerr << "Error: unknown exception." << std::endl;
+    if (std::getenv("SIMX_BACKTRACE") != nullptr) {
+      simx_print_backtrace();
+    }
   }
   return -1;
 }
 
-void Processor::dcr_write(uint32_t addr, uint32_t value) {
+int Processor::dcr_write(uint32_t addr, uint32_t value) {
   return impl_->dcr_write(addr, value);
+}
+
+int Processor::dcr_read(uint32_t addr, uint32_t tag, uint32_t* value) {
+  return impl_->dcr_read(addr, tag, value);
 }
 
 #ifdef VM_ENABLE

@@ -16,8 +16,8 @@
 #include "mem_sim.h"
 #include "cache_sim.h"
 #include "constants.h"
-#include "dcrs.h"
 #include "cluster.h"
+#include "kmu.h"
 
 namespace vortex {
 
@@ -26,9 +26,9 @@ public:
   struct PerfStats {
     CacheSim::PerfStats l3cache;
     MemSim::PerfStats memsim;
-    uint64_t mem_reads;
-    uint64_t mem_writes;
-    uint64_t mem_latency;
+    uint64_t mem_reads = 0;
+    uint64_t mem_writes = 0;
+    uint64_t mem_latency = 0;
   };
 
   ProcessorImpl(const Arch& arch);
@@ -36,9 +36,13 @@ public:
 
   void attach_ram(RAM* mem);
 
+  void reset();
+
   int run();
 
-  void dcr_write(uint32_t addr, uint32_t value);
+  int dcr_write(uint32_t addr, uint32_t value);
+
+  int dcr_read(uint32_t addr, uint32_t tag, uint32_t* value);
 
 #ifdef VM_ENABLE
   void set_satp(uint64_t satp);
@@ -46,13 +50,13 @@ public:
 
   PerfStats perf_stats() const;
 
+  Kmu& kmu() { return kmu_; }
+
 private:
 
-  void reset();
-
   const Arch& arch_;
+  Kmu         kmu_;
   std::vector<std::shared_ptr<Cluster>> clusters_;
-  DCRS dcrs_;
   MemSim::Ptr memsim_;
   CacheSim::Ptr l3cache_;
   uint64_t perf_mem_reads_;

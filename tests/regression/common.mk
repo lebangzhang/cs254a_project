@@ -8,6 +8,8 @@ XRT_DEVICE_INDEX ?= 0
 VORTEX_RT_PATH ?= $(ROOT_DIR)/runtime
 VORTEX_KN_PATH ?= $(ROOT_DIR)/kernel
 
+KERNEL_LIB ?= vortex
+
 ifeq ($(XLEN),64)
 	ifneq (,$(findstring -DEXT_V_ENABLE, $(CONFIGS)))
 		VX_CFLAGS += -march=rv64imafdv_zve64d -mabi=lp64d # vector extension
@@ -48,8 +50,7 @@ VX_CP  = $(LLVM_VORTEX)/bin/llvm-objcopy
 
 VX_CFLAGS += -O3 -mcmodel=medany -fno-rtti -fno-exceptions -nostartfiles -nostdlib -fdata-sections -ffunction-sections
 VX_CFLAGS += -I$(VORTEX_HOME)/kernel/include -I$(ROOT_DIR)/hw -I$(SW_COMMON_DIR)
-VX_CFLAGS += -DXLEN_$(XLEN)
-VX_CFLAGS += -DNDEBUG
+VX_CFLAGS += -DXLEN_$(XLEN) -DNDEBUG -D__VORTEX__
 VX_CFLAGS += $(CONFIGS)
 
 VX_LIBS += -L$(LIBC_VORTEX)/lib -lm -lc
@@ -57,7 +58,7 @@ VX_LIBS += -L$(LIBC_VORTEX)/lib -lm -lc
 VX_LIBS += $(LIBCRT_VORTEX)/lib/baremetal/libclang_rt.builtins-riscv$(XLEN).a
 #VX_LIBS += -lgcc
 
-VX_LDFLAGS += -Wl,-Bstatic,--gc-sections,-T,$(VORTEX_HOME)/kernel/scripts/link$(XLEN).ld,--defsym=STARTUP_ADDR=$(STARTUP_ADDR) $(VORTEX_KN_PATH)/libvortex.a $(VX_LIBS)
+VX_LDFLAGS += -Wl,-Bstatic,--gc-sections,-T,$(VORTEX_HOME)/kernel/scripts/link$(XLEN).ld,--defsym=STARTUP_ADDR=$(STARTUP_ADDR) $(VORTEX_KN_PATH)/lib$(KERNEL_LIB).a $(VX_LIBS)
 
 CXXFLAGS += -std=c++17 -Wall -Wextra -pedantic -Wfatal-errors
 CXXFLAGS += -I$(VORTEX_HOME)/runtime/include -I$(ROOT_DIR)/hw -I$(SW_COMMON_DIR)
@@ -92,7 +93,7 @@ kernel.dump: kernel.elf
 kernel.vxbin: kernel.elf
 	OBJCOPY=$(VX_CP) $(VORTEX_HOME)/kernel/scripts/vxbin.py $< $@
 
-kernel.elf: $(VX_SRCS)
+kernel.elf: $(VX_SRCS) $(VORTEX_KN_PATH)/lib$(KERNEL_LIB).a
 	$(VX_CXX) $(VX_CFLAGS) $^ $(VX_LDFLAGS) -o kernel.elf
 
 $(PROJECT): $(SRCS)

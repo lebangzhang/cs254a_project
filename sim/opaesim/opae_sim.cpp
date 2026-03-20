@@ -27,7 +27,7 @@
 #include <dram_sim.h>
 
 #include <VX_config.h>
-#include <vortex_afu.h>
+#include <vortex_opae.h>
 
 #include <future>
 #include <list>
@@ -36,7 +36,7 @@
 #include <util.h>
 
 #ifndef MEM_CLOCK_RATIO
-#define MEM_CLOCK_RATIO 1
+#define MEM_CLOCK_RATIO 1.5
 #endif
 
 #define CACHE_BLOCK_SIZE  64
@@ -72,7 +72,6 @@ double sc_time_stamp() {
   return timestamp;
 }
 
-static bool trace_enabled = false;
 static uint64_t trace_start_time = TRACE_START_TIME;
 static uint64_t trace_stop_time = TRACE_STOP_TIME;
 
@@ -81,11 +80,7 @@ bool sim_trace_enabled() {
    && timestamp < trace_stop_time) {
     return true;
    }
-  return trace_enabled;
-}
-
-void sim_trace_enable(bool enable) {
-  trace_enabled = enable;
+  return false;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -271,13 +266,14 @@ private:
 
     if (!dram_queue_.empty()) {
       auto mem_req = dram_queue_.front();
-      dram_sim_.send_request(mem_req->addr, mem_req->write, [](void* arg) {
+      dram_sim_.send_request(mem_req->addr, mem_req->write, [](void* arg)->bool {
         auto orig_req = reinterpret_cast<mem_req_t*>(arg);
         if (orig_req->ready) {
           delete orig_req;
         } else {
           orig_req->ready = true;
         }
+        return true;
       }, mem_req);
       dram_queue_.pop();
     }

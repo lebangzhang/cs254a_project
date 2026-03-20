@@ -19,6 +19,7 @@
 #include <vector>
 #include <unordered_map>
 #include <variant>
+#include <functional>
 #include <util.h>
 #include <stringutil.h>
 #include <VX_config.h>
@@ -65,6 +66,30 @@ union reg_data_t {
   uint64_t u64;
   int32_t  i32;
   int64_t  i64;
+};
+
+///////////////////////////////////////////////////////////////////////////////
+
+struct warp_barrier_t {
+  WarpMask wait_mask = 0;
+  uint32_t count = 0;
+  uint32_t events = 0;
+  uint32_t phase = 0;
+
+  void reset() {
+    wait_mask.reset();
+    count  = 0;
+    events = 0;
+    phase  = 0;
+  }
+};
+
+struct core_barrier_t {
+  CoreMask mask = 0;
+
+  void reset() {
+    mask = 0;
+  }
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -312,6 +337,7 @@ struct IntrLsuArgs {
   uint32_t width : 3;
   uint32_t is_float : 1;
   uint32_t offset;
+  uint32_t pack : 2;  // 0=normal, 1=PACKLB (4 strided bytes), 2=PACKLH (2 strided halfwords)
 };
 
 inline std::ostream &operator<<(std::ostream &os, const LsuType& type) {
@@ -429,11 +455,14 @@ enum class WctlType {
   SPLIT,
   JOIN,
   BAR,
-  PRED
+  PRED,
+  WSYNC
 };
 
 struct IntrWctlArgs {
-  uint32_t is_neg : 1;
+  uint32_t is_cond_neg : 1;
+  uint32_t is_sync_bar : 1;
+  uint32_t is_bar_arrive : 1;
 };
 
 inline std::ostream &operator<<(std::ostream &os, const WctlType& type) {
@@ -444,11 +473,41 @@ inline std::ostream &operator<<(std::ostream &os, const WctlType& type) {
   case WctlType::JOIN:   os << "JOIN"; break;
   case WctlType::BAR:    os << "BAR"; break;
   case WctlType::PRED:   os << "PRED"; break;
+  case WctlType::WSYNC:  os << "WSYNC"; break;
   default:
     assert(false);
   }
   return os;
 }
+
+///////////////////////////////////////////////////////////////////////////////
+
+#ifdef EXT_DXA_ENABLE
+
+enum class DxaType {
+  SETUP,
+  COORD01,
+  COORD23,
+  ISSUE
+};
+
+struct IntrDxaArgs {
+  uint32_t op : 3;
+};
+
+inline std::ostream &operator<<(std::ostream &os, const DxaType& type) {
+  switch (type) {
+  case DxaType::SETUP:   os << "DXA.SETUP"; break;
+  case DxaType::COORD01: os << "DXA.COORD01"; break;
+  case DxaType::COORD23: os << "DXA.COORD23"; break;
+  case DxaType::ISSUE:   os << "DXA.ISSUE"; break;
+  default:
+    assert(false);
+  }
+  return os;
+}
+
+#endif
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -641,6 +700,8 @@ inline std::ostream &operator<<(std::ostream &os, const VpuOpType& type) {
 
 enum class TcuType {
   WMMA,
+  WMMA_SP,
+  META_STORE,
 };
 
 struct IntrTcuArgs {
@@ -648,11 +709,14 @@ struct IntrTcuArgs {
   uint32_t fmt_d  : 4;
   uint32_t step_m : 4;
   uint32_t step_n : 4;
+  uint32_t step_k : 4;
 };
 
 inline std::ostream &operator<<(std::ostream &os, const TcuType& type) {
   switch (type) {
   case TcuType::WMMA: os << "WMMA"; break;
+  case TcuType::WMMA_SP: os << "WMMA_SP"; break;
+  case TcuType::META_STORE: os << "META_STORE"; break;
   default:
     assert(false);
   }
@@ -672,6 +736,9 @@ using OpType = std::variant<
 , VoteType
 , ShflType
 , WctlType
+#ifdef EXT_DXA_ENABLE
+, DxaType
+#endif
 #ifdef EXT_V_ENABLE
 , VsetType
 , VlsType
@@ -691,6 +758,9 @@ using IntrArgs = std::variant<
 , IntrFpuArgs
 , IntrCsrArgs
 , IntrWctlArgs
+#ifdef EXT_DXA_ENABLE
+, IntrDxaArgs
+#endif
 #ifdef EXT_V_ENABLE
 , IntrVsetArgs
 , IntrVlsArgs
@@ -1091,11 +1161,12 @@ private:
 template <typename T>
 class TFifo : public SimObject<TFifo<T>> {
 public:
+  using Ptr = std::shared_ptr<TFifo<T>>;
   using Type = T;
 
-  TFifo(const SimContext& ctx, const char* name, uint32_t delay, uint32_t capacity = 0)
+  TFifo(const SimContext& ctx, const char* name, uint32_t delay, uint32_t capacity = 2)
     : SimObject<TFifo<T>>(ctx, name)
-    , bus_(this, capacity)
+    , channel_(this, capacity)
     , delay_(delay) {
   }
 
@@ -1108,54 +1179,50 @@ public:
   }
 
   bool empty() const {
-    return bus_.empty();
+    return channel_.empty();
   }
 
   bool full() const {
-    return bus_.full();
+    return channel_.full();
   }
 
   uint32_t size() const {
-    return bus_.size();
+    return channel_.size();
+  }
+
+  bool try_push(const Type& value) {
+    return channel_.try_send(value, delay_);
   }
 
   void push(const Type& value) {
-    if (bus_.full()) {
-      throw std::runtime_error("FIFO is full");
-    }
-    bus_.push(value, delay_);
+    channel_.send(value, delay_);
   }
 
-  Type& front() {
-    if (bus_.empty()) {
+  const Type& peek() const {
+    if (channel_.empty()) {
       throw std::runtime_error("FIFO is empty");
     }
-    return bus_.front();
-  }
-
-  const Type& front() const {
-    if (bus_.empty()) {
-      throw std::runtime_error("FIFO is empty");
-    }
-    return bus_.front();
+    return channel_.peek();
   }
 
   void pop() {
-    if (bus_.empty()) {
+    if (channel_.empty()) {
       throw std::runtime_error("FIFO is empty");
     }
-    bus_.pop();
+    channel_.pop();
   }
 
 private:
-  SimPort<Type> bus_;
+  SimChannel<Type> channel_;
   uint32_t delay_;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
+
 template <typename Type>
 class TxArbiter : public SimObject<TxArbiter<Type>> {
 public:
+  using Ptr = std::shared_ptr<TxArbiter<Type>>;
   typedef Type ReqType;
 
   struct RspType {
@@ -1172,16 +1239,16 @@ public:
     }
   };
 
-  std::vector<SimPort<ReqType>> Inputs;
-  std::vector<SimPort<RspType>> Outputs;
+  std::vector<SimChannel<ReqType>> Inputs;
+  std::vector<SimChannel<RspType>> Outputs;
 
   TxArbiter(
     const SimContext& ctx,
     const char* name,
     ArbiterType type,
     uint32_t num_inputs,
-    uint32_t num_outputs = 1,
-    uint32_t delay = 1
+    uint32_t num_outputs,
+    uint32_t delay
   ) : SimObject<TxArbiter<Type>>(ctx, name)
     , Inputs(num_inputs, this)
     , Outputs(num_outputs, this)
@@ -1189,7 +1256,6 @@ public:
     , lg2_num_reqs_(log2ceil(num_inputs / num_outputs))
     , arbiters_(num_outputs, {type, 1u << lg2_num_reqs_})
   {
-    assert(delay != 0);
     assert(num_inputs <= 64);
     assert(num_outputs <= 64);
     assert(num_inputs >= num_outputs);
@@ -1201,6 +1267,16 @@ public:
       }
     }
   }
+
+  TxArbiter(
+    const SimContext& ctx,
+    const char* name,
+    ArbiterType type,
+    uint32_t num_inputs,
+    uint32_t num_outputs
+  ) : TxArbiter<Type>(ctx, name, type, num_inputs, num_outputs,
+      ((num_inputs > 2) || (num_outputs > 2)) ? 1 : 0)
+  {}
 
   void reset() {
     for (auto& arb : arbiters_) {
@@ -1230,10 +1306,11 @@ public:
         uint32_t g = arbiters_.at(o).grant(requests);
         uint32_t i = o * R + g;
         auto& req_in = Inputs.at(i);
-        auto& req = req_in.front();
-        DT(4, this->name() << "-req" << i << "_" << o << ": " << req);
-        Outputs.at(o).push(RspType(req, i), delay_);
-        req_in.pop();
+        auto& req = req_in.peek();
+        if (Outputs.at(o).try_send(RspType(req, i), delay_)) {
+          DT(4, this->name() << " req" << i << "_" << o << ": " << req);
+          req_in.pop();
+        }
       }
     }
   }
@@ -1250,6 +1327,7 @@ protected:
 template <typename Type>
 class TxCrossBar : public SimObject<TxCrossBar<Type>> {
 public:
+  using Ptr = std::shared_ptr<TxCrossBar<Type>>;
   typedef Type ReqType;
 
   struct RspType {
@@ -1266,8 +1344,8 @@ public:
     }
   };
 
-  std::vector<SimPort<ReqType>> Inputs;
-  std::vector<SimPort<RspType>> Outputs;
+  std::vector<SimChannel<ReqType>> Inputs;
+  std::vector<SimChannel<RspType>> Outputs;
 
   TxCrossBar(
     const SimContext& ctx,
@@ -1275,7 +1353,7 @@ public:
     uint32_t num_inputs,
     uint32_t num_outputs,
     std::function<uint32_t(const Type& req)> output_sel,
-    uint32_t delay = 1
+    uint32_t delay
   )
     : SimObject<TxCrossBar<Type>>(ctx, name)
     , Inputs(num_inputs, this)
@@ -1285,7 +1363,6 @@ public:
     , lg2_outputs_(log2ceil(num_outputs))
     , output_sel_(output_sel)
     , collisions_(0) {
-    assert(delay != 0);
     assert(num_inputs <= 64);
     assert(num_outputs <= 64);
     assert(ispow2(num_outputs));
@@ -1296,6 +1373,16 @@ public:
       Inputs.at(0).bind(&Outputs.at(0));
     }
   }
+
+  TxCrossBar(
+    const SimContext& ctx,
+    const char* name,
+    uint32_t num_inputs,
+    uint32_t num_outputs,
+    std::function<uint32_t(const Type& req)> output_sel
+  ) : TxCrossBar<Type>(ctx, name, num_inputs, num_outputs,
+      output_sel, ((num_inputs > 2) || (num_outputs > 2)) ? 1 : 0)
+  {}
 
   void reset() {
     //--
@@ -1315,7 +1402,7 @@ public:
         auto& req_in = Inputs.at(i);
         if (req_in.empty())
           continue;
-        auto& req = req_in.front();
+        auto& req = req_in.peek();
         uint32_t output_idx = 0;
         if (lg2_outputs_ != 0) {
           // select output index
@@ -1332,10 +1419,11 @@ public:
       }
       if (input_idx != -1) {
         auto& req_in = Inputs.at(input_idx);
-        auto& req = req_in.front();
-        DT(4, this->name() << "-req" << input_idx << "_" << o << ": " << req);
-        Outputs.at(o).push(RspType(req, input_idx), delay_);
-        req_in.pop();
+        auto& req = req_in.peek();
+        if (Outputs.at(o).try_send(RspType(req, input_idx), delay_)) {
+          DT(4, this->name() << " req" << input_idx << "_" << o << ": " << req);
+          req_in.pop();
+        }
         collisions_ += has_collision;
       }
     }
@@ -1359,29 +1447,30 @@ protected:
 template <typename Req, typename Rsp>
 class TxRxArbiter : public SimObject<TxRxArbiter<Req, Rsp>> {
 public:
+  using Ptr = std::shared_ptr<TxRxArbiter<Req, Rsp>>;
   typedef Req ReqType;
   typedef Rsp RspType;
 
-  std::vector<SimPort<Req>>  ReqIn;
-  std::vector<SimPort<Rsp>>  RspIn;
+  std::vector<SimChannel<Req>>  ReqIn;
+  std::vector<SimChannel<Rsp>>  RspOut;
 
-  std::vector<SimPort<Req>>  ReqOut;
-  std::vector<SimPort<Rsp>>  RspOut;
+  std::vector<SimChannel<Req>>  ReqOut;
+  std::vector<SimChannel<Rsp>>  RspIn;
 
   TxRxArbiter(
     const SimContext& ctx,
     const char* name,
     ArbiterType type,
     uint32_t num_inputs,
-    uint32_t num_outputs = 1,
-    uint32_t req_delay = 1,
-    uint32_t rsp_delay = 1
+    uint32_t num_outputs,
+    uint32_t req_delay,
+    uint32_t rsp_delay
   )
     : SimObject<TxRxArbiter<Req, Rsp>>(ctx, name)
     , ReqIn(num_inputs, this)
-    , RspIn(num_inputs, this)
+    , RspOut(num_inputs, this)
     , ReqOut(num_outputs, this)
-    , RspOut(num_outputs, this)
+    , RspIn(num_outputs, this)
     , arbiter_(nullptr)
     , rsp_delay_(rsp_delay)
     , lg2_num_reqs_(log2ceil(num_inputs / num_outputs))
@@ -1408,10 +1497,21 @@ public:
       // bypass mode
       for (uint32_t i = 0; i < num_inputs; ++i) {
         ReqIn.at(i).bind(&ReqOut.at(i));
-        RspOut.at(i).bind(&RspIn.at(i));
+        RspIn.at(i).bind(&RspOut.at(i));
       }
     }
   }
+
+  TxRxArbiter(
+    const SimContext& ctx,
+    const char* name,
+    ArbiterType type,
+    uint32_t num_inputs,
+    uint32_t num_outputs
+  ) : TxRxArbiter<Req, Rsp>(ctx, name, type, num_inputs, num_outputs,
+      ((num_inputs > 2) || (num_outputs > 2)) ? 1 : 0,
+      ((num_inputs > 2) || (num_outputs > 2)) ? 1 : 0)
+  {}
 
   void reset() {
     //--
@@ -1426,19 +1526,20 @@ public:
 
     // process outgoing responses
     for (uint32_t o = 0; o < O; ++o) {
-      auto& rsp_out = RspOut.at(o);
-      if (!rsp_out.empty()) {
-        auto& rsp = rsp_out.front();
+      auto& rsp_in = RspIn.at(o);
+      if (!rsp_in.empty()) {
+        auto& rsp = rsp_in.peek();
         uint32_t r = 0;
-        Rsp in_rsp(rsp);
+        Rsp out_rsp(rsp);
         if (lg2_num_reqs_ != 0) {
           r = rsp.tag & (R-1);
-          in_rsp.tag = rsp.tag >> lg2_num_reqs_;
+          out_rsp.tag = rsp.tag >> lg2_num_reqs_;
         }
         uint32_t i = o * R + r;
-        DT(4, this->name() << "-rsp" << o << "_" << i << ": " << in_rsp);
-        RspIn.at(i).push(in_rsp, rsp_delay_);
-        rsp_out.pop();
+        if (RspOut.at(i).try_send(out_rsp, rsp_delay_)) {
+          DT(4, this->name() << " rsp" << o << "_" << i << ": " << out_rsp);
+          rsp_in.pop();
+        }
       }
     }
   }
@@ -1456,14 +1557,15 @@ protected:
 template <typename Req, typename Rsp>
 class TxRxCrossBar : public SimObject<TxRxCrossBar<Req, Rsp>> {
 public:
+  using Ptr = std::shared_ptr<TxRxCrossBar<Req, Rsp>>;
   typedef Req ReqType;
   typedef Rsp RspType;
 
-  std::vector<SimPort<Req>> ReqIn;
-  std::vector<SimPort<Rsp>> RspIn;
+  std::vector<SimChannel<Req>> ReqIn;
+  std::vector<SimChannel<Rsp>> RspOut;
 
-  std::vector<SimPort<Req>> ReqOut;
-  std::vector<SimPort<Rsp>> RspOut;
+  std::vector<SimChannel<Req>> ReqOut;
+  std::vector<SimChannel<Rsp>> RspIn;
 
   TxRxCrossBar(
     const SimContext& ctx,
@@ -1472,14 +1574,14 @@ public:
     uint32_t num_inputs,
     uint32_t num_outputs,
     std::function<uint32_t(const Req& req)> output_sel,
-    uint32_t req_delay = 1,
-    uint32_t rsp_delay = 1
+    uint32_t req_delay,
+    uint32_t rsp_delay
   )
     : SimObject<TxRxCrossBar<Req, Rsp>>(ctx, name)
     , ReqIn(num_inputs, this)
-    , RspIn(num_inputs, this)
+    , RspOut(num_inputs, this)
     , ReqOut(num_outputs, this)
-    , RspOut(num_outputs, this)
+    , RspIn(num_outputs, this)
     , crossbar_(nullptr)
     , arbiter_(type, num_outputs)
     , rsp_delay_(rsp_delay)
@@ -1505,9 +1607,21 @@ public:
     } else {
       // bypass mode
       ReqIn.at(0).bind(&ReqOut.at(0));
-      RspOut.at(0).bind(&RspIn.at(0));
+      RspIn.at(0).bind(&RspOut.at(0));
     }
   }
+
+  TxRxCrossBar(
+    const SimContext& ctx,
+    const char* name,
+    ArbiterType type,
+    uint32_t num_inputs,
+    uint32_t num_outputs,
+    std::function<uint32_t(const Req& req)> output_sel
+  ) : TxRxCrossBar<Req, Rsp>(ctx, name, type, num_inputs, num_outputs, output_sel,
+      ((num_inputs > 2) || (num_outputs > 2)) ? 1 : 0,
+      ((num_inputs > 2) || (num_outputs > 2)) ? 1 : 0)
+  {}
 
   void reset() {
     arbiter_.reset();
@@ -1525,10 +1639,10 @@ public:
     for (uint32_t i = 0; i < I; ++i) {
       BitVector<> requests(O);
       for (uint32_t o = 0; o < O; ++o) {
-        auto& rsp_out = RspOut.at(o);
-        if (rsp_out.empty())
+        auto& rsp_in = RspIn.at(o);
+        if (rsp_in.empty())
           continue;
-        auto& rsp = rsp_out.front();
+        auto& rsp = rsp_in.peek();
         // skip if response is not going to current input
         if (lg2_inputs_ != 0) {
           uint32_t input_idx = rsp.tag & (R-1);
@@ -1539,15 +1653,16 @@ public:
       }
       if (requests.any()) {
         uint32_t g = arbiter_.grant(requests);
-        auto& rsp_out = RspOut.at(g);
-        auto& rsp = rsp_out.front();
-        Rsp in_rsp(rsp);
+        auto& rsp_in = RspIn.at(g);
+        auto& rsp = rsp_in.peek();
+        Rsp out_rsp(rsp);
         if (lg2_inputs_ != 0) {
-          in_rsp.tag = rsp.tag >> lg2_inputs_;
+          out_rsp.tag = rsp.tag >> lg2_inputs_;
         }
-        DT(4, this->name() << "-rsp" << g << "_" << i << ": " << in_rsp);
-        RspIn.at(i).push(in_rsp, rsp_delay_);
-        rsp_out.pop();
+        if (RspOut.at(i).try_send(out_rsp, rsp_delay_)) {
+          DT(4, this->name() << " rsp" << g << "_" << i << ": " << out_rsp);
+          rsp_in.pop();
+        }
       }
     }
   }
@@ -1572,14 +1687,16 @@ protected:
 
 class LocalMemSwitch : public SimObject<LocalMemSwitch> {
 public:
-  SimPort<LsuReq> ReqIn;
-  SimPort<LsuRsp> RspIn;
+  using Ptr = std::shared_ptr<LocalMemSwitch>;
 
-  SimPort<LsuReq> ReqLmem;
-  SimPort<LsuRsp> RspLmem;
+  SimChannel<LsuReq> ReqIn;
+  SimChannel<LsuRsp> RspOut;
 
-  SimPort<LsuReq> ReqDC;
-  SimPort<LsuRsp> RspDC;
+  SimChannel<LsuReq> ReqOutLmem;
+  SimChannel<LsuRsp> RspInLmem;
+
+  SimChannel<LsuReq> ReqOutDC;
+  SimChannel<LsuRsp> RspInDC;
 
   LocalMemSwitch(
     const SimContext& ctx,
@@ -1599,11 +1716,13 @@ private:
 
 class LsuMemAdapter : public SimObject<LsuMemAdapter> {
 public:
-  SimPort<LsuReq> ReqIn;
-  SimPort<LsuRsp> RspIn;
+  using Ptr = std::shared_ptr<LsuMemAdapter>;
 
-  std::vector<SimPort<MemReq>> ReqOut;
-  std::vector<SimPort<MemRsp>> RspOut;
+  SimChannel<LsuReq> ReqIn;
+  SimChannel<LsuRsp> RspOut;
+
+  std::vector<SimChannel<MemReq>> ReqOut;
+  std::vector<SimChannel<MemRsp>> RspIn;
 
   LsuMemAdapter(
     const SimContext& ctx,
@@ -1612,12 +1731,20 @@ public:
     uint32_t delay
   );
 
+  LsuMemAdapter(
+    const SimContext& ctx,
+    const char* name,
+    uint32_t num_inputs
+  ) : LsuMemAdapter(ctx, name, num_inputs, 0)
+  {}
+
   void reset();
 
   void tick();
 
 private:
   uint32_t delay_;
+  BitVector<uint32_t> pending_mask_;
 };
 
 using LsuArbiter  = TxRxArbiter<LsuReq, LsuRsp>;

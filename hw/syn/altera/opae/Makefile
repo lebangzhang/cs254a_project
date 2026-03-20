@@ -18,7 +18,7 @@ IP_CACHE_DIR := $(ROOT_DIR)/hw/syn/altera/ip_cache/$(DEVICE_FAMILY)
 BUILD_DIR := $(PREFIX)_$(DEVICE_FAMILY)_$(TARGET)_$(NUM_CORES)c
 
 ifeq ($(shell which qsub-synth),)
-	RUN_SYNTH=$(OPAE_PLATFORM_ROOT)/bin/run.sh > build.log 2>&1 &
+	RUN_SYNTH=$(OPAE_PLATFORM_ROOT)/bin/run.sh
 else
 	RUN_SYNTH=qsub-synth
 endif
@@ -60,26 +60,37 @@ endif
 RTL_PKGS = $(AFU_DIR)/local_mem_cfg_pkg.sv $(AFU_DIR)/ccip/ccip_if_pkg.sv
 RTL_PKGS += $(RTL_DIR)/VX_gpu_pkg.sv $(RTL_DIR)/fpu/VX_fpu_pkg.sv
 FPU_INCLUDE = -I$(RTL_DIR)/fpu
-ifneq (,$(findstring -DFPU_FPNEW, $(CONFIGS)))
-	RTL_PKGS += $(THIRD_PARTY_DIR)/cvfpu/src/fpnew_pkg.sv $(THIRD_PARTY_DIR)/cvfpu/src/common_cells/src/cf_math_pkg $(THIRD_PARTY_DIR)/cvfpu/src/fpu_div_sqrt_mvp/hdl/defs_div_sqrt_mvp.sv
+ifneq (,$(filter -DFPU_TYPE_FPNEW, $(CONFIGS)))
+	RTL_PKGS += $(THIRD_PARTY_DIR)/cvfpu/src/fpnew_pkg.sv $(THIRD_PARTY_DIR)/cvfpu/src/common_cells/src/cf_math_pkg.sv $(THIRD_PARTY_DIR)/cvfpu/src/fpu_div_sqrt_mvp/hdl/defs_div_sqrt_mvp.sv
 	FPU_INCLUDE += -J$(THIRD_PARTY_DIR)/cvfpu/src/common_cells/include -J$(THIRD_PARTY_DIR)/cvfpu/src/common_cells/src -J$(THIRD_PARTY_DIR)/cvfpu/src/fpu_div_sqrt_mvp/hdl -J$(THIRD_PARTY_DIR)/cvfpu/src
 endif
-RTL_INCLUDE = -I$(RTL_DIR) -I$(DPI_DIR) -I$(RTL_DIR)/libs -I$(RTL_DIR)/interfaces -I$(RTL_DIR)/core -I$(RTL_DIR)/mem -I$(RTL_DIR)/cache -I$(AFU_DIR) -I$(IP_CACHE_DIR)
+RTL_INCLUDE = -I$(ROOT_DIR)/hw -I$(RTL_DIR) -I$(DPI_DIR) -I$(RTL_DIR)/libs -I$(RTL_DIR)/interfaces -I$(RTL_DIR)/core -I$(RTL_DIR)/mem -I$(RTL_DIR)/cache -I$(AFU_DIR) -I$(IP_CACHE_DIR)
 RTL_INCLUDE += $(FPU_INCLUDE)
 
-# Add V extension sources
-ifneq (,$(findstring -DEXT_V_ENABLE, $(CONFIGS)))
-	RTL_PKGS += $(RTL_DIR)/vpu/VX_vpu_pkg.sv
-	RTL_INCLUDE += -I$(RTL_DIR)/vpu
-endif
-
 # Add TCU extension sources
-ifneq (,$(findstring -DEXT_TCU_ENABLE, $(CONFIGS)))
+ifneq (,$(filter -DEXT_TCU_ENABLE, $(CONFIGS)))
 	RTL_PKGS += $(RTL_DIR)/tcu/VX_tcu_pkg.sv
 	RTL_INCLUDE += -I$(RTL_DIR)/tcu
-	RTL_INCLUDE += -I$(RTL_DIR)/tcu/bhf
-	RTL_INCLUDE += -J$(THIRD_PARTY_DIR)/hardfloat/source/RISCV
-	RTL_INCLUDE += -I$(THIRD_PARTY_DIR)/hardfloat/source
+	ifneq (,$(filter -DTCU_TYPE_DPI, $(CONFIGS)))
+		RTL_INCLUDE += -I$(RTL_DIR)/tcu/dpi
+	endif
+	ifneq (,$(filter -DTCU_TYPE_DSP, $(CONFIGS)))
+		RTL_INCLUDE += -I$(RTL_DIR)/tcu/dsp
+	endif
+	ifneq (,$(filter -DTCU_TYPE_BHF, $(CONFIGS)))
+		RTL_INCLUDE += -I$(RTL_DIR)/tcu/bhf
+		RTL_INCLUDE += -J$(THIRD_PARTY_DIR)/hardfloat/source/RISCV
+		RTL_INCLUDE += -I$(THIRD_PARTY_DIR)/hardfloat/source
+	endif
+	ifneq (,$(filter -DTCU_TYPE_TFR, $(CONFIGS)))
+		RTL_INCLUDE += -I$(RTL_DIR)/tcu/tfr
+	endif
+endif
+
+# Add V extension sources
+ifneq (,$(filter -DEXT_V_ENABLE, $(CONFIGS)))
+	RTL_PKGS += $(RTL_DIR)/vpu/VX_vpu_pkg.sv
+	RTL_INCLUDE += -I$(RTL_DIR)/vpu
 endif
 
 # compilation flags
@@ -123,8 +134,8 @@ ip-gen: $(IP_CACHE_DIR)/ip-gen.log
 $(IP_CACHE_DIR)/ip-gen.log:
 	$(SCRIPT_DIR)/altera_ip_gen.sh $(IP_CACHE_DIR)
 
-swconfig: vortex_afu.h
-vortex_afu.h: $(SRC_DIR)/vortex_afu.json
+swconfig: vortex_opae.h
+vortex_opae.h: $(SRC_DIR)/vortex_afu.json
 	afu_json_mgr json-info --afu-json=$^ --c-hdr=$@
 
 $(BUILD_DIR)/setup.cfg:
@@ -150,7 +161,7 @@ endif
 
 build: ip-gen setup $(SCOPE_JSON)
 ifeq ($(TARGET), asesim)
-	make -C $(BUILD_DIR)/synth > $(BUILD_DIR)/synth/build.log 2>&1 &
+	make -C $(BUILD_DIR)/synth
 else
 	cd $(BUILD_DIR)/synth && $(RUN_SYNTH)
 endif
@@ -164,4 +175,4 @@ $(BUILD_DIR)/scope.json: $(BUILD_DIR)/vortex.xml
 	$(SCRIPT_DIR)/scope.py $(BUILD_DIR)/vortex.xml -o $(BUILD_DIR)/scope.json
 
 clean:
-	rm -rf vortex_afu.h $(BUILD_DIR)
+	rm -rf vortex_opae.h $(BUILD_DIR)

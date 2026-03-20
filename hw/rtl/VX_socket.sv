@@ -13,7 +13,11 @@
 
 `include "VX_define.vh"
 
-module VX_socket import VX_gpu_pkg::*; #(
+module VX_socket import VX_gpu_pkg::*;
+`ifdef EXT_DXA_ENABLE
+    import VX_dxa_pkg::*;
+`endif
+#(
     parameter SOCKET_ID = 0,
     parameter `STRING INSTANCE_ID = ""
 ) (
@@ -33,10 +37,20 @@ module VX_socket import VX_gpu_pkg::*; #(
     // Memory
     VX_mem_bus_if.master    mem_bus_if [`L1_MEM_PORTS],
 
-`ifdef GBAR_ENABLE
-    // Barrier
-    VX_gbar_bus_if.master   gbar_bus_if,
+`ifdef EXT_DXA_ENABLE
+    // DXA control path
+    VX_dxa_req_bus_if.master    dxa_req_bus_if,
+    // DXA SMEM write path (per-socket-port, fan-out to cores handled here)
+    VX_dxa_bank_wr_if.slave     dxa_smem_bus_if [DXA_SMEM_PORTS_PER_SOCKET],
+    input wire [DXA_SMEM_PORTS_PER_SOCKET-1:0][DXA_SMEM_LOCAL_CORE_W-1:0] dxa_smem_local_core_id,
 `endif
+
+    // KMU bus
+    VX_kmu_bus_if.slave     kmu_bus_if[1],
+
+    // Global barrier
+    VX_gbar_bus_if.master   gbar_bus_if,
+
     // Status
     output wire             busy
 );
@@ -46,19 +60,30 @@ module VX_socket import VX_gpu_pkg::*; #(
     `SCOPE_IO_SWITCH (`SOCKET_SIZE);
 `endif
 
-`ifdef GBAR_ENABLE
+    VX_kmu_bus_if per_core_kmu_bus_if[`SOCKET_SIZE]();
+
+    VX_kmu_arb #(
+        .NUM_INPUTS (1),
+        .NUM_OUTPUTS (`SOCKET_SIZE)
+    ) kmu_arb (
+        .clk        (clk),
+        .reset      (reset),
+        .bus_in_if  (kmu_bus_if),
+        .bus_out_if (per_core_kmu_bus_if[`SOCKET_SIZE-1:0])
+    );
+
     VX_gbar_bus_if per_core_gbar_bus_if[`SOCKET_SIZE]();
 
     VX_gbar_arb #(
         .NUM_REQS (`SOCKET_SIZE),
-        .OUT_BUF  ((`SOCKET_SIZE > 1) ? 2 : 0)
+        .REQ_OUT_BUF ((`SOCKET_SIZE > 1) ? 2 : 0),
+        .RSP_OUT_BUF ((`SOCKET_SIZE > 1) ? 2 : 0)
     ) gbar_arb (
         .clk        (clk),
         .reset      (reset),
         .bus_in_if  (per_core_gbar_bus_if),
         .bus_out_if (gbar_bus_if)
     );
-`endif
 
     ///////////////////////////////////////////////////////////////////////////
 
@@ -83,8 +108,6 @@ module VX_socket import VX_gpu_pkg::*; #(
         .DATA_SIZE (ICACHE_LINE_SIZE),
         .TAG_WIDTH (ICACHE_MEM_TAG_WIDTH)
     ) icache_mem_bus_if[1]();
-
-    `RESET_RELAY (icache_reset, reset);
 
     VX_cache_cluster #(
         .INSTANCE_ID    (`SFORMATF(("%s-icache", INSTANCE_ID))),
@@ -113,7 +136,7 @@ module VX_socket import VX_gpu_pkg::*; #(
         .cache_perf     (icache_perf),
     `endif
         .clk            (clk),
-        .reset          (icache_reset),
+        .reset          (reset),
         .core_bus_if    (per_core_icache_bus_if),
         .mem_bus_if     (icache_mem_bus_if)
     );
@@ -130,8 +153,6 @@ module VX_socket import VX_gpu_pkg::*; #(
         .TAG_WIDTH (DCACHE_MEM_TAG_WIDTH)
     ) dcache_mem_bus_if[`L1_MEM_PORTS]();
 
-    `RESET_RELAY (dcache_reset, reset);
-
     VX_cache_cluster #(
         .INSTANCE_ID    (`SFORMATF(("%s-dcache", INSTANCE_ID))),
         .NUM_UNITS      (`NUM_DCACHES),
@@ -147,7 +168,7 @@ module VX_socket import VX_gpu_pkg::*; #(
         .CRSQ_SIZE      (`DCACHE_CRSQ_SIZE),
         .MSHR_SIZE      (`DCACHE_MSHR_SIZE),
         .MRSQ_SIZE      (`DCACHE_MRSQ_SIZE),
-        .MREQ_SIZE      (`DCACHE_WRITEBACK ? `DCACHE_MSHR_SIZE : `DCACHE_MREQ_SIZE),
+        .MREQ_SIZE      (DCACHE_MREQ_SIZE),
         .TAG_WIDTH      (DCACHE_TAG_WIDTH),
         .WRITE_ENABLE   (1),
         .WRITEBACK      (`DCACHE_WRITEBACK),
@@ -161,7 +182,7 @@ module VX_socket import VX_gpu_pkg::*; #(
         .cache_perf     (dcache_perf),
     `endif
         .clk            (clk),
-        .reset          (dcache_reset),
+        .reset          (reset),
         .core_bus_if    (per_core_dcache_bus_if),
         .mem_bus_if     (dcache_mem_bus_if)
     );
@@ -211,18 +232,109 @@ module VX_socket import VX_gpu_pkg::*; #(
         end
     end
 
+
     ///////////////////////////////////////////////////////////////////////////
+
+`ifdef EXT_DXA_ENABLE
+
+    // DXA control request: N:1 arbitration from per-core to cluster
+    VX_dxa_req_bus_if per_core_dxa_req_bus_if[`SOCKET_SIZE]();
+
+    localparam DXA_REQ_DATAW_LOCAL = NC_WIDTH + UUID_WIDTH + NW_WIDTH + 3 + (2 * `XLEN);
+    wire [`SOCKET_SIZE-1:0] dxa_req_valid_in;
+    wire [`SOCKET_SIZE-1:0][DXA_REQ_DATAW_LOCAL-1:0] dxa_req_data_in;
+    wire [`SOCKET_SIZE-1:0] dxa_req_ready_in;
+
+    for (genvar i = 0; i < `SOCKET_SIZE; ++i) begin : g_dxa_req_in
+        assign dxa_req_valid_in[i] = ~reset && per_core_dxa_req_bus_if[i].req_valid;
+        assign dxa_req_data_in[i] = per_core_dxa_req_bus_if[i].req_data;
+        assign per_core_dxa_req_bus_if[i].req_ready = dxa_req_ready_in[i];
+    end
+
+    wire [0:0] dxa_req_valid_out;
+    wire [0:0][DXA_REQ_DATAW_LOCAL-1:0] dxa_req_data_out;
+    wire [0:0] dxa_req_ready_out;
+
+    VX_stream_arb #(
+        .NUM_INPUTS  (`SOCKET_SIZE),
+        .NUM_OUTPUTS (1),
+        .DATAW       (DXA_REQ_DATAW_LOCAL),
+        .ARBITER     ("R"),
+        .OUT_BUF     (2)
+    ) dxa_req_arb (
+        .clk        (clk),
+        .reset      (reset),
+        .valid_in   (dxa_req_valid_in),
+        .data_in    (dxa_req_data_in),
+        .ready_in   (dxa_req_ready_in),
+        .valid_out  (dxa_req_valid_out),
+        .data_out   (dxa_req_data_out),
+        .ready_out  (dxa_req_ready_out),
+        `UNUSED_PIN (sel_out)
+    );
+
+    assign dxa_req_bus_if.req_valid = dxa_req_valid_out[0];
+    assign dxa_req_bus_if.req_data  = dxa_req_data_out[0];
+    assign dxa_req_ready_out[0] = dxa_req_bus_if.req_ready;
+
+    // DXA SMEM bank writes: distribute per-socket-port to per-core
+    VX_dxa_bank_wr_if #(
+        .NUM_BANKS       (`LMEM_NUM_BANKS),
+        .BANK_ADDR_WIDTH (DXA_SMEM_BANK_ADDR_WIDTH),
+        .WORD_SIZE       (`XLEN / 8),
+        .TAG_WIDTH       (DXA_BANK_WR_TAG_WIDTH)
+    ) per_core_dxa_bank_wr_if [`SOCKET_SIZE]();
+
+    localparam DXA_SMEM_NEED_ARB = (DXA_SMEM_PORTS_PER_SOCKET < `SOCKET_SIZE);
+
+    if (DXA_SMEM_NEED_ARB) begin : g_dxa_socket_arb
+        /* verilator lint_off UNUSEDSIGNAL */
+        wire [`SOCKET_SIZE-1:0][DXA_SMEM_LOCAL_CORE_W-1:0] socket_arb_lcid_out;
+        /* verilator lint_on UNUSEDSIGNAL */
+
+        VX_dxa_smem_socket_arb #(
+            .NUM_INPUTS  (DXA_SMEM_PORTS_PER_SOCKET),
+            .NUM_OUTPUTS (`SOCKET_SIZE)
+        ) dxa_socket_arb (
+            .clk              (clk),
+            .reset            (reset),
+            .bank_wr_in       (dxa_smem_bus_if),
+            .local_core_id_in (dxa_smem_local_core_id),
+            .bank_wr_out      (per_core_dxa_bank_wr_if),
+            .local_core_id_out(socket_arb_lcid_out)
+        );
+    end else begin : g_dxa_direct
+        // 1:1 mapping: PORTS_PER_SOCKET == SOCKET_SIZE
+        for (genvar i = 0; i < `SOCKET_SIZE; ++i) begin : g_passthru
+            assign per_core_dxa_bank_wr_if[i].wr_valid  = dxa_smem_bus_if[i].wr_valid;
+            assign per_core_dxa_bank_wr_if[i].wr_addr   = dxa_smem_bus_if[i].wr_addr;
+            assign per_core_dxa_bank_wr_if[i].wr_data   = dxa_smem_bus_if[i].wr_data;
+            assign per_core_dxa_bank_wr_if[i].wr_byteen = dxa_smem_bus_if[i].wr_byteen;
+            assign per_core_dxa_bank_wr_if[i].wr_tag    = dxa_smem_bus_if[i].wr_tag;
+            assign dxa_smem_bus_if[i].wr_ready = per_core_dxa_bank_wr_if[i].wr_ready;
+        end
+        `UNUSED_VAR (dxa_smem_local_core_id)
+    end
+
+`endif
+
+    ///////////////////////////////////////////////////////////////////////////
+
+    VX_dcr_bus_if per_core_dcr_bus_if[`SOCKET_SIZE]();
+    VX_dcr_arb #(
+        .NUM_REQS    (`SOCKET_SIZE),
+        .REQ_OUT_BUF ((`SOCKET_SIZE > 1) ? 1 : 0)
+    ) dcr_core_arb (
+        .clk        (clk),
+        .reset      (reset),
+        .bus_in_if  (dcr_bus_if),
+        .bus_out_if (per_core_dcr_bus_if)
+    );
 
     wire [`SOCKET_SIZE-1:0] per_core_busy;
 
     // Generate all cores
     for (genvar core_id = 0; core_id < `SOCKET_SIZE; ++core_id) begin : g_cores
-
-        `RESET_RELAY (core_reset, reset);
-
-        VX_dcr_bus_if core_dcr_bus_if();
-        `BUFFER_DCR_BUS_IF (core_dcr_bus_if, dcr_bus_if, 1'b1, (`SOCKET_SIZE > 1))
-
         VX_core #(
             .CORE_ID  ((SOCKET_ID * `SOCKET_SIZE) + core_id),
             .INSTANCE_ID (`SFORMATF(("%s-core%0d", INSTANCE_ID, core_id)))
@@ -230,21 +342,26 @@ module VX_socket import VX_gpu_pkg::*; #(
             `SCOPE_IO_BIND  (scope_core + core_id)
 
             .clk            (clk),
-            .reset          (core_reset),
+            .reset          (reset),
 
         `ifdef PERF_ENABLE
             .sysmem_perf    (sysmem_perf_tmp),
         `endif
 
-            .dcr_bus_if     (core_dcr_bus_if),
+            .dcr_bus_if     (per_core_dcr_bus_if[core_id]),
 
             .dcache_bus_if  (per_core_dcache_bus_if[core_id * DCACHE_NUM_REQS +: DCACHE_NUM_REQS]),
 
             .icache_bus_if  (per_core_icache_bus_if[core_id]),
 
-        `ifdef GBAR_ENABLE
-            .gbar_bus_if    (per_core_gbar_bus_if[core_id]),
+        `ifdef EXT_DXA_ENABLE
+            .dxa_req_bus_if (per_core_dxa_req_bus_if[core_id]),
+            .dxa_bank_wr_if (per_core_dxa_bank_wr_if[core_id]),
         `endif
+
+            .kmu_bus_if     (per_core_kmu_bus_if[core_id]),
+
+            .gbar_bus_if    (per_core_gbar_bus_if[core_id]),
 
             .busy           (per_core_busy[core_id])
         );

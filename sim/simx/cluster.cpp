@@ -16,17 +16,17 @@
 using namespace vortex;
 
 Cluster::Cluster(const SimContext& ctx,
+                 const char* name,
                  uint32_t cluster_id,
                  ProcessorImpl* processor,
-                 const Arch &arch,
-                 const DCRS &dcrs)
-  : SimObject(ctx, StrFormat("cluster%d", cluster_id))
-  , mem_req_ports(L2_MEM_PORTS, this)
-  , mem_rsp_ports(L2_MEM_PORTS, this)
+                 const Arch &arch)
+  : SimObject(ctx, name)
+  , mem_req_out(L2_MEM_PORTS, this)
+  , mem_rsp_in(L2_MEM_PORTS, this)
   , cluster_id_(cluster_id)
   , processor_(processor)
   , sockets_(NUM_SOCKETS)
-  , barriers_(arch.num_barriers(), 0)
+  , gbarriers_(arch.num_barriers())
   , cores_per_socket_(arch.socket_size())
 {
   char sname[100];
@@ -37,12 +37,13 @@ Cluster::Cluster(const SimContext& ctx,
 
   for (uint32_t i = 0; i < sockets_per_cluster; ++i) {
     uint32_t socket_id = cluster_id * sockets_per_cluster + i;
-    sockets_.at(i) = Socket::Create(socket_id, this, arch, dcrs);
+    snprintf(sname, 100, "%s-socket%d", name, i);
+    sockets_.at(i) = Socket::Create(sname, socket_id, this, arch);
   }
 
   // Create l2cache
 
-  snprintf(sname, 100, "%s-l2cache", this->name().c_str());
+  snprintf(sname, 100, "%s-l2cache", name);
   l2cache_ = CacheSim::Create(sname, CacheSim::Config{
     !L2_ENABLED,
     log2ceil(L2_CACHE_SIZE),// C
@@ -59,19 +60,27 @@ Cluster::Cluster(const SimContext& ctx,
     2,                      // pipeline latency
   });
 
-  // connect l2cache core interfaces
+  // connect l2cache core interface
   for (uint32_t i = 0; i < sockets_per_cluster; ++i) {
     for (uint32_t j = 0; j < L1_MEM_PORTS; ++j) {
-      sockets_.at(i)->mem_req_ports.at(j).bind(&l2cache_->CoreReqPorts.at(i * L1_MEM_PORTS + j));
-      l2cache_->CoreRspPorts.at(i * L1_MEM_PORTS + j).bind(&sockets_.at(i)->mem_rsp_ports.at(j));
+      sockets_.at(i)->mem_req_out.at(j).bind(&l2cache_->core_req_in.at(i * L1_MEM_PORTS + j));
+      l2cache_->core_rsp_out.at(i * L1_MEM_PORTS + j).bind(&sockets_.at(i)->mem_rsp_in.at(j));
     }
   }
 
-  // connect l2cache memory interfaces
+  // connect l2cache memory interface
   for (uint32_t i = 0; i < L2_MEM_PORTS; ++i) {
-    l2cache_->MemReqPorts.at(i).bind(&this->mem_req_ports.at(i));
-    this->mem_rsp_ports.at(i).bind(&l2cache_->MemRspPorts.at(i));
+    l2cache_->mem_req_out.at(i).bind(&this->mem_req_out.at(i));
+    this->mem_rsp_in.at(i).bind(&l2cache_->mem_rsp_in.at(i));
   }
+
+#ifdef EXT_DXA_ENABLE
+  // Create DxaCore at cluster scope (matches VX_dxa_core placement in RTL).
+  // Descriptors are shared cluster-wide; NUM_DXA_UNITS parallel slices each
+  // process copy requests independently.
+  snprintf(sname, 100, "%s-dxa-core", name);
+  dxa_core_ = DxaCore::Create(sname, this);
+#endif
 }
 
 Cluster::~Cluster() {
@@ -79,8 +88,11 @@ Cluster::~Cluster() {
 }
 
 void Cluster::reset() {
-  for (auto& barrier : barriers_) {
-    barrier.reset();
+  for (auto& gbar : gbarriers_) {
+    gbar.reset();
+  }
+  for (auto& socket : sockets_) {
+    socket->reset();
   }
 }
 
@@ -118,35 +130,61 @@ int Cluster::get_exitcode() const {
   return exitcode;
 }
 
-void Cluster::barrier(uint32_t bar_id, uint32_t count, uint32_t core_id) {
-  auto& barrier = barriers_.at(bar_id);
+void Cluster::global_barrier_arrive(uint32_t bar_id, uint32_t count, uint32_t core_id) {
+  auto bar_index = bar_id % gbarriers_.size();
+  auto& gbar = gbarriers_.at(bar_index);
 
   auto sockets_per_cluster = sockets_.size();
   auto cores_per_socket = cores_per_socket_;
 
   uint32_t cores_per_cluster = sockets_per_cluster * cores_per_socket;
   uint32_t local_core_id = core_id % cores_per_cluster;
-  barrier.set(local_core_id);
 
-  DP(3, "*** Suspend core #" << core_id << " at barrier #" << bar_id);
+  // set core arrival bit
+  gbar.mask.set(local_core_id);
 
-  if (barrier.count() == (size_t)count) {
-      // resume all suspended cores
-      for (uint32_t s = 0; s < sockets_per_cluster; ++s) {
-        for (uint32_t c = 0; c < cores_per_socket; ++c) {
-          uint32_t i = s * cores_per_socket + c;
-          if (barrier.test(i)) {
-            DP(3, "*** Resume core #" << i << " at barrier #" << bar_id);
-            sockets_.at(s)->resume(c);
-          }
+  DT(4, "*** Global barrier arrive: cluster #" << id() << ", core #" << core_id << " at barrier #" << bar_id << ", arrived=" << gbar.mask.count());
+
+  if (gbar.mask.count() == (size_t)count) {
+    // resume all suspended cores
+    for (uint32_t s = 0; s < sockets_per_cluster; ++s) {
+      for (uint32_t c = 0; c < cores_per_socket; ++c) {
+        uint32_t i = s * cores_per_socket + c;
+        if (gbar.mask.test(i)) {
+          sockets_.at(s)->global_barrier_resume(bar_id, c);
         }
       }
-      barrier.reset();
     }
+    // reset mask and advance phase
+    gbar.mask.reset();
+  }
 }
 
 Cluster::PerfStats Cluster::perf_stats() const {
   PerfStats perf_stats;
   perf_stats.l2cache = l2cache_->perf_stats();
   return perf_stats;
+}
+
+int Cluster::dcr_write(uint32_t addr, uint32_t value) {
+#ifdef EXT_DXA_ENABLE
+  if (addr >= VX_DCR_DXA_STATE_BEGIN && addr < VX_DCR_DXA_STATE_END) {
+    return dxa_core_->dcr_write(addr, value);
+  }
+#endif
+  for (auto& socket : sockets_) {
+    int ret = socket->dcr_write(addr, value);
+    if (ret != 0)
+      return ret;
+  }
+  return 0;
+}
+
+int Cluster::dcr_read(uint32_t addr, uint32_t tag, uint32_t* value) {
+  for (auto& socket : sockets_) {
+    int ret = socket->dcr_read(addr, tag, value);
+    if (ret != 0)
+      return ret;
+  }
+  return 0;
 }

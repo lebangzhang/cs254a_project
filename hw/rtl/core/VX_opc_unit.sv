@@ -139,6 +139,7 @@ module VX_opc_unit import VX_gpu_pkg::*; #(
         .req_wr_data  (writeback_if.data.data)
     );
 
+
     // output buffer
     VX_elastic_buffer #(
         .DATAW   (OUT_DATAW),
@@ -159,10 +160,12 @@ module VX_opc_unit import VX_gpu_pkg::*; #(
             operands_if.data.tmask,
             operands_if.data.PC,
             operands_if.data.wb,
+            operands_if.data.wr_xregs,
             operands_if.data.ex_type,
             operands_if.data.op_type,
             operands_if.data.op_args,
             operands_if.data.rd,
+            operands_if.data.bytesel,
             operands_if.data.rs3_data,
             operands_if.data.rs2_data,
             operands_if.data.rs1_data,

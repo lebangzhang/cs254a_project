@@ -1,11 +1,32 @@
 #!/usr/bin/env python3
+<<<<<<< HEAD
+=======
+
+# Copyright © 2019-2023
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+>>>>>>> upstream/bug_fixes
 import sys
 import re
 import os
 import argparse
 
 # =============================================================================
+<<<<<<< HEAD
 # CONFIGURATION: Port Mappings for SAED14 SRAMs
+=======
+# CONFIGURATION: Port Mappings
+>>>>>>> upstream/bug_fixes
 # =============================================================================
 PINS = {
     "CLK": "CE",
@@ -21,6 +42,7 @@ def parse_lib_file(lib_path):
     """Scans a Synopsys .lib file for memory cells."""
     print(f"[Auto-Mem] Scanning library: {lib_path}")
 
+<<<<<<< HEAD
     # 1. generic_regex: Matches ANY cell definition to debug what is in the file
     #    Looks for: cell ( NAME )
     generic_regex = re.compile(r"^\s*cell\s*\(\s*(\w+)\s*\)")
@@ -32,6 +54,20 @@ def parse_lib_file(lib_path):
     #    Group 3: Depth
     #    Group 4: Width
     sram_regex = re.compile(r"(\w*(1rw|2rw)(\d+)x(\d+)\w*)", re.IGNORECASE)
+=======
+    # 1. Generic Match: Finds any cell to help with debugging
+    generic_regex = re.compile(r"^\s*cell\s*\(\s*(\w+)\s*\)")
+
+    # 2. Standard Regex (SAED14 / Generic)
+    #    Matches: SRAM1RW1024x32, ram_2rw_128x64
+    #    Expects explicit '1rw' or '2rw' in the name
+    std_regex = re.compile(r"(\w*(1rw|2rw)(\d+)x(\d+)\w*)", re.IGNORECASE)
+
+    # 3. ASAP7 Regex (Banked Format)
+    #    Matches: srambank_128x4x32_6t122
+    #    Format: srambank_<ROWS>x<BANKS>x<WIDTH>_<TECH>
+    asap7_regex = re.compile(r"srambank_(\d+)x(\d+)x(\d+)_\w*", re.IGNORECASE)
+>>>>>>> upstream/bug_fixes
 
     memories = []
     cell_count = 0
@@ -45,6 +81,7 @@ def parse_lib_file(lib_path):
                     cell_name = gen_match.group(1)
                     cell_count += 1
 
+<<<<<<< HEAD
                     # Check if it is an SRAM
                     sram_match = sram_regex.search(cell_name)
                     if sram_match:
@@ -58,6 +95,36 @@ def parse_lib_file(lib_path):
                         # Print first 5 non-matching cells to help debug
                         if cell_count <= 5:
                             print(f"[Debug] Found non-SRAM cell: {cell_name}")
+=======
+                    # --- Check 1: Standard Format ---
+                    std_match = std_regex.search(cell_name)
+                    if std_match:
+                        memories.append({
+                            "name":  std_match.group(1),
+                            "type":  std_match.group(2).upper(),
+                            "depth": int(std_match.group(3)),
+                            "width": int(std_match.group(4))
+                        })
+                        continue
+
+                    # --- Check 2: ASAP7 Banked Format ---
+                    asap_match = asap7_regex.search(cell_name)
+                    if asap_match:
+                        rows  = int(asap_match.group(1))
+                        banks = int(asap_match.group(2))
+                        width = int(asap_match.group(3))
+                        memories.append({
+                            "name":  cell_name,
+                            "type":  "1RW",  # ASAP7 'srambank' is typically Single Port (6T)
+                            "depth": rows * banks, # Total Depth = Rows * Banks
+                            "width": width
+                        })
+                        continue
+
+                    # Debug output for first few misses
+                    if cell_count <= 5:
+                        print(f"[Debug] Found non-SRAM cell: {cell_name}")
+>>>>>>> upstream/bug_fixes
 
     except FileNotFoundError:
         print(f"[Error] Library file not found: {lib_path}")
@@ -67,14 +134,29 @@ def parse_lib_file(lib_path):
     print(f"[Auto-Mem] Identified {len(memories)} valid SRAM macros.")
 
     if len(memories) == 0 and cell_count > 0:
+<<<<<<< HEAD
         print("[Error] Cells were found, but none matched the SRAM naming convention (e.g. SRAM1RW... or ram_1rw...).")
         print("Please check the '[Debug]' output above to see the actual cell names.")
+=======
+        print("[Error] Cells were found, but none matched the known SRAM naming conventions.")
+        print("Standard: SRAM1RW1024x32")
+        print("ASAP7:    srambank_128x4x32_...")
+        print("Please check the '[Debug]' output above to see the actual cell names.")
+        sys.exit(1)
+>>>>>>> upstream/bug_fixes
 
     return memories
 
 def generate_sp_wrapper(memories, output_dir):
     filename = os.path.join(output_dir, "VX_sp_ram_asic.v")
+<<<<<<< HEAD
     sp_mems = [m for m in memories if m['type'] == '1RW']
+=======
+    # Filter for 1RW memories
+    sp_mems = [m for m in memories if m['type'] == '1RW']
+
+    # Sort for deterministic output
+>>>>>>> upstream/bug_fixes
     sp_mems.sort(key=lambda x: (x['width'], x['depth']))
 
     with open(filename, 'w') as f:
@@ -107,9 +189,16 @@ module VX_sp_ram_asic #(
             prefix = "if" if first else "else if"
             first = False
 
+<<<<<<< HEAD
             phy_addr_w = max(1, (m['depth'] - 1).bit_length())
 
             # Explicit string concatenation
+=======
+            # Calculate physical address width required by the macro
+            phy_addr_w = max(1, (m['depth'] - 1).bit_length())
+
+            # Verilog string construction for padding logic
+>>>>>>> upstream/bug_fixes
             pad_calc = f"{phy_addr_w} - ADDRW"
             pad_expr = "{ {" + pad_calc + "{1'b0}}, addr }"
 
@@ -117,7 +206,11 @@ module VX_sp_ram_asic #(
         {prefix} (DATAW == {m['width']} && SIZE <= {m['depth']}) begin : g_{m['name']}
             wire [{phy_addr_w-1}:0] internal_addr;
 
+<<<<<<< HEAD
             // If requested size is smaller than physical macro, pad MSBs with 0
+=======
+            // Address Padding: Match RTL address width to Physical Macro width
+>>>>>>> upstream/bug_fixes
             assign internal_addr = (ADDRW < {phy_addr_w}) ?
                                    {pad_expr} :
                                    addr[{phy_addr_w-1}:0];
@@ -134,11 +227,14 @@ module VX_sp_ram_asic #(
         end""")
 
         f.write("""
+<<<<<<< HEAD
         else begin
             initial begin
                 $error("No suitable Single Port SRAM found for W=%d D=%d", DATAW, SIZE);
             end
         end
+=======
+>>>>>>> upstream/bug_fixes
     endgenerate
 endmodule
 """)
@@ -212,11 +308,14 @@ module VX_dp_ram_asic #(
         end""")
 
         f.write("""
+<<<<<<< HEAD
         else begin
             initial begin
                 $error("No suitable Dual Port SRAM found for W=%d D=%d", DATAW, SIZE);
             end
         end
+=======
+>>>>>>> upstream/bug_fixes
     endgenerate
 endmodule
 """)
@@ -238,4 +337,8 @@ if __name__ == "__main__":
         sys.exit(1)
 
     generate_sp_wrapper(mems, args.out_dir)
+<<<<<<< HEAD
     generate_dp_wrapper(mems, args.out_dir)
+=======
+    generate_dp_wrapper(mems, args.out_dir)
+>>>>>>> upstream/bug_fixes

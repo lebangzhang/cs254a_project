@@ -169,14 +169,26 @@ extern int vx_dev_init(callbacks_t* callbacks) {
     return device->download(host_ptr, buffer->addr + src_offset, size);
   };
 
-  callbacks->start = [](vx_device_h hdevice, vx_buffer_h hkernel, vx_buffer_h harguments) {
+  callbacks->start_wg = [](vx_device_h hdevice, vx_buffer_h hkernel, vx_buffer_h harguments,
+    uint32_t dimension, const uint32_t* grid_dim, const uint32_t * block_dim, uint32_t lmem_size) {
     if (nullptr == hdevice || nullptr == hkernel || nullptr == harguments)
       return -1;
-    DBGPRINT("START: hdevice=%p, hkernel=%p, harguments=%p\n", hdevice, hkernel, harguments);
+    DBGPRINT("START_WG: hdevice=%p, hkernel=%p, harguments=%p, dimension=%d", hdevice, hkernel, harguments, dimension);
+    for (uint32_t i = 0; i < dimension; ++i) {
+      DBGPRINT(", grid_dim[%d]=%d", i, grid_dim[i]);
+    }
+    if (block_dim) {
+      for (uint32_t i = 0; i < dimension; ++i) {
+        DBGPRINT(", block_dim[%d]=%d", i, block_dim[i]);
+      }
+    } else {
+      DBGPRINT("%s", ", block_dim=null");
+    }
+    DBGPRINT(", lmem_size=%d\n", lmem_size);
     auto device = ((vx_device*)hdevice);
     auto kernel = ((vx_buffer*)hkernel);
     auto arguments = ((vx_buffer*)harguments);
-    return device->start(kernel->addr, arguments->addr);
+    return device->start_wg(kernel->addr, arguments->addr, dimension, grid_dim, block_dim, lmem_size);
   };
 
   callbacks->ready_wait = [](vx_device_h hdevice, uint64_t timeout) {
@@ -187,15 +199,15 @@ extern int vx_dev_init(callbacks_t* callbacks) {
     return device->ready_wait(timeout);
   };
 
-  callbacks->dcr_read = [](vx_device_h hdevice, uint32_t addr, uint32_t* value) {
+  callbacks->dcr_read = [](vx_device_h hdevice, uint32_t addr, uint32_t tag, uint32_t* value) {
     if (nullptr == hdevice || NULL == value)
       return -1;
     auto device = ((vx_device*)hdevice);
     uint32_t _value;
-    CHECK_ERR(device->dcr_read(addr, &_value), {
+    CHECK_ERR(device->dcr_read(addr, tag, &_value), {
       return err;
     });
-    DBGPRINT("DCR_READ: hdevice=%p, addr=0x%x, value=0x%x\n", hdevice, addr, _value);
+    DBGPRINT("DCR_READ: hdevice=%p, addr=0x%x, tag=0x%x, value=0x%x\n", hdevice, addr, tag, _value);
     *value = _value;
     return 0;
   };
@@ -206,19 +218,6 @@ extern int vx_dev_init(callbacks_t* callbacks) {
     DBGPRINT("DCR_WRITE: hdevice=%p, addr=0x%x, value=0x%x\n", hdevice, addr, value);
     auto device = ((vx_device*)hdevice);
     return device->dcr_write(addr, value);
-  };
-
-  callbacks->mpm_query = [](vx_device_h hdevice, uint32_t addr, uint32_t core_id, uint64_t* value) {
-    if (nullptr == hdevice)
-      return -1;
-    auto device = ((vx_device*)hdevice);
-    uint64_t _value;
-    CHECK_ERR(device->mpm_query(addr, core_id, &_value), {
-      return err;
-    });
-    DBGPRINT("MPM_QUERY: hdevice=%p, addr=0x%x, core_id=%d, value=0x%lx\n", hdevice, addr, core_id, _value);
-    *value = _value;
-    return 0;
   };
 
   return 0;

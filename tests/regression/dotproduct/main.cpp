@@ -134,8 +134,11 @@ int main(int argc, char *argv[]) {
   std::cout << "data type: " << Comparator<TYPE>::type_str() << std::endl;
   std::cout << "buffer size: " << buf_size << " bytes" << std::endl;
 
-  const uint32_t threadsPerBlock = 8;
-  const uint32_t blocksPerGrid = (num_points+threadsPerBlock-1) / threadsPerBlock;
+  uint32_t threadsPerBlock = 16;
+  uint32_t blocksPerGrid = (num_points+threadsPerBlock-1) / threadsPerBlock;
+
+  std::cout << "threads per block: " << threadsPerBlock << std::endl;
+  std::cout << "blocks per grid: " << blocksPerGrid << std::endl;
 
   kernel_arg.num_points = num_points;
   kernel_arg.block_dim[0] = threadsPerBlock;
@@ -196,18 +199,23 @@ int main(int argc, char *argv[]) {
 
   // verify result
   std::cout << "verify result" << std::endl;
+
   int errors = 0;
   TYPE ref = 0;
   TYPE cur = 0;
+
   for (uint32_t i = 0; i < num_points; ++i) {
     ref += h_src0[i] * h_src1[i];
   }
-  for(uint32_t i = 0; i < blocksPerGrid; i++)
+
+  for(uint32_t i = 0; i < blocksPerGrid; i++) {
     cur += h_dst[i];
+  }
 
   if (!Comparator<TYPE>::compare(cur, ref, 0, errors)) {
     ++errors;
   }
+  
   // cleanup
   std::cout << "cleanup" << std::endl;
   cleanup();

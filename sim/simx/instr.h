@@ -138,7 +138,9 @@ public:
 
   Instr(uint64_t uuid, FUType fu_type = FUType::ALU)
     : uuid_(uuid)
+    , parent_uuid_(uuid)
     , fu_type_(fu_type)
+    , is_uop_(false)
   {}
 
   void setFUType(FUType fu_type) {
@@ -153,12 +155,22 @@ public:
     args_ = static_cast<T>(args);
   }
 
+  void setTmask(const ThreadMask& tmask) {
+    tmask_ = tmask;
+    has_tmask_ = true;
+  }
+
   void setDestReg(uint32_t destReg, RegType type) {
     rdest_ = {type, destReg };
   }
 
   void setSrcReg(uint32_t index, uint32_t srcReg, RegType type) {
     rsrc_[index] = { type, srcReg};
+  }
+
+  void setParentUUID(uint64_t parent_uuid) {
+    parent_uuid_ = parent_uuid;
+    is_uop_ = true;
   }
 
   FUType getFUType() const { return fu_type_; }
@@ -173,14 +185,32 @@ public:
 
   uint64_t getUUID() const { return uuid_; }
 
+  uint64_t getParentUUID() const { return parent_uuid_; }
+
+  bool is_uop() const {
+    return is_uop_;
+  }
+
+  bool hasTmask() const {
+    return has_tmask_;
+  }
+
+  const ThreadMask& getTmask() const {
+    return tmask_;
+  }
+
 private:
 
   uint64_t uuid_;
+  uint64_t parent_uuid_;
   FUType   fu_type_;
   OpType   op_type_;
   IntrArgs args_;
   RegOpd   rsrc_[MAX_REG_SOURCES];
   RegOpd   rdest_;
+  bool     is_uop_;
+  ThreadMask tmask_;
+  bool     has_tmask_ = false;
 
   friend std::ostream &operator<<(std::ostream &, const Instr &);
 };

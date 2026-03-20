@@ -132,8 +132,8 @@ sv2v()
 yosys()
 {
     case $OSVERSION in
-    "centos/7") parts=$(eval echo {a..c}) ;;
-    *)          parts=$(eval echo {a..c}) ;;
+    "centos/7") parts=$(eval echo {a..a}) ;;
+    *)          parts=$(eval echo {a..a}) ;;
     esac
     echo $parts
     rm -f yosys.tar.bz2.parta*
@@ -144,13 +144,21 @@ yosys()
     cat yosys.tar.bz2.parta* > yosys.tar.bz2
     tar -xvf yosys.tar.bz2
     mkdir -p $TOOLDIR && rm -rf $TOOLDIR/yosys && mv yosys $TOOLDIR
-    rm -rf yosys yosys.tar.bz2* yosys
+    rm -rf yosys yosys.tar.bz2*
+}
+
+sta()
+{
+    wget $REPOSITORY/sta/$OSVERSION/sta.tar.bz2
+    tar -xvf sta.tar.bz2
+    mkdir -p $TOOLDIR && rm -rf $TOOLDIR/sta && mv sta $TOOLDIR
+    rm -rf sta sta.tar.bz2
 }
 
 show_usage()
 {
     echo "Install Pre-built Vortex Toolchain"
-    echo "Usage: $0 [--pocl] [--verilator] [--riscv32] [--riscv64] [--llvm] [--libcrt32] [--libcrt64] [--libc32] [--libc64] [--sv2v] [--yosys] [--all] [-h|--help]"
+    echo "Usage: $0 [--pocl] [--verilator] [--riscv32] [--riscv64] [--llvm] [--libcrt32] [--libcrt64] [--libc32] [--libc64] [--sv2v] [--yosys] [--sta] [--all] [-h|--help]"
 }
 
 while [ "$1" != "" ]; do
@@ -177,6 +185,8 @@ while [ "$1" != "" ]; do
                 ;;
         --yosys ) yosys
                 ;;
+        --sta ) sta
+                ;;
         --all ) pocl
                 verilator
                 llvm
@@ -188,6 +198,7 @@ while [ "$1" != "" ]; do
                 riscv64
                 sv2v
                 yosys
+                sta
                 ;;
         -h | --help ) show_usage
                 exit

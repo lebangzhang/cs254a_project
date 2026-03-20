@@ -66,9 +66,8 @@ module VX_afu_wrap import VX_gpu_pkg::*; #(
 
 	typedef enum logic [1:0] {
 		STATE_IDLE = 0,
-		STATE_INIT = 1,
-    	STATE_RUN  = 2,
-		STATE_DONE = 3
+    	STATE_RUN  = 1,
+		STATE_DONE = 2
 	} state_e;
 
 	localparam PENDING_WR_SIZEW    = 12; // max outstanding requests size
@@ -111,14 +110,19 @@ module VX_afu_wrap import VX_gpu_pkg::*; #(
 	`MP_REPEAT (`PLATFORM_MEMORY_NUM_BANKS, AXI_MEM_TO_ARRAY, MP_SEMI);
 `endif
 
-	reg [`CLOG2(`RESET_DELAY+1)-1:0] vx_reset_ctr;
+	reg [`RESET_DELAY-1:0] vx_reset_shift_r;
 	reg [PENDING_WR_SIZEW-1:0] vx_pending_writes;
-	reg vx_reset = 1; // asserted at initialization
+	reg vx_busy_wait;
+	wire vx_reset;
+	reg vx_start;
 	wire vx_busy;
 
-	wire                         dcr_wr_valid;
-	wire [VX_DCR_ADDR_WIDTH-1:0] dcr_wr_addr;
-	wire [VX_DCR_DATA_WIDTH-1:0] dcr_wr_data;
+	wire                         dcr_req_valid;
+	wire                         dcr_req_rw;
+	wire [VX_DCR_ADDR_WIDTH-1:0] dcr_req_addr;
+	wire [VX_DCR_DATA_WIDTH-1:0] dcr_req_data;
+	wire                         dcr_rsp_valid;
+	wire [VX_DCR_DATA_WIDTH-1:0] dcr_rsp_data;
 
 	state_e state;
 
@@ -137,48 +141,53 @@ module VX_afu_wrap import VX_gpu_pkg::*; #(
   	wire scope_reset = reset;
 `endif
 
+    initial begin
+        vx_reset_shift_r = {`RESET_DELAY{1'b1}};
+// asserted at initialization
+    end
+    assign vx_reset = vx_reset_shift_r[`RESET_DELAY-1];
+
 	always @(posedge clk) begin
 		if (reset || ap_reset) begin
-			state    <= STATE_IDLE;
-			vx_reset <= 1;
+			vx_reset_shift_r <= {`RESET_DELAY{1'b1}};
+		end else begin
+			vx_reset_shift_r <= {vx_reset_shift_r[`RESET_DELAY-2:0], 1'b0};
+		end
+
+		if (reset || ap_reset) begin
+			state        <= STATE_IDLE;
+			vx_start     <= 0;
+			vx_busy_wait <= 0;
 		end else begin
 			case (state)
 			STATE_IDLE: begin
-				if (ap_start) begin
+				if (ap_start && !vx_reset) begin
 				`ifdef DBG_TRACE_AFU
-					`TRACE(2, ("%t: AFU: Begin initialization\n", $time))
+					`TRACE(2, ("%t: AFU: Goto STATE_RUN\n", $time))
 				`endif
-					state <= STATE_INIT;
-					vx_reset_ctr <= (`RESET_DELAY-1);
-					vx_reset <= 1;
+					state        <= STATE_RUN;
+					vx_start     <= 1;
+					vx_busy_wait <= 1;
 				end
 			end
-			STATE_INIT: begin
-				if (vx_reset) begin
-					// wait for reset to complete
-					if (vx_reset_ctr == 0) begin
-					`ifdef DBG_TRACE_AFU
-						`TRACE(2, ("%t: AFU: Initialization completed\n", $time))
-					`endif
-						vx_reset <= 0;
-					end
-				end else begin
+			STATE_RUN: begin
+				vx_start <= 0;
+				if (vx_busy_wait) begin
 					// wait until processor goes busy
 					if (vx_busy) begin
 					`ifdef DBG_TRACE_AFU
 						`TRACE(2, ("%t: AFU: Begin execution\n", $time))
 					`endif
-						state <= STATE_RUN;
+						vx_busy_wait <= 0;
 					end
-				end
-			end
-			STATE_RUN: begin
-				// wait until the processor is not busy
-				if (~vx_busy) begin
-				`ifdef DBG_TRACE_AFU
-					`TRACE(2, ("%t: AFU: Execution completed\n", $time))
-				`endif
-					state <= STATE_DONE;
+				end else begin
+					// wait until the processor is not busy
+					if (~vx_busy) begin
+					`ifdef DBG_TRACE_AFU
+						`TRACE(2, ("%t: AFU: Execution completed\n", $time))
+					`endif
+						state <= STATE_DONE;
+					end
 				end
 			end
 			STATE_DONE: begin
@@ -190,12 +199,9 @@ module VX_afu_wrap import VX_gpu_pkg::*; #(
 					state <= STATE_IDLE;
 				end
 			end
+			default:;
 			endcase
 
-			// ensure reset network initialization
-			if (vx_reset_ctr != '0) begin
-				vx_reset_ctr <= vx_reset_ctr - 1;
-			end
 		end
 	end
 
@@ -278,9 +284,12 @@ module VX_afu_wrap import VX_gpu_pkg::*; #(
 		.scope_bus_out  (scope_bus_in),
 	`endif
 
-		.dcr_wr_valid	(dcr_wr_valid),
-		.dcr_wr_addr	(dcr_wr_addr),
-		.dcr_wr_data	(dcr_wr_data)
+		.dcr_req_valid	(dcr_req_valid),
+		.dcr_req_rw		(dcr_req_rw),
+		.dcr_req_addr	(dcr_req_addr),
+		.dcr_req_data	(dcr_req_data),
+		.dcr_rsp_valid	(dcr_rsp_valid),
+		.dcr_rsp_data	(dcr_rsp_data)
 	);
 
 	wire [M_AXI_MEM_ADDR_WIDTH-1:0] m_axi_mem_awaddr_u [C_M_AXI_MEM_NUM_BANKS];
@@ -348,10 +357,14 @@ module VX_afu_wrap import VX_gpu_pkg::*; #(
 		.m_axi_rid    	(m_axi_mem_rid_a),
 		.m_axi_rresp	(m_axi_mem_rresp_a),
 
-		.dcr_wr_valid	(dcr_wr_valid),
-		.dcr_wr_addr	(dcr_wr_addr),
-		.dcr_wr_data	(dcr_wr_data),
+		.dcr_req_valid	(dcr_req_valid),
+		.dcr_req_rw		(dcr_req_rw),
+		.dcr_req_addr	(dcr_req_addr),
+		.dcr_req_data	(dcr_req_data),
+		.dcr_rsp_valid	(dcr_rsp_valid),
+		.dcr_rsp_data	(dcr_rsp_data),
 
+		.start          (vx_start),
 		.busy			(vx_busy)
 	);
 
@@ -385,14 +398,14 @@ module VX_afu_wrap import VX_gpu_pkg::*; #(
 			m_axi_mem_rvalid_a[0],
 			m_axi_mem_rready_a[0]
 		}, {
-			dcr_wr_valid,
+			dcr_req_valid,
 			m_axi_mem_awfire_0,
 			m_axi_mem_arfire_0,
 			m_axi_mem_wfire_0,
 			m_axi_mem_bfire_0
 		}, {
-			dcr_wr_addr,
-			dcr_wr_data,
+			dcr_req_addr,
+			dcr_req_data,
 			vx_pending_writes,
 			m_axi_mem_awaddr_u[0],
 			m_axi_mem_awid_a[0],
@@ -424,9 +437,9 @@ module VX_afu_wrap import VX_gpu_pkg::*; #(
         	vx_pending_writes,
 			vx_busy,
 			vx_reset,
-			dcr_wr_valid,
-			dcr_wr_addr,
-			dcr_wr_data
+			dcr_req_valid,
+			dcr_req_addr,
+			dcr_req_data
 		})
     );
 `endif

@@ -7,7 +7,7 @@
 #include <cmath>
 #include "common.h"
 
-#define FLOAT_ULP 10
+#define FLOAT_ULP 6
 
 #define RT_CHECK(_expr)                                         \
    do {                                                         \
@@ -171,15 +171,6 @@ int main(int argc, char *argv[]) {
     h_B[i] = Comparator<TYPE>::generate();
   }
 
-  // Transposition 
-  std::vector<TYPE> h_Bt(size_sq); 
-  // Transpose h_B into h_Bt
-  for (uint32_t row = 0; row < size; ++row) {
-    for (uint32_t col = 0; col < size; ++col) {
-        h_Bt[col * size + row] = h_B[row * size + col];
-    }
-  }
-
   // upload matrix A buffer
   {
     std::cout << "upload matrix A buffer" << std::endl;
@@ -189,7 +180,7 @@ int main(int argc, char *argv[]) {
   // upload matrix B buffer
   {
     std::cout << "upload matrix B buffer" << std::endl;
-    RT_CHECK(vx_copy_to_dev(B_buffer, h_Bt.data(), 0, buf_size));
+    RT_CHECK(vx_copy_to_dev(B_buffer, h_B.data(), 0, buf_size));
   }
 
   // Upload kernel binary
@@ -204,7 +195,7 @@ int main(int argc, char *argv[]) {
 
   // start device
   std::cout << "start device" << std::endl;
-  RT_CHECK(vx_start(device, krnl_buffer, args_buffer));
+  RT_CHECK(vx_start_wg(device, krnl_buffer, args_buffer, 2, kernel_arg.grid_dim, nullptr, 0));
 
   // wait for completion
   std::cout << "wait for completion" << std::endl;

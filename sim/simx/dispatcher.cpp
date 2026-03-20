@@ -16,10 +16,10 @@
 
 using namespace vortex;
 
-Dispatcher::Dispatcher(const SimContext& ctx, Core* core, uint32_t buf_size, uint32_t block_size, uint32_t num_lanes)
-  : SimObject<Dispatcher>(ctx, "dispatcher")
-  , Outputs(ISSUE_WIDTH, this)
+Dispatcher::Dispatcher(const SimContext& ctx, const char* name, Core* core, uint32_t buf_size, uint32_t block_size, uint32_t num_lanes)
+  : SimObject<Dispatcher>(ctx, name)
   , Inputs(ISSUE_WIDTH, this)
+  , Outputs(ISSUE_WIDTH, this)
   , arch_(core->arch())
   , core_(core)
   , buf_size_(buf_size)
@@ -50,8 +50,13 @@ void Dispatcher::tick() {
       ++block_sent;
       continue;
     }
+
+    // check output buffer capacity
     auto& output = Outputs.at(i);
-    auto trace = input.front();
+    if (output.full())
+      continue;
+
+    auto trace = input.peek();
 
     // check if trace should be split
     auto new_trace = trace;
@@ -97,8 +102,8 @@ void Dispatcher::tick() {
       input.pop();
       ++block_sent;
     }
-    DT(3, "pipeline-dispatch: " << *new_trace);
-    output.push(new_trace, 1);
+    DT(3, this->name() << "-pipeline dispatch: " << *new_trace);
+    output.send(new_trace, 1);
   }
 
   // we move to the next batch only when all blocks in current batch have been processed

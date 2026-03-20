@@ -16,20 +16,22 @@
 
 using namespace vortex;
 
-Operands::Operands(const SimContext &ctx, Core* /*core*/)
-    : SimObject<Operands>(ctx, "operands")
+Operands::Operands(const SimContext &ctx, const char* name, Core* /*core*/)
+    : SimObject<Operands>(ctx, name)
     , Input(this)
     , Output(this)
     , opc_units_(NUM_OPCS) {
   static_assert(NUM_OPCS <= PER_ISSUE_WARPS, "invalid NUM_OPCS value");
+  char sname[100];
   // create OPC units
   for (uint32_t i = 0; i < NUM_OPCS; i++) {
-    opc_units_.at(i) = OpcUnit::Create();
+    snprintf(sname, 100, "%s-opc%d", name, i);
+    opc_units_.at(i) = OpcUnit::Create(sname);
   }
 
   if (NUM_OPCS >= 2) {
     char sname[100];
-    snprintf(sname, 100, "%s-rsp_arb", this->name().c_str());
+    snprintf(sname, 100, "%s-rsp_arb", name);
     rsp_arb_ = TraceArbiter::Create(sname, ArbiterType::RoundRobin, NUM_OPCS, 1);
     for (uint32_t i = 0; i < NUM_OPCS; ++i) {
       opc_units_.at(i)->Output.bind(&rsp_arb_->Inputs.at(i));
@@ -57,12 +59,13 @@ void Operands::tick() {
   // process requests
   if (Input.empty())
     return;
-  auto trace = this->Input.front();
+  auto trace = this->Input.peek();
   for (uint32_t i = 0; i < NUM_OPCS; i++) {
     uint32_t wis = trace->wid / ISSUE_WIDTH;
     uint32_t index = wis % NUM_OPCS;
-    opc_units_.at(index)->Input.push(trace);
-    Input.pop();
+    if (opc_units_.at(index)->Input.try_send(trace)) {
+      Input.pop();
+    }
     break;
   }
 }

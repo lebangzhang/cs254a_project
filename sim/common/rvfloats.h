@@ -88,15 +88,40 @@ bool rv_feq_d(uint64_t a, uint64_t b, uint32_t* fflags);
 uint64_t rv_fmin_d(uint64_t a, uint64_t b, uint32_t* fflags);
 uint64_t rv_fmax_d(uint64_t a, uint64_t b, uint32_t* fflags);
 
-uint32_t rv_dtof(uint64_t a);
-uint32_t rv_dtof_r(uint64_t a, uint32_t frm);
-uint64_t rv_ftod(uint32_t a);
+uint32_t rv_dtof(uint64_t a, uint32_t frm, uint32_t* fflags);
+uint64_t rv_ftod(uint32_t a, uint32_t frm, uint32_t* fflags);
 
+// fp16 <--> fp32 conversions
 uint32_t rv_htof_s(uint16_t a, uint32_t frm, uint32_t* fflags);
 uint16_t rv_ftoh_s(uint32_t a, uint32_t frm, uint32_t* fflags);
 
+// bf16 <--> fp32 conversions
 uint32_t rv_btof_s(uint16_t a, uint32_t frm, uint32_t* fflags);
 uint16_t rv_ftob_s(uint32_t a, uint32_t frm, uint32_t* fflags);
+
+// fp8_e4m3 <--> fp32 conversions
+uint32_t rv_e4m3tof_s(uint8_t a, uint32_t frm, uint32_t* fflags);
+uint8_t rv_ftoe4m3_s(uint32_t a, uint32_t frm, uint32_t* fflags);
+
+// fp8_e5m2 <--> fp32 conversions
+uint32_t rv_e5m2tof_s(uint8_t a, uint32_t frm, uint32_t* fflags);
+uint8_t rv_ftoe5m2_s(uint32_t a, uint32_t frm, uint32_t* fflags);
+
+// tf32 <--> fp32 conversions
+uint32_t rv_tf32tof_s(uint32_t a, uint32_t frm, uint32_t* fflags);
+uint32_t rv_ftotf32_s(uint32_t a, uint32_t frm, uint32_t* fflags);
+
+// mxfp8 <--> fp32 conversions
+uint32_t rv_mxfp8tof_s(uint8_t a, uint8_t sf, uint32_t frm, uint32_t* fflags);
+uint8_t rv_ftomxfp8_s(uint32_t a, uint8_t sf, uint32_t frm, uint32_t* fflags);
+
+// nvfp4 <--> fp32 conversions
+uint32_t rv_nvfp4tof_s(uint8_t a, uint8_t sf, uint32_t frm, uint32_t* fflags);
+uint8_t rv_ftonvfp4_s(uint32_t a, uint8_t sf, uint32_t frm, uint32_t* fflags);
+
+// e2m1 <--> fp32 conversions
+uint32_t rv_e2m1tof_s(uint8_t a, uint32_t frm, uint32_t* fflags);
+uint8_t rv_ftoe2m1_s(uint32_t a, uint32_t frm, uint32_t* fflags);
 
 #ifdef __cplusplus
 }

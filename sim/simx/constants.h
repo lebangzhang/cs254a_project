@@ -21,8 +21,23 @@
 #endif
 
 #ifndef MEM_CLOCK_RATIO
-#define MEM_CLOCK_RATIO   1
+#define MEM_CLOCK_RATIO   1.5
 #endif
+
+#ifndef __MAX
+#define __MAX(a,b) (((a) > (b)) ? (a) : (b))
+#endif
+
+#ifndef __UP
+#define __UP(x) (((x) != 0) ? (x) : 1)
+#endif
+
+#define VX_DCR_BASE_STATE(addr)   ((addr) - VX_DCR_BASE_STATE_BEGIN)
+#define VX_DCR_BASE_STATE_COUNT   (VX_DCR_BASE_STATE_END-VX_DCR_BASE_STATE_BEGIN)
+
+#define VX_DCR_DXA_DESC_SLOT(addr) (((addr) - VX_DCR_DXA_DESC_BASE) / VX_DCR_DXA_DESC_STRIDE)
+#define VX_DCR_DXA_DESC_WORD(addr) (((addr) - VX_DCR_DXA_DESC_BASE) % VX_DCR_DXA_DESC_STRIDE)
+#define VX_DCR_DXA_STATE_COUNT     (VX_DCR_DXA_STATE_END - VX_DCR_DXA_STATE_BEGIN)
 
 namespace vortex {
 
@@ -41,10 +56,10 @@ inline constexpr uint32_t LSU_NUM_REQS	  = (NUM_LSU_BLOCKS * LSU_CHANNELS);
 
 // The dcache uses coalesced memory blocks
 inline constexpr uint32_t DCACHE_WORD_SIZE= LSU_LINE_SIZE;
-inline constexpr uint32_t DCACHE_CHANNELS = UP((NUM_LSU_LANES * XLENB) / DCACHE_WORD_SIZE);
+inline constexpr uint32_t DCACHE_CHANNELS = __UP((NUM_LSU_LANES * XLENB) / DCACHE_WORD_SIZE);
 inline constexpr uint32_t DCACHE_NUM_REQS	= (NUM_LSU_BLOCKS * DCACHE_CHANNELS);
 
-inline constexpr uint32_t NUM_SOCKETS     = UP(NUM_CORES / SOCKET_SIZE);
+inline constexpr uint32_t NUM_SOCKETS     = __UP(NUM_CORES / SOCKET_SIZE);
 
 inline constexpr uint32_t L2_NUM_REQS     = NUM_SOCKETS * L1_MEM_PORTS;
 inline constexpr uint32_t L3_NUM_REQS     = NUM_CLUSTERS * L2_MEM_PORTS;

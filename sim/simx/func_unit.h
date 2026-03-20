@@ -23,10 +23,10 @@ class Core;
 
 class FuncUnit : public SimObject<FuncUnit> {
 public:
-	std::vector<SimPort<instr_trace_t*>> Inputs;
-	std::vector<SimPort<instr_trace_t*>> Outputs;
+	std::vector<SimChannel<instr_trace_t*>> Inputs;
+	std::vector<SimChannel<instr_trace_t*>> Outputs;
 
-	FuncUnit(const SimContext& ctx, Core* core, const char* name)
+	FuncUnit(const SimContext& ctx, const char* name, Core* core)
 		: SimObject<FuncUnit>(ctx, name)
 		, Inputs(ISSUE_WIDTH, this)
 		, Outputs(ISSUE_WIDTH, this)
@@ -47,7 +47,7 @@ protected:
 
 class AluUnit : public FuncUnit {
 public:
-  AluUnit(const SimContext& ctx, Core*);
+  AluUnit(const SimContext& ctx, const char* name, Core*);
 
   void tick() override;
 };
@@ -56,7 +56,7 @@ public:
 
 class FpuUnit : public FuncUnit {
 public:
-  FpuUnit(const SimContext& ctx, Core*);
+  FpuUnit(const SimContext& ctx, const char* name, Core*);
 
   void tick() override;
 };
@@ -65,7 +65,7 @@ public:
 
 class LsuUnit : public FuncUnit {
 public:
-	LsuUnit(const SimContext& ctx, Core*);
+	LsuUnit(const SimContext& ctx, const char* name, Core*);
 	~LsuUnit();
 
 	void reset() override;
@@ -95,7 +95,7 @@ private:
 
 	std::array<lsu_state_t, NUM_LSU_BLOCKS> states_;
 	uint64_t pending_loads_;
-	std::vector<mem_addr_size_t> pending_addrs_;
+	std::vector<mem_addr_size_t> addr_list_;
 	uint32_t remain_addrs_;
 };
 
@@ -103,9 +103,23 @@ private:
 
 class SfuUnit : public FuncUnit {
 public:
-	SfuUnit(const SimContext& ctx, Core*);
+	SfuUnit(const SimContext& ctx, const char* name, Core*);
 
 	void tick() override;
+
+#ifdef EXT_DXA_ENABLE
+private:
+  struct dxa_runtime_t {
+    uint32_t desc_slot = 0;
+    uint32_t bar_id = 0;
+    uint32_t smem_addr = 0;
+    std::array<uint32_t, 5> coords = {0, 0, 0, 0, 0};
+  };
+
+  bool execute_dxa_op(instr_trace_t* trace, DxaType dxa_type, const DxaTraceData& dxa_data);
+
+  std::vector<dxa_runtime_t> dxa_runtime_;
+#endif
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -114,7 +128,7 @@ public:
 
 class TcuUnit : public FuncUnit {
 public:
-	TcuUnit(const SimContext& ctx, Core*);
+	TcuUnit(const SimContext& ctx, const char* name, Core*);
 
 	void tick() override;
 };
@@ -127,7 +141,7 @@ public:
 
 class VpuUnit : public FuncUnit {
 public:
-	VpuUnit(const SimContext& ctx, Core*);
+	VpuUnit(const SimContext& ctx, const char* name, Core*);
 
 	void tick() override;
 };

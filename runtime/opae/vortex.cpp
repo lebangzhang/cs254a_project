@@ -15,7 +15,7 @@
 
 #include "driver.h"
 
-#include <vortex_afu.h>
+#include <vortex_opae.h>
 
 #ifdef SCOPE
 #include "scope.h"
@@ -42,6 +42,7 @@ using namespace vortex;
 #define CMD_MEM_WRITE    AFU_IMAGE_CMD_MEM_WRITE
 #define CMD_RUN          AFU_IMAGE_CMD_RUN
 #define CMD_DCR_WRITE    AFU_IMAGE_CMD_DCR_WRITE
+#define CMD_DCR_READ     AFU_IMAGE_CMD_DCR_READ
 
 #define MMIO_CMD_TYPE    (AFU_IMAGE_MMIO_CMD_TYPE * 4)
 #define MMIO_CMD_ARG0    (AFU_IMAGE_MMIO_CMD_ARG0 * 4)
@@ -50,6 +51,7 @@ using namespace vortex;
 #define MMIO_STATUS      (AFU_IMAGE_MMIO_STATUS * 4)
 #define MMIO_DEV_CAPS    (AFU_IMAGE_MMIO_DEV_CAPS * 4)
 #define MMIO_ISA_CAPS    (AFU_IMAGE_MMIO_ISA_CAPS * 4)
+#define MMIO_DCR_RSP     (AFU_IMAGE_MMIO_DCR_RSP * 4)
 #define MMIO_SCOPE_READ  (AFU_IMAGE_MMIO_SCOPE_READ * 4)
 #define MMIO_SCOPE_WRITE (AFU_IMAGE_MMIO_SCOPE_WRITE * 4)
 
@@ -124,9 +126,7 @@ public:
     });
 
     // Add the desired UUID to the filter
-    std::string s_uuid(AFU_ACCEL_UUID);
-    std::replace(s_uuid.begin(), s_uuid.end(), '_', '-');
-    uuid_parse(s_uuid.c_str(), guid);
+    uuid_parse(AFU_ACCEL_UUID_S, guid);
     CHECK_FPGA_ERR(api_.fpgaPropertiesSetGUID(filter, guid), {
       api_.fpgaDestroyProperties(&filter);
       return -1;
@@ -145,7 +145,7 @@ public:
     });
 
     if (num_matches < 1) {
-      fprintf(stderr, "[VXDRV] Error: accelerator %s not found!\n", AFU_ACCEL_UUID);
+      fprintf(stderr, "[VXDRV] Error: accelerator %s not found!\n", AFU_ACCEL_UUID_S);
       api_.fpgaDestroyToken(&accel_token);
       return -1;
     }
@@ -211,13 +211,25 @@ public:
       _value = (dev_caps_ >> 0) & 0xff;
       break;
     case VX_CAPS_NUM_THREADS:
-      _value = (dev_caps_ >> 8) & 0xff;
+      _value = 1 << ((dev_caps_ >> 8) & 0x7);
       break;
     case VX_CAPS_NUM_WARPS:
-      _value = (dev_caps_ >> 16) & 0xff;
+      _value = 1 << ((dev_caps_ >> 11) & 0x7);
       break;
-    case VX_CAPS_NUM_CORES:
-      _value = (dev_caps_ >> 24) & 0xffff;
+    case VX_CAPS_NUM_CORES: {
+      uint32_t socket_size  = 1 << ((dev_caps_ >> 14) & 0x7);
+      uint32_t cluster_size = 1 << ((dev_caps_ >> 17) & 0x7);
+      uint32_t num_clusters = 1 << ((dev_caps_ >> 20) & 0x7);
+      _value = num_clusters * cluster_size * socket_size;
+    } break;
+    case VX_CAPS_SOCKET_SIZE:
+      _value = 1 << ((dev_caps_ >> 14) & 0x7);
+      break;
+    case VX_CAPS_NUM_CLUSTERS:
+      _value = 1 << ((dev_caps_ >> 20) & 0x7);
+      break;
+    case VX_CAPS_ISSUE_WIDTH:
+      _value = 1 << ((dev_caps_ >> 23) & 0x7);
       break;
     case VX_CAPS_CACHE_LINE_SIZE:
       _value = CACHE_BLOCK_SIZE;
@@ -226,16 +238,22 @@ public:
       _value = global_mem_size_;
       break;
     case VX_CAPS_LOCAL_MEM_SIZE:
-      _value = 1ull << ((dev_caps_ >> 40) & 0xff);
+      _value = 1ull << ((dev_caps_ >> 26) & 0xff);
       break;
     case VX_CAPS_ISA_FLAGS:
       _value = isa_caps_;
       break;
     case VX_CAPS_NUM_MEM_BANKS:
-      _value = 1 << ((dev_caps_ >> 48) & 0x7);
+      _value = 1 << ((dev_caps_ >> 34) & 0x7);
       break;
     case VX_CAPS_MEM_BANK_SIZE:
-      _value = 1ull << (20 + ((dev_caps_ >> 51) & 0x1f));
+      _value = 1ull << (20 + ((dev_caps_ >> 37) & 0x1f));
+      break;
+    case VX_CAPS_CLOCK_RATE:
+      _value = PLATFORM_CLOCK_RATE;
+      break;
+    case VX_CAPS_PEAK_MEM_BW:
+      _value = PLATFORM_MEMORY_PEAK_BW;
       break;
     default:
       fprintf(stderr, "[VXDRV] Error: invalid caps id: %d\n", caps_id);
@@ -345,6 +363,16 @@ public:
     if (dev_addr + asize > global_mem_size_)
       return -1;
 
+    // flush GPU caches before reading back results
+    {
+      uint64_t num_cores;
+      CHECK_ERR(this->get_caps(VX_CAPS_NUM_CORES, &num_cores), { return err; });
+      uint32_t dummy;
+      for (uint32_t cid = 0; cid < (uint32_t)num_cores; ++cid) {
+        CHECK_ERR(this->dcr_read(VX_DCR_BASE_CACHE_FLUSH, cid, &dummy), { return err; });
+      }
+    }
+
     // ensure ready for new command
     if (this->ready_wait(VX_MAX_TIMEOUT) != 0)
       return -1;
@@ -377,28 +405,36 @@ public:
     return 0;
   }
 
-  int start(uint64_t krnl_addr, uint64_t args_addr) {
-    // set kernel info
-    CHECK_ERR(this->dcr_write(VX_DCR_BASE_STARTUP_ADDR0, krnl_addr & 0xffffffff), {
-      return err;
-    });
-    CHECK_ERR(this->dcr_write(VX_DCR_BASE_STARTUP_ADDR1, krnl_addr >> 32), {
-      return err;
-    });
-    CHECK_ERR(this->dcr_write(VX_DCR_BASE_STARTUP_ARG0, args_addr & 0xffffffff), {
-      return err;
-    });
-    CHECK_ERR(this->dcr_write(VX_DCR_BASE_STARTUP_ARG1, args_addr >> 32), {
-      return err;
-    });
+  int start_wg(uint64_t krnl_addr, uint64_t args_addr, uint32_t dimension,
+               const uint32_t *grid_dim, const uint32_t *block_dim, uint32_t lmem_size) {
+    // setup kernel launch parameters
+    uint64_t threads_per_warp;
+    CHECK_ERR(this->get_caps(VX_CAPS_NUM_THREADS, &threads_per_warp), { return err; });
+    uint32_t block_size, warp_step_x, warp_step_y, warp_step_z;
+    prepare_kernel_launch_params(threads_per_warp, dimension, block_dim,
+        &block_size, &warp_step_x, &warp_step_y, &warp_step_z);
+
+    // configure kernel launch
+    CHECK_ERR(this->dcr_write(VX_DCR_KMU_STARTUP_ADDR0, krnl_addr & 0xffffffff), { return err; });
+    CHECK_ERR(this->dcr_write(VX_DCR_KMU_STARTUP_ADDR1, krnl_addr >> 32), { return err; });
+    CHECK_ERR(this->dcr_write(VX_DCR_KMU_STARTUP_ARG0, args_addr & 0xffffffff), { return err; });
+    CHECK_ERR(this->dcr_write(VX_DCR_KMU_STARTUP_ARG1, args_addr >> 32), { return err; });
+    uint32_t grid_regs[] = {VX_DCR_KMU_GRID_DIM_X, VX_DCR_KMU_GRID_DIM_Y, VX_DCR_KMU_GRID_DIM_Z};
+    uint32_t block_regs[] = {VX_DCR_KMU_BLOCK_DIM_X, VX_DCR_KMU_BLOCK_DIM_Y, VX_DCR_KMU_BLOCK_DIM_Z};
+    for (uint32_t i = 0; i < 3; ++i) {
+      CHECK_ERR(this->dcr_write(grid_regs[i], (i < dimension) ? grid_dim[i] : 1), { return err; });
+      CHECK_ERR(this->dcr_write(block_regs[i], (i < dimension && block_dim) ? block_dim[i] : 1), { return err; });
+    }
+    CHECK_ERR(this->dcr_write(VX_DCR_KMU_LMEM_SIZE, lmem_size), { return err; });
+    CHECK_ERR(this->dcr_write(VX_DCR_KMU_BLOCK_SIZE, block_size), { return err; });
+    CHECK_ERR(this->dcr_write(VX_DCR_KMU_WARP_STEP_X, warp_step_x), { return err; });
+    CHECK_ERR(this->dcr_write(VX_DCR_KMU_WARP_STEP_Y, warp_step_y), { return err; });
+    CHECK_ERR(this->dcr_write(VX_DCR_KMU_WARP_STEP_Z, warp_step_z), { return err; });
 
     // start execution
     CHECK_FPGA_ERR(api_.fpgaWriteMMIO64(fpga_, 0, MMIO_CMD_TYPE, CMD_RUN), {
       return -1;
     });
-
-    // clear mpm cache
-    mpm_cache_.clear();
 
     return 0;
   }
@@ -472,27 +508,31 @@ public:
     CHECK_FPGA_ERR(api_.fpgaWriteMMIO64(fpga_, 0, MMIO_CMD_TYPE, CMD_DCR_WRITE), {
       return -1;
     });
-    dcrs_.write(addr, value);
     return 0;
   }
 
-  int dcr_read(uint32_t addr, uint32_t * value) const {
-    return dcrs_.read(addr, value);
-  }
-
-  int mpm_query(uint32_t addr, uint32_t core_id, uint64_t * value) {
-    uint32_t offset = addr - VX_CSR_MPM_BASE;
-    if (offset > 31)
+  int dcr_read(uint32_t addr, uint32_t tag, uint32_t * value) {
+    CHECK_FPGA_ERR(api_.fpgaWriteMMIO64(fpga_, 0, MMIO_CMD_ARG0, addr), {
       return -1;
-    if (mpm_cache_.count(core_id) == 0) {
-      uint64_t mpm_mem_addr = IO_MPM_ADDR + core_id * 32 * sizeof(uint64_t);
-      CHECK_ERR(this->download(mpm_cache_[core_id].data(), mpm_mem_addr, 32 * sizeof(uint64_t)), {
-        return err;
-      });
-    }
-    *value = mpm_cache_.at(core_id).at(offset);
+    });
+    CHECK_FPGA_ERR(api_.fpgaWriteMMIO64(fpga_, 0, MMIO_CMD_ARG1, tag), {
+      return -1;
+    });
+    CHECK_FPGA_ERR(api_.fpgaWriteMMIO64(fpga_, 0, MMIO_CMD_TYPE, CMD_DCR_READ), {
+      return -1;
+    });
+    // ensure ready for new command
+    if (this->ready_wait(VX_MAX_TIMEOUT) != 0)
+      return -1;
+    // read back the captured DCR response
+    uint64_t rsp;
+    CHECK_FPGA_ERR(api_.fpgaReadMMIO64(fpga_, 0, MMIO_DCR_RSP, &rsp), {
+      return -1;
+    });
+    *value = (uint32_t)rsp;
     return 0;
   }
+
 
 private:
 
@@ -524,15 +564,13 @@ private:
   opae_drv_api_t api_;
   fpga_handle fpga_;
   MemoryAllocator global_mem_;
-  DeviceConfig dcrs_;
   uint64_t dev_caps_;
   uint64_t isa_caps_;
   uint64_t global_mem_size_;
   uint64_t staging_wsid_;
   uint64_t staging_ioaddr_;
-  uint8_t *staging_ptr_;
+  uint8_t* staging_ptr_;
   uint64_t staging_size_;
-  std::unordered_map<uint32_t, std::array<uint64_t, 32>> mpm_cache_;
 };
 
 #include <callbacks.inc>

@@ -1,3 +1,16 @@
+// Copyright © 2019-2023
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 #include "vec_unit.h"
 #include "core.h"
 #include "vec_ops.h"
@@ -50,7 +63,7 @@ public:
       if (input.empty())
         continue;
 
-      auto trace = input.front();
+      auto trace = input.peek();
       auto trace_data = std::dynamic_pointer_cast<ExeTraceData>(trace->data);
       auto vpu_op = trace_data->vpu_op;
 
@@ -89,11 +102,10 @@ public:
         std::abort();
       }
 
-      simobject_->Outputs.at(iw).push(trace, 2 + delay);
-
-      DT(3, simobject_->name() << ": op=" << vpu_op << ", " << *trace);
-
-      input.pop();
+      if (simobject_->Outputs.at(iw).try_send(trace, 2 + delay)) {
+        DT(3, simobject_->name() << " execute: op=" << vpu_op << ", " << *trace);
+        input.pop();
+      }
     }
   }
 
@@ -1601,13 +1613,17 @@ public:
       } break;
       case 52: { // vfwadd.wf
         vpu_op = VpuOpType::FMA;
-        uint64_t src1_d = rv_ftod(rs1_value);
-        vector_op_vix_wx<Fadd, uint8_t, uint16_t, uint32_t, uint64_t>(src1_d, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
+        uint32_t fflags = 0;
+        uint32_t frm = 0;
+        uint64_t src1_d = rv_ftod(rs1_value, frm, &fflags);
+        vector_op_vix_wx<Fadd, uint8_t, uint16_t, uint32_t, uint64_t>(src1_d, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
       } break;
       case 54: { // vfwsub.wf
         vpu_op = VpuOpType::FMA;
-        uint64_t src1_d = rv_ftod(rs1_value);
-        vector_op_vix_wx<Fsub, uint8_t, uint16_t, uint32_t, uint64_t>(src1_d, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
+        uint32_t fflags = 0;
+        uint32_t frm = 0;
+        uint64_t src1_d = rv_ftod(rs1_value, frm, &fflags);
+        vector_op_vix_wx<Fsub, uint8_t, uint16_t, uint32_t, uint64_t>(src1_d, vreg_file, rsrc1, rdest, states.vtype.vsew, states.vl, vmask);
       } break;
       case 56: { // vfwmul.vf
         vpu_op = VpuOpType::FMA;
@@ -1944,7 +1960,11 @@ VecUnit::VecUnit(const SimContext &ctx,
                  const char *name,
                  const Arch &arch,
                  Core *core)
-    : SimObject<VecUnit>(ctx, name), Inputs(ISSUE_WIDTH, this), Outputs(ISSUE_WIDTH, this), impl_(new Impl(this, arch, core)) {}
+  : SimObject<VecUnit>(ctx, name)
+  , Inputs(ISSUE_WIDTH, this)
+  , Outputs(ISSUE_WIDTH, this)
+  , impl_(new Impl(this, arch, core))
+{}
 
 VecUnit::~VecUnit() {
   delete impl_;

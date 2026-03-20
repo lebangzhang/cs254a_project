@@ -1,11 +1,12 @@
 #include "common.h"
-#include <vx_spawn.h>
+#include <vx_spawn2.h>
 #include <vx_tensor.h>
+#include <vx_intrinsics.h>
 
 namespace vt = vortex::tensor;
 using ctx = vt::wmma_context<NUM_THREADS, vt::ITYPE, vt::OTYPE>;
 
-void kernel_body(kernel_arg_t *__UNIFORM__ arg) {
+extern "C" void kernel_main(kernel_arg_t* __UNIFORM__ arg) {
   auto pA = reinterpret_cast<ctx::input_t *>(arg->A_addr);
   auto pB = reinterpret_cast<ctx::input_t *>(arg->B_addr);
   auto pC = reinterpret_cast<ctx::output_t *>(arg->C_addr);
@@ -48,9 +49,4 @@ void kernel_body(kernel_arg_t *__UNIFORM__ arg) {
   // Store the computed C tile
   auto pTileC = pC + tile_row * N + tile_col;
   ctx::store_matrix_sync(pTileC, fragC, N);
-}
-
-int main() {
-  auto arg = (kernel_arg_t *)csr_read(VX_CSR_MSCRATCH);
-  return vx_spawn_threads(2, arg->grid_dim, arg->block_dim, (vx_kernel_func_cb)kernel_body, arg);
 }

@@ -20,6 +20,7 @@
 #include <mem.h>
 #include "types.h"
 #include "instr.h"
+#include "cta_dispatcher.h"
 #ifdef EXT_TCU_ENABLE
 #include "tensor_unit.h"
 #endif
@@ -30,23 +31,45 @@
 namespace vortex {
 
 class Arch;
-class DCRS;
 class Core;
 class Instr;
 class instr_trace_t;
 
 struct ipdom_entry_t {
   ThreadMask  orig_tmask;
-  ThreadMask  else_tmask;
-  Word        PC;
+  Word        else_PC;
   bool        fallthrough;
 
-  ipdom_entry_t(const ThreadMask &orig_tmask, const ThreadMask &else_tmask, Word PC)
-    : orig_tmask (orig_tmask)
-    , else_tmask (else_tmask)
-    , PC         (PC)
+  ipdom_entry_t(const ThreadMask &tmask, Word PC)
+    : orig_tmask (tmask)
+    , else_PC    (PC)
     , fallthrough(false)
   {}
+};
+
+///////////////////////////////////////////////////////////////////////////////
+
+struct cta_csrs_t {
+  uint32_t cta_id;
+  uint32_t cta_rank;
+  uint32_t cta_size;
+  uint32_t thread_idx[3];
+  uint32_t block_idx[3];
+  uint32_t block_dim[3];
+  uint32_t grid_dim[3];
+  uint32_t lmem_addr;
+
+  cta_csrs_t()
+    : cta_id(0)
+    , cta_rank(0)
+    , cta_size(0)
+    , lmem_addr(0)
+  {
+    thread_idx[0] = thread_idx[1] = thread_idx[2] = 0;
+    block_idx[0]  = block_idx[1]  = block_idx[2]  = 0;
+    block_dim[0]  = block_dim[1]  = block_dim[2]  = 1;
+    grid_dim[0]   = grid_dim[1]   = grid_dim[2]   = 1;
+  }
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -61,9 +84,15 @@ struct warp_t {
   Byte                              fcsr;
   uint32_t                          uuid;
 
+  // Per-warp MSCRATCH (holds kernel arg pointer, set at CTA dispatch)
+  Word                              mscratch;
+
+  // CTA CSR values set at dispatch time
+  cta_csrs_t                        cta_csrs;
+
   warp_t(uint32_t num_threads);
 
-  void reset(uint64_t startup_addr);
+  void reset();
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -78,7 +107,7 @@ struct wspawn_t {
 
 class Emulator {
 public:
-  Emulator(const Arch &arch, const DCRS &dcrs, Core* core);
+  Emulator(const Arch &arch, Core* core);
 
   ~Emulator();
 
@@ -98,9 +127,19 @@ public:
 
   void resume(uint32_t wid);
 
-  bool barrier(uint32_t bar_id, uint32_t count, uint32_t wid);
+  void barrier_arrive(uint32_t bar_id, uint32_t count, uint32_t wid, bool is_sync_bar);
+
+  bool barrier_wait(uint32_t bar_id, uint32_t phase, uint32_t wid);
+
+  void global_barrier_resume(uint32_t bar_id);
+
+  void barrier_event_attach(uint32_t bar_id);
+
+  void barrier_event_release(uint32_t bar_id);
 
   bool wspawn(uint32_t num_warps, Word nextPC);
+
+  bool setTmask(uint32_t wid, const ThreadMask& tmask);
 
   int get_exitcode() const;
 
@@ -116,6 +155,18 @@ public:
     return instr_pool_;
   }
 
+  int dcr_write(uint32_t addr, uint32_t value);
+
+  int dcr_read(uint32_t addr, uint32_t tag, uint32_t* value);
+
+  const auto& active_warps() const {
+    return active_warps_;
+  }
+
+  const auto& stalled_warps() const {
+    return stalled_warps_;
+  }
+
 private:
 
   uint32_t fetch(uint32_t wid, uint64_t uuid);
@@ -124,7 +175,7 @@ private:
 
   instr_trace_t* execute(const Instr &instr, uint32_t wid);
 
-  void fetch_registers(std::vector<reg_data_t>& out, uint32_t wid, uint32_t src_index, const RegOpd& reg);
+  void fetch_registers(std::vector<reg_data_t>& out, uint32_t wid, uint32_t src_index, const RegOpd& reg, const ThreadMask& tmask);
 
   void icache_read(void* data, uint64_t addr, uint32_t size);
 
@@ -144,32 +195,29 @@ private:
 
   void update_fcrs(uint32_t fflags, uint32_t wid, uint32_t tid);
 
+  uint32_t get_barrier_phase(uint32_t bar_id) const;
+
   // temporarily added for riscv-vector tests
   // TODO: remove once ecall/ebreak are supported
   void trigger_ecall();
   void trigger_ebreak();
 
+  void activate_warp(uint32_t wid, const cta_warp_record_t& rec);
+
   const Arch& arch_;
-  const DCRS& dcrs_;
   Core*       core_;
+  uint32_t    mpm_class_;
+
+  CtaDispatcher cta_dispatcher_;
 
   std::vector<warp_t> warps_;
   WarpMask    active_warps_;
   WarpMask    stalled_warps_;
-  std::vector<WarpMask> barriers_;
+  std::vector<warp_barrier_t> barriers_;
   std::unordered_map<int, std::stringstream> print_bufs_;
   MemoryUnit  mmu_;
   uint32_t    ipdom_size_;
-  Word        csr_mscratch_;
   wspawn_t    wspawn_;
-
-#ifdef EXT_TCU_ENABLE
-  TensorUnit::Ptr tensor_unit_;
-#endif
-
-#ifdef EXT_V_ENABLE
-  VecUnit::Ptr vec_unit_;
-#endif
 
   PoolAllocator<Instr, 64> instr_pool_;
 };

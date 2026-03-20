@@ -88,7 +88,7 @@ end
   ```
 
 ## 5. Handling Warnings
-Vortex uses explicit warning management i.e. we directly resolve the warning inside the code. Warnings that exist inside external code should be resolved using **Verilator.vlt** lint file. There are some code structures that Verilator's static analyzer doesn't know know to handle properly (e.g. cyclic loops in arrays) and will throw a warning, for those types of error use the corresponding warning handling macros defined in **VX_platform.vh**.
+Vortex uses explicit warning management i.e. we directly resolve the warning inside the code. Warnings that exist inside external code should be resolved using **Verilator.vlt** lint file. There are some code structures that Verilator's static analyzer doesn't know how to handle properly (e.g. cyclic loops in arrays) and will throw a warning, for those types of error use the corresponding warning handling macros defined in **VX_platform.vh**.
 
 - **Unused variables**
   ```verilog
@@ -112,11 +112,8 @@ Vortex uses explicit warning management i.e. we directly resolve the warning ins
   ```
 - **Other warnings**
   ```verilog
-  // Silencing Circular Combinational Logic warning.
-  `IGNORE_UNOPTFLAT_BEGIN
-  logic [N-1:0] G [LEVELS+1];
-  logic [N-1:0] P [LEVELS+1];
-  `IGNORE_UNOPTFLAT_END
+  // Silencing Circular Combinational Logic warnings in Verilator..
+  logic [N-1:0] G [LEVELS+1] /* verilator split_var*/;
   ```
 
 ## 6. Assertions
@@ -130,15 +127,45 @@ Vortex uses explicit warning management i.e. we directly resolve the warning ins
   ```
 
 ## 7. Using `ifdef
-- Preserve indent of nested code and shift pre-processor left
+-Preserve indent of nested code and shift pre-processor left by one level
+
+Base version (before):
   ```verilog
-  function automatic logic [N-1:0] to_regno(input reg_t reg);
-  `ifdef EXT_V_ENABLE
-      return {reg.rtype, reg.id};
-  `elsif EXT_F_ENABLE
-      return {reg.rtype, reg.id};
-  `else
-      return reg.id;
-  `endif
-  endfunction
+  always_comb begin
+      decode_valid = issue_valid;
+      if (is_mtype) begin
+          if (is_dp) begin
+              decode_unit = UNIT_MULDIV_DP;
+          end else begin
+              decode_unit = UNIT_MULDIV;
+          end
+      end else if (is_fp) begin
+          decode_unit = UNIT_FPU;
+      end else begin
+          decode_unit = UNIT_ALU;
+      end
+  end
+  ```
+
+Adding ifdef (after):
+  ```verilog
+  always_comb begin
+      decode_valid = issue_valid;
+      if (is_mtype) begin
+      `ifdef EXT_M_ENABLE
+          if (is_dp) begin
+              decode_unit = UNIT_MULDIV_DP;
+          end else begin
+              decode_unit = UNIT_MULDIV;
+          end
+      `else
+          decode_unit = UNIT_MULDIV;
+          `UNUSED_VAR (is_dp)
+      `endif
+      end else if (is_fp) begin
+          decode_unit = UNIT_FPU;
+      end else begin
+          decode_unit = UNIT_ALU;
+      end
+  end
   ```

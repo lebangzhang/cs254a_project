@@ -71,15 +71,34 @@ int foo(int x);
 ```
 
 ## 7. Using #ifdef
-- Preserve indent of nested code and shift pre-processor left
+- Preserve indent of nested code and shift pre-processor left by one level
+
+Base function (before):
 ```cpp
-regno_t to_regno(const reg_t& reg) {
-#if defined(EXT_V_ENABLE)
-    return {reg.rtype, reg.id};
-#elif defined(EXT_F_ENABLE)
-    return {reg.rtype, reg.id};
-#else
-    return {reg.id, 0};
-#endif
-endfunction
+regno_t to_regno_base(const reg_t& reg, bool has_type, bool is_dp) {
+  if (has_type) {
+    if (is_dp) {
+      return regno_t{reg.rtype, reg.id, reg.group};
+    }
+    return regno_t{reg.rtype, reg.id};
+  }
+  return regno_t{reg.id, 0};
+}
+```
+
+Adding ifdef (after):
+```cpp
+regno_t to_regno_base(const reg_t& reg, bool has_type, bool is_dp) {
+  if (has_type) {
+  #ifdef
+    if (is_dp) {
+      return regno_t{reg.rtype, reg.id, reg.group};
+    }
+  #else
+    __unused(is_dp);
+  #endif
+    return regno_t{reg.rtype, reg.id};
+  }
+  return regno_t{reg.id, 0};
+}
 ```

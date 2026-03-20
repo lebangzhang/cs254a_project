@@ -1,0 +1,633 @@
+// Copyright © 2019-2023
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// DXA worker: orchestrates 5-stage pipeline:
+//   addr_gen → dedup → rd_ctrl → cl2smem → wr_ctrl
+// Stateless single-transaction executor: accept launch when idle, run to
+// completion, signal done, return to idle.
+
+`include "VX_define.vh"
+
+module VX_dxa_worker import VX_gpu_pkg::*, VX_dxa_pkg::*; #(
+    parameter `STRING INSTANCE_ID = "",
+    parameter WORKER_ID = 0
+) (
+    input wire clk,
+    input wire reset,
+
+    // Launch interface (from unified_engine dispatch)
+    input wire                          launch_valid,
+    output wire                         launch_ready,
+    input wire [NC_WIDTH-1:0]           launch_core_id,
+    input wire [UUID_WIDTH-1:0]         launch_uuid,
+    input wire [NW_WIDTH-1:0]           launch_wid,
+    input wire [BAR_ADDR_W-1:0]         launch_bar_addr,
+    input wire [DXA_DESC_SLOT_W-1:0]    launch_desc_slot,
+    input wire [`XLEN-1:0]              launch_smem_addr,
+    input wire [4:0][`XLEN-1:0]         launch_coords,
+
+    // Descriptor table read port (shared desc_table in unified_engine)
+    output wire [DXA_DESC_SLOT_W-1:0] issue_desc_slot_out,
+    input wire [`MEM_ADDR_WIDTH-1:0] issue_base_addr,
+    input wire [31:0] issue_desc_meta,
+    input wire [31:0] issue_desc_tile01,
+    input wire [31:0] issue_desc_tile23,
+    input wire [31:0] issue_desc_tile4,
+    input wire [31:0] issue_desc_cfill,
+    input wire [31:0] issue_size0_raw,
+    input wire [31:0] issue_size1_raw,
+    input wire [31:0] issue_stride0_raw,
+
+    VX_mem_bus_if.master gmem_bus_if,
+    VX_dxa_bank_wr_if.master smem_bank_wr_if,
+    output wire [NC_WIDTH-1:0] smem_core_id,
+
+    output wire worker_idle
+);
+
+    `UNUSED_SPARAM (WORKER_ID)
+
+    localparam GMEM_BYTES      = `L1_LINE_SIZE;
+    localparam GMEM_DATAW      = GMEM_BYTES * 8;
+    localparam GMEM_OFF_BITS   = `CLOG2(GMEM_BYTES);
+    localparam GMEM_ADDR_WIDTH = `MEM_ADDR_WIDTH - GMEM_OFF_BITS;
+    localparam GMEM_TAG_VALUEW = L1_MEM_ARB_TAG_WIDTH - `UP(UUID_WIDTH);
+
+    localparam SMEM_BYTES      = DXA_SMEM_WORD_SIZE;
+    localparam SMEM_DATAW      = SMEM_BYTES * 8;
+    localparam SMEM_OFF_BITS   = `CLOG2(SMEM_BYTES);
+    localparam SMEM_ADDR_WIDTH = DXA_SMEM_ADDR_WIDTH;
+    // Bank-native output params
+    localparam NUM_BANKS       = `LMEM_NUM_BANKS;
+    localparam BANK_WORD_SIZE  = `XLEN / 8;
+    localparam BANK_WORD_WIDTH = BANK_WORD_SIZE * 8;
+    localparam BANK_ADDR_WIDTH = DXA_SMEM_BANK_ADDR_WIDTH;
+
+`ifdef DXA_NB_MAX_OUTSTANDING
+    localparam MAX_OUTSTANDING = `DXA_NB_MAX_OUTSTANDING;
+`else
+    localparam MAX_OUTSTANDING = 8;
+`endif
+`ifdef DXA_NB_WR_QUEUE_DEPTH
+    localparam WR_QUEUE_DEPTH  = `DXA_NB_WR_QUEUE_DEPTH;
+`else
+    localparam WR_QUEUE_DEPTH  = 16;
+`endif
+
+    `UNUSED_SPARAM (INSTANCE_ID)
+
+    // ---- Desc slot drives desc_table read port ----
+    assign issue_desc_slot_out = launch_desc_slot;
+
+    // ---- Issue decode (combinatorial from desc_table outputs) ----
+    dxa_issue_dec_t issue_dec;
+
+    VX_dxa_issue_decode #(
+        .GMEM_BYTES(GMEM_BYTES),
+        .SMEM_BYTES(SMEM_BYTES)
+    ) issue_decode (
+        .issue_desc_meta  (issue_desc_meta),
+        .issue_desc_tile01(issue_desc_tile01),
+        .issue_size0_raw  (issue_size0_raw),
+        .issue_size1_raw  (issue_size1_raw),
+        .issue_stride0_raw(issue_stride0_raw),
+        .issue_dec        (issue_dec)
+    );
+
+    // ---- Transfer state ----
+    // FSM: IDLE → SETUP → ACTIVE → IDLE
+    localparam TS_IDLE   = 2'd0;
+    localparam TS_SETUP  = 2'd1;
+    localparam TS_ACTIVE = 2'd2;
+
+    reg [1:0]              ts_state_r;
+    reg [NC_WIDTH-1:0]     active_core_id_r;
+    reg [UUID_WIDTH-1:0]   active_uuid_r;
+    reg [NW_WIDTH-1:0]     active_wid_r;
+    reg [BAR_ADDR_W-1:0]   active_bar_addr_r;
+    reg                    active_notify_smem_done_r;
+
+    wire active_r = (ts_state_r == TS_ACTIVE);
+
+    // ---- Launch acceptance ----
+    wire launch_use_nb = ~issue_dec.is_s2g;
+    wire launch_supported = launch_use_nb && issue_dec.supported && (issue_dec.total != 0);
+    wire launch_valid_cmd = launch_valid && launch_supported;
+    wire launch_invalid_cmd = launch_valid && ~launch_supported;
+
+    assign launch_ready = (ts_state_r == TS_IDLE);
+
+    // ---- Setup phase ----
+    wire setup_start = launch_valid_cmd && (ts_state_r == TS_IDLE);
+    wire setup_done;
+    dxa_setup_params_t setup_params;
+
+    VX_dxa_setup #(
+        .SMEM_BYTES(SMEM_BYTES)
+    ) setup (
+        .clk         (clk),
+        .reset       (reset),
+        .start       (setup_start),
+        .issue_dec   (issue_dec),
+        .gmem_base   (issue_base_addr),
+        .smem_base   (launch_smem_addr),
+        .coords      (launch_coords),
+        .cfill       (issue_desc_cfill),
+        .setup_done  (setup_done),
+        .setup_params(setup_params)
+    );
+
+    // ---- Pipeline start trigger ----
+    wire pipeline_start = setup_done;
+
+    // ════════════════════════════════════════════════════════════════════
+    // Stage 1: Address Generator (replaces tile_iter)
+    // ════════════════════════════════════════════════════════════════════
+
+    wire ag_valid, ag_ready;
+    wire [GMEM_ADDR_WIDTH-1:0] ag_cl_addr;
+    wire [GMEM_BYTES-1:0] ag_byte_mask;
+    wire ag_oob, ag_last;
+    wire [31:0] ag_cfill, ag_total_smem_writes;
+
+    VX_dxa_addr_gen #(
+        .GMEM_LINE_SIZE  (GMEM_BYTES),
+        .GMEM_ADDR_WIDTH (GMEM_ADDR_WIDTH)
+    ) addr_gen (
+        .clk                  (clk),
+        .reset                (reset),
+        .start                (pipeline_start),
+        .setup_params         (setup_params),
+        .out_valid            (ag_valid),
+        .out_ready            (ag_ready),
+        .out_cl_addr          (ag_cl_addr),
+        .out_byte_mask        (ag_byte_mask),
+        .out_oob              (ag_oob),
+        .out_last             (ag_last),
+        .out_cfill            (ag_cfill),
+        .out_total_smem_writes(ag_total_smem_writes)
+    );
+
+    // ════════════════════════════════════════════════════════════════════
+    // Stage 2: Intra-Row Dedup
+    // ════════════════════════════════════════════════════════════════════
+
+    wire dd_valid, dd_ready;
+    wire [GMEM_ADDR_WIDTH-1:0] dd_cl_addr;
+    wire [GMEM_BYTES-1:0] dd_byte_mask;
+    wire dd_oob, dd_last;
+
+    VX_dxa_dedup #(
+        .GMEM_LINE_SIZE  (GMEM_BYTES),
+        .GMEM_ADDR_WIDTH (GMEM_ADDR_WIDTH)
+    ) dedup (
+        .clk           (clk),
+        .reset         (reset),
+        .in_valid      (ag_valid),
+        .in_ready      (ag_ready),
+        .in_cl_addr    (ag_cl_addr),
+        .in_byte_mask  (ag_byte_mask),
+        .in_oob        (ag_oob),
+        .in_last       (ag_last),
+        .out_valid     (dd_valid),
+        .out_ready     (dd_ready),
+        .out_cl_addr   (dd_cl_addr),
+        .out_byte_mask (dd_byte_mask),
+        .out_oob       (dd_oob),
+        .out_last      (dd_last)
+    );
+
+    // ════════════════════════════════════════════════════════════════════
+    // Stage 3: Read Controller (GMEM reads + ROB reorder)
+    // ════════════════════════════════════════════════════════════════════
+
+    wire rc_gmem_rd_req_valid;
+    wire [GMEM_ADDR_WIDTH-1:0] rc_gmem_rd_req_addr;
+    wire [GMEM_TAG_VALUEW-1:0] rc_gmem_rd_req_tag;
+    wire rc_gmem_req_fire, rc_rsp_fire, rc_stall_no_slot;
+
+    wire rc_cl_out_valid, rc_cl_out_ready;
+    wire [GMEM_DATAW-1:0] rc_cl_out_data;
+    wire [GMEM_BYTES-1:0] rc_cl_out_byte_mask;
+    wire rc_cl_out_last;
+
+    VX_dxa_rd_ctrl #(
+        .MAX_OUTSTANDING (MAX_OUTSTANDING),
+        .GMEM_BYTES      (GMEM_BYTES),
+        .GMEM_OFF_BITS   (GMEM_OFF_BITS),
+        .GMEM_ADDR_WIDTH (GMEM_ADDR_WIDTH),
+        .GMEM_DATAW      (GMEM_DATAW),
+        .GMEM_TAG_VALUEW (GMEM_TAG_VALUEW)
+    ) rd_ctrl (
+        .clk              (clk),
+        .reset            (reset),
+        .transfer_active  (active_r),
+        .cl_in_valid      (dd_valid),
+        .cl_in_ready      (dd_ready),
+        .cl_in_addr       (dd_cl_addr),
+        .cl_in_byte_mask  (dd_byte_mask),
+        .cl_in_oob        (dd_oob),
+        .cl_in_last       (dd_last),
+        .cfill            (ag_cfill),
+        .gmem_rd_req_valid(rc_gmem_rd_req_valid),
+        .gmem_rd_req_addr (rc_gmem_rd_req_addr),
+        .gmem_rd_req_tag  (rc_gmem_rd_req_tag),
+        .gmem_rd_req_ready(gmem_bus_if.req_ready),
+        .gmem_rd_rsp_valid(gmem_bus_if.rsp_valid),
+        .gmem_rd_rsp_data (gmem_bus_if.rsp_data.data),
+        .gmem_rd_rsp_tag  (GMEM_TAG_VALUEW'(gmem_bus_if.rsp_data.tag.value)),
+        .gmem_rd_rsp_ready(gmem_bus_if.rsp_ready),
+        .cl_out_valid     (rc_cl_out_valid),
+        .cl_out_ready     (rc_cl_out_ready),
+        .cl_out_data      (rc_cl_out_data),
+        .cl_out_byte_mask (rc_cl_out_byte_mask),
+        .cl_out_last      (rc_cl_out_last),
+        .gmem_req_fire    (rc_gmem_req_fire),
+        .rsp_fire         (rc_rsp_fire),
+        .stall_no_slot    (rc_stall_no_slot)
+    `ifdef DBG_TRACE_DXA
+        ,
+        .prof_gmem_reqs       (rc_prof_gmem_reqs),
+        .prof_gmem_eff_bytes  (rc_prof_gmem_eff_bytes),
+        .prof_gmem_span_cycles(rc_prof_gmem_span_cycles)
+    `endif
+    );
+
+    // ════════════════════════════════════════════════════════════════════
+    // Stage 4: CL-to-SMEM data format converter
+    // ════════════════════════════════════════════════════════════════════
+
+    wire cs_valid, cs_ready;
+    wire [SMEM_DATAW-1:0] cs_data;
+    wire [SMEM_BYTES-1:0] cs_byteen;
+    wire cs_last;
+
+    // Initial byte offset within first SMEM word for misaligned smem_base.
+    localparam SMEM_OFF_W = `CLOG2(SMEM_BYTES);
+    wire [SMEM_OFF_W:0] initial_byte_offset = {1'b0, setup_params.initial_smem_base[SMEM_OFF_W-1:0]};
+
+    VX_dxa_cl2smem #(
+        .CL_SIZE       (GMEM_BYTES),
+        .SMEM_WORD_SIZE(SMEM_BYTES)
+    ) cl2smem (
+        .clk                 (clk),
+        .reset               (reset),
+        .start               (pipeline_start),
+        .initial_byte_offset (initial_byte_offset),
+        .cl_in_valid         (rc_cl_out_valid),
+        .cl_in_ready         (rc_cl_out_ready),
+        .cl_in_data          (rc_cl_out_data),
+        .cl_in_byte_mask     (rc_cl_out_byte_mask),
+        .cl_in_last          (rc_cl_out_last),
+        .smem_out_valid      (cs_valid),
+        .smem_out_ready      (cs_ready),
+        .smem_out_data       (cs_data),
+        .smem_out_byteen     (cs_byteen),
+        .smem_out_last       (cs_last)
+    );
+
+    // ════════════════════════════════════════════════════════════════════
+    // Stage 5: Write Controller (SMEM write adapter)
+    // ════════════════════════════════════════════════════════════════════
+
+    wire wc_smem_wr_valid;
+    wire [SMEM_ADDR_WIDTH-1:0] wc_smem_wr_addr;
+    wire [SMEM_DATAW-1:0] wc_smem_wr_data;
+    wire [SMEM_BYTES-1:0] wc_smem_wr_byteen;
+    wire wc_smem_wr_last_pkt;
+    wire wc_transfer_done;
+    wire [31:0] wc_wr_done_count;
+    wire wc_smem_req_fire;
+    wire wc_smem_wr_ready;
+
+    VX_dxa_wr_ctrl #(
+        .WR_QUEUE_DEPTH  (WR_QUEUE_DEPTH),
+        .SMEM_BYTES      (SMEM_BYTES),
+        .SMEM_DATAW      (SMEM_DATAW),
+        .SMEM_OFF_BITS   (SMEM_OFF_BITS),
+        .SMEM_ADDR_WIDTH (SMEM_ADDR_WIDTH)
+    ) wr_ctrl (
+        .clk               (clk),
+        .reset             (reset),
+        .transfer_active   (active_r),
+        .transfer_start    (pipeline_start),
+        .total_smem_writes (ag_total_smem_writes),
+        .initial_smem_base (`MEM_ADDR_WIDTH'(setup_params.initial_smem_base)),
+        .smem_in_valid     (cs_valid),
+        .smem_in_ready     (cs_ready),
+        .smem_in_data      (cs_data),
+        .smem_in_byteen    (cs_byteen),
+        .smem_in_last      (cs_last),
+        .smem_wr_valid     (wc_smem_wr_valid),
+        .smem_wr_addr      (wc_smem_wr_addr),
+        .smem_wr_data      (wc_smem_wr_data),
+        .smem_wr_byteen    (wc_smem_wr_byteen),
+        .smem_wr_ready     (wc_smem_wr_ready),
+        .smem_wr_last_pkt  (wc_smem_wr_last_pkt),
+        .transfer_done     (wc_transfer_done),
+        .wr_done_count     (wc_wr_done_count),
+        .smem_req_fire     (wc_smem_req_fire)
+    `ifdef DBG_TRACE_DXA
+        ,
+        .prof_smem_writes      (wc_prof_smem_writes),
+        .prof_smem_eff_bytes   (wc_prof_smem_eff_bytes),
+        .prof_smem_span_cycles (wc_prof_smem_span_cycles),
+        .prof_smem_back_to_back(wc_prof_smem_back_to_back)
+    `endif
+    );
+
+    assign wc_smem_wr_ready = smem_bank_wr_if.wr_ready;
+
+    // ---- gmem bus wiring ----
+    assign gmem_bus_if.req_valid     = rc_gmem_rd_req_valid;
+    assign gmem_bus_if.req_data.rw   = 1'b0;
+    assign gmem_bus_if.req_data.addr = rc_gmem_rd_req_addr;
+    assign gmem_bus_if.req_data.data = '0;
+    assign gmem_bus_if.req_data.byteen = {GMEM_BYTES{1'b1}};
+    assign gmem_bus_if.req_data.flags  = '0;
+    assign gmem_bus_if.req_data.tag.uuid = active_uuid_r;
+    assign gmem_bus_if.req_data.tag.value = rc_gmem_rd_req_tag;
+
+    // ---- smem bank-native write ----
+    // After SMEM word size uncap, SMEM word covers all banks (direct mapping).
+    assign smem_bank_wr_if.wr_valid = wc_smem_wr_valid;
+    assign smem_bank_wr_if.wr_addr = BANK_ADDR_WIDTH'(wc_smem_wr_addr);
+    for (genvar b = 0; b < NUM_BANKS; ++b) begin : g_bank_wr
+        assign smem_bank_wr_if.wr_data[b]   = wc_smem_wr_data[b * BANK_WORD_WIDTH +: BANK_WORD_WIDTH];
+        assign smem_bank_wr_if.wr_byteen[b] = wc_smem_wr_byteen[b * BANK_WORD_SIZE +: BANK_WORD_SIZE];
+    end
+
+    // Completion tag: {last_pkt, bar_addr}.
+`ifdef EXT_DXA_ENABLE
+    wire smem_wr_tag_last = wc_smem_wr_last_pkt && active_notify_smem_done_r;
+    assign smem_bank_wr_if.wr_tag = {smem_wr_tag_last, active_bar_addr_r};
+`else
+    assign smem_bank_wr_if.wr_tag = {wc_smem_wr_last_pkt, {BAR_ADDR_W{1'b0}}};
+`endif
+
+    // Core-id sideband for routing in DXA core router.
+    assign smem_core_id = active_core_id_r;
+
+    // ---- Transfer FSM (IDLE → SETUP → ACTIVE → IDLE) ----
+
+    always @(posedge clk) begin
+        if (reset) begin
+            ts_state_r              <= TS_IDLE;
+            active_core_id_r        <= '0;
+            active_uuid_r           <= '0;
+            active_wid_r            <= '0;
+            active_bar_addr_r       <= '0;
+            active_notify_smem_done_r <= 1'b0;
+        end else begin
+            case (ts_state_r)
+            TS_IDLE: begin
+                if (setup_start) begin
+                    ts_state_r          <= TS_SETUP;
+                    active_core_id_r    <= launch_core_id;
+                    active_uuid_r       <= launch_uuid;
+                    active_wid_r        <= launch_wid;
+                    active_bar_addr_r   <= launch_bar_addr;
+                `ifdef EXT_DXA_ENABLE
+                    active_notify_smem_done_r <= DXA_DONE_META_ENABLE;
+                `else
+                    active_notify_smem_done_r <= 1'b0;
+                `endif
+                end
+            end
+            TS_SETUP: begin
+                if (setup_done) begin
+                    ts_state_r <= TS_ACTIVE;
+                end
+            end
+            TS_ACTIVE: begin
+                if (wc_transfer_done) begin
+                    ts_state_r <= TS_IDLE;
+                end
+            end
+            default: ts_state_r <= TS_IDLE;
+            endcase
+        end
+    end
+
+    assign worker_idle = (ts_state_r == TS_IDLE);
+
+    // ---- Profiling counters (reason-coded stalls) ----
+    reg [31:0] prof_active_cycles_r;
+    reg [31:0] prof_issue_block_cycles_r;
+    reg [31:0] prof_gmem_req_block_cycles_r;
+    reg [31:0] prof_gmem_rsp_block_cycles_r;
+    reg [31:0] prof_smem_req_block_cycles_r;
+    reg [31:0] prof_no_slot_block_cycles_r;
+    reg [31:0] prof_gmem_req_fire_r;
+    reg [31:0] prof_gmem_rsp_fire_r;
+    reg [31:0] prof_smem_req_fire_r;
+    reg [31:0] prof_pipe_block_cycles_r;
+
+    always @(posedge clk) begin
+        if (reset || setup_start) begin
+            prof_active_cycles_r <= '0;
+            prof_issue_block_cycles_r <= '0;
+            prof_gmem_req_block_cycles_r <= '0;
+            prof_gmem_rsp_block_cycles_r <= '0;
+            prof_smem_req_block_cycles_r <= '0;
+            prof_no_slot_block_cycles_r <= '0;
+            prof_gmem_req_fire_r <= '0;
+            prof_gmem_rsp_fire_r <= '0;
+            prof_smem_req_fire_r <= '0;
+            prof_pipe_block_cycles_r <= '0;
+        end else begin
+            if (active_r) begin
+                prof_active_cycles_r <= prof_active_cycles_r + 32'd1;
+            end
+            if (launch_valid && ~launch_ready) begin
+                prof_issue_block_cycles_r <= prof_issue_block_cycles_r + 32'd1;
+            end
+            if (rc_gmem_rd_req_valid && ~gmem_bus_if.req_ready) begin
+                prof_gmem_req_block_cycles_r <= prof_gmem_req_block_cycles_r + 32'd1;
+            end
+            if (gmem_bus_if.rsp_valid && ~gmem_bus_if.rsp_ready) begin
+                prof_gmem_rsp_block_cycles_r <= prof_gmem_rsp_block_cycles_r + 32'd1;
+            end
+            if (wc_smem_wr_valid && ~smem_bank_wr_if.wr_ready) begin
+                prof_smem_req_block_cycles_r <= prof_smem_req_block_cycles_r + 32'd1;
+            end
+            if (rc_stall_no_slot) begin
+                prof_no_slot_block_cycles_r <= prof_no_slot_block_cycles_r + 32'd1;
+            end
+            if (rc_cl_out_valid && ~rc_cl_out_ready) begin
+                prof_pipe_block_cycles_r <= prof_pipe_block_cycles_r + 32'd1;
+            end
+            if (rc_gmem_req_fire) begin
+                prof_gmem_req_fire_r <= prof_gmem_req_fire_r + 32'd1;
+            end
+            if (rc_rsp_fire) begin
+                prof_gmem_rsp_fire_r <= prof_gmem_rsp_fire_r + 32'd1;
+            end
+            if (wc_smem_req_fire) begin
+                prof_smem_req_fire_r <= prof_smem_req_fire_r + 32'd1;
+            end
+        end
+    end
+
+    // ---- Progress watchdog ----
+    reg [31:0] stall_ctr_r;
+    wire active_no_progress = active_r
+                           && ~rc_gmem_req_fire
+                           && ~rc_rsp_fire
+                           && ~wc_smem_req_fire;
+
+    always @(posedge clk) begin
+        if (reset || ~active_no_progress) begin
+            stall_ctr_r <= '0;
+        end else begin
+            stall_ctr_r <= stall_ctr_r + 32'd1;
+        end
+    end
+
+    `RUNTIME_ASSERT(stall_ctr_r < STALL_TIMEOUT, (
+        "*** %s worker no-progress: core=%0d wid=%0d bar=%0d",
+        INSTANCE_ID, active_core_id_r, active_wid_r, active_bar_addr_r))
+
+    `UNUSED_VAR (wc_wr_done_count)
+    `UNUSED_VAR (wc_smem_wr_addr[SMEM_ADDR_WIDTH-1:BANK_ADDR_WIDTH])
+    `UNUSED_VAR (issue_desc_tile23)
+    `UNUSED_VAR (issue_desc_tile4)
+    `UNUSED_VAR (launch_desc_slot)
+`ifndef DBG_TRACE_DXA
+    `UNUSED_VAR (launch_invalid_cmd)
+`endif
+`ifndef EXT_DXA_ENABLE
+    `UNUSED_VAR (active_bar_addr_r)
+    `UNUSED_VAR (active_notify_smem_done_r)
+`endif
+
+`ifdef DBG_TRACE_DXA
+    always @(posedge clk) begin
+        if (~reset) begin
+            if (setup_start) begin
+                `TRACE(1, ("%t: %s start: core=%0d wid=%0d bar=%0d total=%0d elem=%0d gbase=0x%0h smem=0x%0h desc=%0d\n",
+                    $time, INSTANCE_ID, launch_core_id, launch_wid, launch_bar_addr,
+                    issue_dec.total, issue_dec.elem_bytes, issue_base_addr, launch_smem_addr, launch_desc_slot))
+            end
+            if (launch_invalid_cmd) begin
+                `TRACE(1, ("%t: %s launch-unsupported: core=%0d wid=%0d bar=%0d supported=%0d is_s2g=%0d total=%0d\n",
+                    $time, INSTANCE_ID, launch_core_id, launch_wid, launch_bar_addr,
+                    issue_dec.supported, issue_dec.is_s2g, issue_dec.total))
+            end
+            if (active_r) begin
+                if (rc_gmem_req_fire) begin
+                    `TRACE(2, ("%t: %s gmem-req: addr=0x%0h\n",
+                        $time, INSTANCE_ID, rc_gmem_rd_req_addr))
+                end
+                if (rc_rsp_fire) begin
+                    `TRACE(2, ("%t: %s gmem-rsp: tag=%0d\n",
+                        $time, INSTANCE_ID, gmem_bus_if.rsp_data.tag.value))
+                end
+                if (gmem_bus_if.rsp_valid && ~gmem_bus_if.rsp_ready) begin
+                    `TRACE(2, ("%t: %s gmem-rsp-BLOCKED: tag=%0d rsp_ready=%0b\n",
+                        $time, INSTANCE_ID, gmem_bus_if.rsp_data.tag.value, gmem_bus_if.rsp_ready))
+                end
+                if (wc_smem_req_fire) begin
+                    `TRACE(2, ("%t: %s smem-wr: addr=0x%0h count=%0d\n",
+                        $time, INSTANCE_ID, wc_smem_wr_addr, wc_wr_done_count))
+                end
+            end
+            if (active_r && wc_transfer_done) begin
+                `TRACE(1, ("%t: %s done: core=%0d wid=%0d bar=%0d wr_count=%0d\n",
+                    $time, INSTANCE_ID, active_core_id_r, active_wid_r,
+                    active_bar_addr_r, wc_wr_done_count))
+            end
+        end
+    end
+`endif
+
+`ifdef DBG_TRACE_DXA
+    // Wires from rd_ctrl / wr_ctrl profiling outputs
+    wire [31:0] rc_prof_gmem_reqs;
+    wire [31:0] rc_prof_gmem_eff_bytes;
+    wire [31:0] rc_prof_gmem_span_cycles;
+    wire [31:0] wc_prof_smem_writes;
+    wire [31:0] wc_prof_smem_eff_bytes;
+    wire [31:0] wc_prof_smem_span_cycles;
+    wire [31:0] wc_prof_smem_back_to_back;
+
+    reg [31:0] prof_min_gmem_reads_r;
+    reg [31:0] prof_min_smem_writes_r;
+    reg [31:0] prof_tile_bytes_r;
+
+    always @(posedge clk) begin
+        if (reset || setup_start) begin
+            prof_min_gmem_reads_r <= '0;
+            prof_min_smem_writes_r <= '0;
+            prof_tile_bytes_r <= '0;
+        end else if (setup_done) begin
+            prof_min_gmem_reads_r <= setup_params.total_rows
+                * ((setup_params.row_len_bytes + GMEM_BYTES - 1) / GMEM_BYTES);
+            prof_min_smem_writes_r <= setup_params.total_smem_writes;
+            prof_tile_bytes_r <= setup_params.total_rows * setup_params.row_len_bytes;
+        end
+    end
+
+    // Combinatorial "next" values for counters that may fire on the same cycle
+    // as transfer_done (registered values are still N-1 at that edge).
+    wire [31:0] prof_smem_fire_next = prof_smem_req_fire_r + 32'(wc_smem_req_fire);
+    wire [31:0] prof_active_next    = prof_active_cycles_r + 32'(active_r);
+
+    always @(posedge clk) begin
+        if (~reset && active_r && wc_transfer_done) begin
+            $display("%t: %s DXA_PROFILE core=%0d wid=%0d bar=%0d active=%0d issue_blk=%0d gmem_req_blk=%0d gmem_rsp_blk=%0d smem_req_blk=%0d noslot_blk=%0d pipe_blk=%0d req_fire=%0d rsp_fire=%0d smem_fire=%0d",
+                $time, INSTANCE_ID, active_core_id_r, active_wid_r, active_bar_addr_r,
+                prof_active_next, prof_issue_block_cycles_r,
+                prof_gmem_req_block_cycles_r, prof_gmem_rsp_block_cycles_r, prof_smem_req_block_cycles_r,
+                prof_no_slot_block_cycles_r, prof_pipe_block_cycles_r,
+                prof_gmem_req_fire_r, prof_gmem_rsp_fire_r, prof_smem_fire_next);
+            $display("%t: %s DXA_PROFILE_EFF gmem_reads=%0d (min=%0d, eff=%0d%%) smem_writes=%0d (min=%0d, eff=%0d%%) latency=%0d cycles",
+                $time, INSTANCE_ID,
+                prof_gmem_req_fire_r, prof_min_gmem_reads_r,
+                (prof_gmem_req_fire_r > 0) ? (prof_min_gmem_reads_r * 100 / prof_gmem_req_fire_r) : 32'd0,
+                prof_smem_fire_next, prof_min_smem_writes_r,
+                (prof_smem_fire_next > 0) ? (prof_min_smem_writes_r * 100 / prof_smem_fire_next) : 32'd0,
+                prof_active_next);
+            $display("%t: %s DXA_PROFILE_DETAIL tile_bytes=%0d gmem: reqs=%0d eff_bytes=%0d span=%0d_cyc smem: writes=%0d eff_bytes=%0d span=%0d_cyc b2b=%0d/%0d pipelined=%0d%%",
+                $time, INSTANCE_ID,
+                prof_tile_bytes_r,
+                rc_prof_gmem_reqs, rc_prof_gmem_eff_bytes, rc_prof_gmem_span_cycles,
+                wc_prof_smem_writes, wc_prof_smem_eff_bytes, wc_prof_smem_span_cycles,
+                wc_prof_smem_back_to_back, wc_prof_smem_writes,
+                (wc_prof_smem_writes > 1) ? (wc_prof_smem_back_to_back * 100 / (wc_prof_smem_writes - 32'd1)) : 32'd0);
+        end
+    end
+`endif
+
+`ifdef DBG_TRACE_DXA
+    always @(posedge clk) begin
+        if (~reset) begin
+            if (setup_start) begin
+                $write("DXA_TL,%0d,XFER_START,core=%0d,wid=%0d,bar=%0d,total=%0d,elem=%0d\n",
+                    $time, launch_core_id, launch_wid, launch_bar_addr,
+                    issue_dec.total, issue_dec.elem_bytes);
+            end
+            if (pipeline_start) begin
+                $write("DXA_TL,%0d,SETUP_DONE,core=%0d,wid=%0d,bar=%0d\n",
+                    $time, active_core_id_r, active_wid_r, active_bar_addr_r);
+            end
+            if (active_r && wc_transfer_done) begin
+                $write("DXA_TL,%0d,XFER_DONE,core=%0d,wid=%0d,bar=%0d,wr_count=%0d\n",
+                    $time, active_core_id_r, active_wid_r, active_bar_addr_r,
+                    wc_wr_done_count);
+            end
+        end
+    end
+`endif
+
+endmodule

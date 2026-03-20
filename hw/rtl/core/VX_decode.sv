@@ -42,6 +42,9 @@ module VX_decode import
     op_args_t op_args;
     reg [NUM_SRC_OPDS:0][NUM_REGS_BITS-1:0] reg_ids;
     reg [NUM_SRC_OPDS:0] use_regs;
+    reg [NUM_XREGS-1:0] rd_xregs;
+    reg [NUM_XREGS-1:0] wr_xregs;
+    reg [BYTESEL_BITS-1:0] bytesel;
     reg is_wstall;
 
     wire [31:0] instr = fetch_if.data.instr;
@@ -60,8 +63,29 @@ module VX_decode import
     `UNUSED_VAR (funct2)
     `UNUSED_VAR (funct5)
 
-    wire is_itype_sh = funct3[0] && ~funct3[1];
-    wire is_fpu_csr = (u_12 <= `VX_CSR_FCSR);
+    wire is_itype_sh   = funct3[0] && ~funct3[1];
+    wire is_csr_fflags = (u_12 == `VX_CSR_FFLAGS);
+    wire is_csr_frm    = (u_12 == `VX_CSR_FRM);
+    wire is_csr_fcsr   = (u_12 == `VX_CSR_FCSR);
+    wire frm_is_dyn    = (funct3 == 3'b111);
+    wire is_rd_zero    = (rd == 0);
+
+    reg csr_write;
+    always @(*) begin
+        csr_write = 1'b0;
+        unique case (funct3)
+            3'b001, // CSRRW
+            3'b101: // CSRRWI
+                csr_write = 1'b1;
+            3'b010, // CSRRS
+            3'b011: // CSRRC
+                csr_write = (rs1 != 0);
+            3'b110, // CSRRSI
+            3'b111: // CSRRCI
+                csr_write = (rs1 != 0);
+            default: csr_write = 1'b0;
+        endcase
+    end
 
     wire [19:0] ui_imm  = instr[31:12];
 `ifdef XLEN_64
@@ -151,6 +175,9 @@ module VX_decode import
         op_args   = 'x;
         reg_ids   = 'x;
         use_regs  = '0;
+        rd_xregs  = '0;
+        wr_xregs  = '0;
+        bytesel   = BYTESEL_DEFAULT;
         is_wstall = 0;
     `ifdef EXT_V_ENABLE
         is_rvv    = 0;
@@ -295,7 +322,8 @@ module VX_decode import
                 op_type = INST_LSU_FENCE;
                 op_args.lsu.is_store = 0;
                 op_args.lsu.is_float = 0;
-                op_args.lsu.offset = 0;
+                op_args.lsu.pack     = 0;
+                op_args.lsu.offset   = 0;
             end
             INST_SYS : begin
                 if (funct3[1:0] != 0) begin
@@ -304,7 +332,10 @@ module VX_decode import
                     op_args.csr.addr = u_12;
                     op_args.csr.use_imm = funct3[2];
                     op_args.csr.imm5 = rs1;
-                    is_wstall = is_fpu_csr; // only stall for FPU CSRs
+                    rd_xregs[XREG_FFLAGS] = is_csr_fcsr || is_csr_fflags;
+                    rd_xregs[XREG_FRM]    = is_csr_fcsr || is_csr_frm;
+                    wr_xregs[XREG_FFLAGS] = csr_write && (is_csr_fcsr || is_csr_fflags);
+                    wr_xregs[XREG_FRM]    = csr_write && (is_csr_fcsr || is_csr_frm);
                     `USED_IREG (rd);
                     `USED_REG (REG_TYPE_I, rs1, ~funct3[2]);
                 end else begin
@@ -347,7 +378,8 @@ module VX_decode import
                 op_type = INST_OP_BITS'({1'b0, funct3});
                 op_args.lsu.is_store = 0;
                 op_args.lsu.is_float = opcode[2];
-                op_args.lsu.offset = u_12;
+                op_args.lsu.pack     = 0;
+                op_args.lsu.offset   = u_12;
                 `USED_IREG (rs1);
             `ifdef EXT_F_ENABLE
                 `USED_REG (opcode[2], rd, 1'b1);
@@ -383,7 +415,8 @@ module VX_decode import
                 op_type = INST_OP_BITS'({1'b1, funct3});
                 op_args.lsu.is_store = 1;
                 op_args.lsu.is_float = opcode[2];
-                op_args.lsu.offset = s_imm;
+                op_args.lsu.pack    = 0;
+                op_args.lsu.offset   = s_imm;
                 `USED_IREG (rs1);
             `ifdef EXT_F_ENABLE
                 `USED_REG (opcode[2], rs2, 1'b1);
@@ -402,6 +435,11 @@ module VX_decode import
                 op_args.fpu.frm = funct3;
                 op_args.fpu.fmt[0] = funct2[0]; // float/double
                 op_args.fpu.fmt[1] = opcode[3] ^ opcode[2]; // SUB
+
+                // track FCSR dependencies
+                rd_xregs[XREG_FRM] = frm_is_dyn;
+                wr_xregs[XREG_FFLAGS] = 1'b1;
+
                 `USED_FREG (rd);
                 `USED_FREG (rs1);
                 `USED_FREG (rs2);
@@ -412,7 +450,8 @@ module VX_decode import
                 op_args.fpu.frm = funct3;
                 op_args.fpu.fmt[0] = funct2[0]; // float/double
                 op_args.fpu.fmt[1] = rs2[1]; // CVT W/L
-
+                // Most FP operations may set exception flags
+                wr_xregs[XREG_FFLAGS] = 1'b1;
                 case (funct5)
                     5'b00000, // FADD
                     5'b00001, // FSUB
@@ -420,6 +459,7 @@ module VX_decode import
                     begin
                         op_type = INST_OP_BITS'({2'b00, 1'b0, funct5[1]});
                         op_args.fpu.fmt[1] = funct5[0]; // SUB
+                        rd_xregs[XREG_FRM] = frm_is_dyn;
                         `USED_FREG (rd);
                         `USED_FREG (rs1);
                         `USED_FREG (rs2);
@@ -428,6 +468,7 @@ module VX_decode import
                         // NCP: FSGNJ=0, FSGNJN=1, FSGNJX=2
                         op_type = INST_OP_BITS'(INST_FPU_MISC);
                         op_args.fpu.frm = INST_FRM_BITS'(funct3[1:0]);
+                        wr_xregs[XREG_FFLAGS] = 1'b0;
                         `USED_FREG (rd);
                         `USED_FREG (rs1);
                         `USED_FREG (rs2);
@@ -444,6 +485,7 @@ module VX_decode import
                     5'b01000: begin
                         // FCVT.S.D, FCVT.D.S
                         op_type = INST_OP_BITS'(INST_FPU_F2F);
+                        rd_xregs[XREG_FRM] = frm_is_dyn;
                         `USED_FREG (rd);
                         `USED_FREG (rs1);
                     end
@@ -451,6 +493,7 @@ module VX_decode import
                     5'b00011: begin
                         // FDIV
                         op_type = INST_OP_BITS'(INST_FPU_DIV);
+                        rd_xregs[XREG_FRM] = frm_is_dyn;
                         `USED_FREG (rd);
                         `USED_FREG (rs1);
                         `USED_FREG (rs2);
@@ -458,6 +501,7 @@ module VX_decode import
                     5'b01011: begin
                         // FSQRT
                         op_type = INST_OP_BITS'(INST_FPU_SQRT);
+                        rd_xregs[XREG_FRM] = frm_is_dyn;
                         `USED_FREG (rd);
                         `USED_FREG (rs1);
                     end
@@ -471,12 +515,14 @@ module VX_decode import
                     5'b11000: begin
                         // FCVT.W.X, FCVT.WU.X
                         op_type = (rs2[0]) ? INST_OP_BITS'(INST_FPU_F2U) : INST_OP_BITS'(INST_FPU_F2I);
+                        rd_xregs[XREG_FRM] = frm_is_dyn;
                         `USED_IREG (rd);
                         `USED_FREG (rs1);
                     end
                     5'b11010: begin
                         // FCVT.X.W, FCVT.X.WU
                         op_type = (rs2[0]) ? INST_OP_BITS'(INST_FPU_U2F) : INST_OP_BITS'(INST_FPU_I2F);
+                        rd_xregs[XREG_FRM] = frm_is_dyn;
                         `USED_FREG (rd);
                         `USED_IREG (rs1);
                     end
@@ -490,6 +536,7 @@ module VX_decode import
                             op_type = INST_OP_BITS'(INST_FPU_MISC);
                             op_args.fpu.frm = INST_FRM_BITS'(4);
                         end
+                        wr_xregs[XREG_FFLAGS] = 1'b0;
                         `USED_IREG (rd);
                         `USED_FREG (rs1);
                     end
@@ -497,6 +544,7 @@ module VX_decode import
                         // NCP: FMV.W.X=5
                         op_type = INST_OP_BITS'(INST_FPU_MISC);
                         op_args.fpu.frm = INST_FRM_BITS'(5);
+                        wr_xregs[XREG_FFLAGS] = 1'b0;
                         `USED_FREG (rd);
                         `USED_IREG (rs1);
                     end
@@ -532,7 +580,7 @@ module VX_decode import
                             end
                             3'h2: begin // SPLIT
                                 op_type = INST_OP_BITS'(INST_SFU_SPLIT);
-                                op_args.wctl.is_neg = rs2[0];
+                                op_args.wctl.is_cond_neg = rs2[0];
                                 `USED_IREG (rs1);
                                 `USED_IREG (rd);
                             end
@@ -542,12 +590,23 @@ module VX_decode import
                             end
                             3'h4: begin // BAR
                                 op_type = INST_OP_BITS'(INST_SFU_BAR);
+                                op_args.wctl.is_sync_bar = 1;
+                                op_args.wctl.is_bar_arrive = 0;
                                 `USED_IREG (rs1);
                                 `USED_IREG (rs2);
                             end
                             3'h5: begin // PRED
                                 op_type = INST_OP_BITS'(INST_SFU_PRED);
-                                op_args.wctl.is_neg = rd[0];
+                                op_args.wctl.is_cond_neg = rd[0];
+                                `USED_IREG (rs1);
+                                `USED_IREG (rs2);
+                            end
+                            3'h6: begin // Asynchronous arrive/wait barrier
+                                op_type = INST_OP_BITS'(INST_SFU_BAR);
+                                op_args.wctl.is_sync_bar = 0;
+                                op_args.wctl.is_bar_arrive = ~is_rd_zero;
+                                is_wstall = is_rd_zero;
+                                `USED_IREG (rd);
                                 `USED_IREG (rs1);
                                 `USED_IREG (rs2);
                             end
@@ -566,6 +625,53 @@ module VX_decode import
                     end
                 `ifdef EXT_TCU_ENABLE
                     7'h02: begin
+                        if (funct3 == 3'h0) begin
+                            ex_type = EX_TCU;
+                        `ifdef TCU_SPARSE_ENABLE
+                            op_type = rs2[0] ? INST_OP_BITS'(INST_TCU_WMMA_SP)
+                                             : INST_OP_BITS'(INST_TCU_WMMA);
+                        `else
+                            op_type = INST_OP_BITS'(INST_TCU_WMMA);
+                        `endif
+                            op_args.tcu.fmt_s  = rs1[3:0];
+                            op_args.tcu.fmt_d  = rd[3:0];
+                            op_args.tcu.step_m = '0;
+                            op_args.tcu.step_n = '0;
+                            op_args.tcu.step_k = '0;
+                            `USED_FREG (rd);
+                            `USED_FREG (rs1);
+                            `USED_FREG (rs2);
+                            `USED_FREG (rs3);
+                        end
+                    `ifdef TCU_SPARSE_ENABLE
+                        else if (funct3 == 3'h1) begin
+                            ex_type = EX_TCU;
+                            op_type = INST_OP_BITS'(INST_TCU_META_STORE);
+                            op_args.tcu.fmt_s  = rd[3:0]; // input type ID (uop seq generates col_idx)
+                            op_args.tcu.fmt_d  = '0;      // col_idx generated by uop sequencer
+                            op_args.tcu.step_m = '0;
+                            op_args.tcu.step_n = '0;
+                            op_args.tcu.step_k = '0;
+                            `USED_FREG (rs1); // float register with load 0 data
+                            `USED_FREG (rs2); // float register with load 1 data (int4) or same as rs1
+                        end
+                    `endif
+                    end
+                `endif
+                `ifdef EXT_DXA_ENABLE
+                    7'h03: begin // DXA issue (dimension-specific)
+                        // funct3 encodes dimensionality: 0=1D .. 4=5D.
+                        // Expanded into micro-ops by VX_dxa_uops.
+                        if (funct3 <= 3'd4) begin
+                            ex_type = EX_SFU;
+                            op_type = INST_OP_BITS'(INST_SFU_DXA);
+                            op_args.dxa.op = funct3;
+                            `USED_IREG (rs1);
+                            `USED_IREG (rs2);
+                        end
+                    end
+                `endif
+                    7'h04: begin // Load packing: vx_packlb_f / vx_packlh_f
                         case (funct3)
                             3'h0: begin // WMMA
                                 ex_type = EX_TCU;
@@ -579,10 +685,31 @@ module VX_decode import
                                 `USED_FREG (rs2);
                                 `USED_FREG (rs3);
                             end
+                            3'h1: begin // vx_packlb_f — pack 4 strided bytes into float
+                                ex_type              = EX_LSU;
+                                op_type              = INST_OP_BITS'(INST_LSU_LBU);
+                                op_args.lsu.is_store = 0;
+                                op_args.lsu.is_float = 1;
+                                op_args.lsu.pack     = 2'b01;
+                                op_args.lsu.offset   = '0;
+                                `USED_FREG (rd);
+                                `USED_IREG (rs1);
+                                `USED_IREG (rs2);
+                            end
+                            3'h2: begin // vx_packlh_f — pack 2 strided halfwords into float
+                                ex_type              = EX_LSU;
+                                op_type              = INST_OP_BITS'(INST_LSU_LHU);
+                                op_args.lsu.is_store = 0;
+                                op_args.lsu.is_float = 1;
+                                op_args.lsu.pack     = 2'b10;
+                                op_args.lsu.offset   = '0;
+                                `USED_FREG (rd);
+                                `USED_IREG (rs1);
+                                `USED_IREG (rs2);
+                            end
                             default:;
                         endcase
                     end
-                `endif
                     default:;
                 endcase
             end
@@ -590,7 +717,7 @@ module VX_decode import
         endcase
     end
 
-    // disable write to integer register r0
+    // disable writes to x0
     wire wb = use_regs[RV_RD] && (reg_ids[RV_RD] != 0);
 
     VX_elastic_buffer #(
@@ -602,11 +729,11 @@ module VX_decode import
         .valid_in  (fetch_if.valid),
         .ready_in  (fetch_if.ready),
     `ifdef EXT_V_ENABLE
-        .data_in   ({fetch_if.data.uuid,  fetch_if.data.wid,  fetch_if.data.tmask,  fetch_if.data.PC,  ex_type,                op_type,                op_args,                is_rvv,                is_masked,                wb,                use_regs[3:1],          reg_ids[RV_RD],    reg_ids[RV_RS1],    reg_ids[RV_RS2],    reg_ids[RV_RS3]}),
-        .data_out  ({decode_if.data.uuid, decode_if.data.wid, decode_if.data.tmask, decode_if.data.PC, decode_if.data.ex_type, decode_if.data.op_type, decode_if.data.op_args, decode_if.data.is_rvv, decode_if.data.is_masked, decode_if.data.wb, decode_if.data.used_rs, decode_if.data.rd, decode_if.data.rs1, decode_if.data.rs2, decode_if.data.rs3}),
+        .data_in   ({fetch_if.data.uuid,  fetch_if.data.wid,  fetch_if.data.tmask,  fetch_if.data.PC,  ex_type,                op_type,                op_args,                is_rvv,                is_masked,                wb,                rd_xregs,                wr_xregs,                use_regs[3:1],          reg_ids[RV_RD],    bytesel,                  reg_ids[RV_RS1],    reg_ids[RV_RS2],    reg_ids[RV_RS3]}),
+        .data_out  ({decode_if.data.uuid, decode_if.data.wid, decode_if.data.tmask, decode_if.data.PC, decode_if.data.ex_type, decode_if.data.op_type, decode_if.data.op_args, decode_if.data.is_rvv, decode_if.data.is_masked, decode_if.data.wb, decode_if.data.rd_xregs, decode_if.data.wr_xregs, decode_if.data.used_rs, decode_if.data.rd, decode_if.data.bytesel,   decode_if.data.rs1, decode_if.data.rs2, decode_if.data.rs3}),
     `else
-        .data_in   ({fetch_if.data.uuid,  fetch_if.data.wid,  fetch_if.data.tmask,  fetch_if.data.PC,  ex_type,                op_type,                op_args,                wb,                use_regs[3:1],          reg_ids[RV_RD],    reg_ids[RV_RS1],    reg_ids[RV_RS2],    reg_ids[RV_RS3]}),
-        .data_out  ({decode_if.data.uuid, decode_if.data.wid, decode_if.data.tmask, decode_if.data.PC, decode_if.data.ex_type, decode_if.data.op_type, decode_if.data.op_args, decode_if.data.wb, decode_if.data.used_rs, decode_if.data.rd, decode_if.data.rs1, decode_if.data.rs2, decode_if.data.rs3}),
+        .data_in   ({fetch_if.data.uuid,  fetch_if.data.wid,  fetch_if.data.tmask,  fetch_if.data.PC,  ex_type,                op_type,                op_args,                wb,                rd_xregs,                wr_xregs,                use_regs[3:1],          reg_ids[RV_RD],    bytesel,                  reg_ids[RV_RS1],    reg_ids[RV_RS2],    reg_ids[RV_RS3]}),
+        .data_out  ({decode_if.data.uuid, decode_if.data.wid, decode_if.data.tmask, decode_if.data.PC, decode_if.data.ex_type, decode_if.data.op_type, decode_if.data.op_args, decode_if.data.wb, decode_if.data.rd_xregs, decode_if.data.wr_xregs, decode_if.data.used_rs, decode_if.data.rd, decode_if.data.bytesel,   decode_if.data.rs1, decode_if.data.rs2, decode_if.data.rs3}),
     `endif
         .valid_out (decode_if.valid),
         .ready_out (decode_if.ready)
@@ -622,6 +749,27 @@ module VX_decode import
 
 `ifndef L1_ENABLE
     assign fetch_if.ibuf_pop = decode_if.ibuf_pop;
+`endif
+
+`ifdef DBG_TRACE_PIPELINE
+    always @(posedge clk) begin
+        if (decode_if.valid && decode_if.ready) begin
+            `TRACE(1, ("%t: %s decode: wid=%0d, PC=0x%0h, ex=", $time, INSTANCE_ID, decode_if.data.wid, to_fullPC(decode_if.data.PC)))
+            VX_trace_pkg::trace_ex_type(1, decode_if.data.ex_type);
+            `TRACE(1, (", op="))
+            VX_trace_pkg::trace_ex_op(1, decode_if.data.ex_type, decode_if.data.op_type, decode_if.data.op_args);
+            `TRACE(1, (", tmask=%b, wb=%b, rd_xregs=%b, wr_xregs=%b, used_rs=%b, rd=", decode_if.data.tmask, decode_if.data.wb, decode_if.data.rd_xregs, decode_if.data.wr_xregs, decode_if.data.used_rs))
+            VX_trace_pkg::trace_reg_idx(1, decode_if.data.rd);
+            `TRACE(1, (", rs1="))
+            VX_trace_pkg::trace_reg_idx(1, decode_if.data.rs1);
+            `TRACE(1, (", rs2="))
+            VX_trace_pkg::trace_reg_idx(1, decode_if.data.rs2);
+            `TRACE(1, (", rs3="))
+            VX_trace_pkg::trace_reg_idx(1, decode_if.data.rs3);
+            VX_trace_pkg::trace_op_args(1, decode_if.data.ex_type, decode_if.data.op_type, decode_if.data.op_args);
+            `TRACE(1, (" (#%0d)\n", decode_if.data.uuid))
+        end
+    end
 `endif
 
 endmodule

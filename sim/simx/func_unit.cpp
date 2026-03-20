@@ -19,13 +19,25 @@
 #include <util.h>
 #include "debug.h"
 #include "core.h"
+#include "socket.h"
+#include "cluster.h"
 #include "constants.h"
 #include "cache_sim.h"
 #include "VX_types.h"
 
 using namespace vortex;
 
-AluUnit::AluUnit(const SimContext& ctx, Core* core) : FuncUnit(ctx, core, "alu-unit") {}
+#ifdef EXT_DXA_ENABLE
+static inline uint32_t decode_barrier_addr(uint32_t bar_addr_raw, const Arch& arch) {
+  uint32_t cta_no = bar_addr_raw & 0xffffu;
+  uint32_t bar_no = (bar_addr_raw >> 16) & 0x7fffu;
+  return (cta_no * arch.num_barriers() + bar_no) | (bar_addr_raw & 0x80000000u);
+}
+#endif
+
+AluUnit::AluUnit(const SimContext& ctx, const char* name, Core* core)
+	: FuncUnit(ctx, name, core)
+{}
 
 void AluUnit::tick() {
   for (uint32_t iw = 0; iw < ISSUE_WIDTH; ++iw) {
@@ -33,7 +45,9 @@ void AluUnit::tick() {
 		if (input.empty())
 			continue;
 		auto& output = Outputs.at(iw);
-		auto trace = input.front();
+		if (output.full())
+			continue; // stall
+		auto trace = input.peek();
 		int delay = 0;
 		if (std::get_if<AluType>(&trace->op_type)) {
 			auto alu_type = std::get<AluType>(trace->op_type);
@@ -56,7 +70,7 @@ void AluUnit::tick() {
 			default:
 				std::abort();
 			}
-			DT(3, this->name() << ": op=" << alu_type << ", " << *trace);
+			DT(3, this->name() << " execute: op=" << alu_type << ", " << *trace);
 		} else if (std::get_if<VoteType>(&trace->op_type)) {
 				delay = 2;
 		} else if (std::get_if<ShflType>(&trace->op_type)) {
@@ -73,7 +87,7 @@ void AluUnit::tick() {
 			default:
 				std::abort();
 			}
-			DT(3, this->name() << ": op=" << br_type << ", " << *trace);
+			DT(3, this->name() << " execute: op=" << br_type << ", " << *trace);
 		} else if (std::get_if<MdvType>(&trace->op_type)) {
 			auto mdv_type = std::get<MdvType>(trace->op_type);
 			switch (mdv_type) {
@@ -92,11 +106,11 @@ void AluUnit::tick() {
 			default:
 				std::abort();
 			}
-			DT(3, this->name() << ": op=" << mdv_type << ", " << *trace);
+			DT(3, this->name() << " execute: op=" << mdv_type << ", " << *trace);
 		} else {
 			std::abort();
 		}
-		output.push(trace, delay);
+		output.send(trace, delay);
 		if (trace->eop && trace->fetch_stall) {
 			core_->resume(trace->wid);
 		}
@@ -106,7 +120,9 @@ void AluUnit::tick() {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-FpuUnit::FpuUnit(const SimContext& ctx, Core* core) : FuncUnit(ctx, core, "fpu-unit") {}
+FpuUnit::FpuUnit(const SimContext& ctx, const char* name, Core* core)
+	: FuncUnit(ctx, name, core)
+{}
 
 void FpuUnit::tick() {
 	for (uint32_t iw = 0; iw < ISSUE_WIDTH; ++iw) {
@@ -114,7 +130,9 @@ void FpuUnit::tick() {
 		if (input.empty())
 			continue;
 		auto& output = Outputs.at(iw);
-		auto trace = input.front();
+		if (output.full())
+			continue; // stall
+		auto trace = input.peek();
 		auto fpu_type = std::get<FpuType>(trace->op_type);
 		int delay = 2;
 		switch (fpu_type) {
@@ -124,7 +142,7 @@ void FpuUnit::tick() {
 		case FpuType::FMVXW:
 		case FpuType::FMVWX:
 		case FpuType::FMINMAX:
-			output.push(trace, 2+delay);
+			output.send(trace, 2+delay);
 			break;
 		case FpuType::FADD:
 		case FpuType::FSUB:
@@ -133,31 +151,31 @@ void FpuUnit::tick() {
 		case FpuType::FMSUB:
 		case FpuType::FNMADD:
 		case FpuType::FNMSUB:
-			output.push(trace, LATENCY_FMA+delay);
+			output.send(trace, LATENCY_FMA+delay);
 			break;
 		case FpuType::FDIV:
-			output.push(trace, LATENCY_FDIV+delay);
+			output.send(trace, LATENCY_FDIV+delay);
 			break;
 		case FpuType::FSQRT:
-			output.push(trace, LATENCY_FSQRT+delay);
+			output.send(trace, LATENCY_FSQRT+delay);
 			break;
 		case FpuType::F2I:
 		case FpuType::I2F:
 		case FpuType::F2F:
-			output.push(trace, LATENCY_FCVT+delay);
+			output.send(trace, LATENCY_FCVT+delay);
 			break;
 		default:
 			std::abort();
 		}
-		DT(3,this->name() << ": op=" << fpu_type << ", " << *trace);
+		DT(3,this->name() << " execute: op=" << fpu_type << ", " << *trace);
 		input.pop();
 	}
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 
-LsuUnit::LsuUnit(const SimContext& ctx, Core* core)
-	: FuncUnit(ctx, core, "lsu-unit")
+LsuUnit::LsuUnit(const SimContext& ctx, const char* name, Core* core)
+	: FuncUnit(ctx, name, core)
 	, pending_loads_(0)
 {}
 
@@ -177,14 +195,18 @@ void LsuUnit::tick() {
 
 	// handle memory responses
 	for (uint32_t b = 0; b < NUM_LSU_BLOCKS; ++b) {
-		auto& lsu_rsp_port = core_->lmem_switch_.at(b)->RspIn;
-		if (lsu_rsp_port.empty())
+		auto& lsu_rsp_in = core_->lmem_switch_.at(b)->RspOut;
+		if (lsu_rsp_in.empty())
 			continue;
 		auto& state = states_.at(b);
-		auto& lsu_rsp = lsu_rsp_port.front();
-		DT(3, this->name() << "-mem-rsp: " << lsu_rsp);
+		auto& lsu_rsp = lsu_rsp_in.peek();
 		auto& entry = state.pending_rd_reqs.at(lsu_rsp.tag);
 		auto trace = entry.trace;
+		int iw = trace->wid % ISSUE_WIDTH;
+		auto& output = Outputs.at(iw);
+		if (output.full())
+			continue; // stall
+		DT(3, this->name() << " mem-rsp: " << lsu_rsp);
 		assert(entry.count != 0);
 		entry.count -= lsu_rsp.mask.count(); // track remaining
 		if (entry.count == 0) {
@@ -192,12 +214,11 @@ void LsuUnit::tick() {
 			state.pending_rd_reqs.release(lsu_rsp.tag);
 			// is last batch?
 			if (entry.eop) {
-				int iw = trace->wid % ISSUE_WIDTH;
-				Outputs.at(iw).push(trace, 1);
+				output.send(trace, 1);
 			}
 		}
 		pending_loads_ -= lsu_rsp.mask.count();
-		lsu_rsp_port.pop();
+		lsu_rsp_in.pop();
 	}
 
 	// handle LSU requests
@@ -208,9 +229,10 @@ void LsuUnit::tick() {
 			// wait for all pending memory operations to complete
 			if (!state.pending_rd_reqs.empty())
 				continue;
-			Outputs.at(iw).push(state.fence_trace, 1);
+			if (!Outputs.at(iw).try_send(state.fence_trace))
+				continue;
 			state.fence_lock = false;
-			DT(3, this->name() << "-fence-unlock: " << state.fence_trace);
+			DT(3, this->name() << " fence-unlock: " << state.fence_trace);
 		}
 
 		// check input queue
@@ -221,7 +243,7 @@ void LsuUnit::tick() {
 		bool is_fence = false;
 		bool is_write = false;
 
-		auto trace = input.front();
+		auto trace = input.peek();
 		if (std::get_if<LsuType>(&trace->op_type)) {
 			auto lsu_type = std::get<LsuType>(trace->op_type);
 			is_fence = (lsu_type == LsuType::FENCE);
@@ -246,7 +268,7 @@ void LsuUnit::tick() {
 			// schedule fence lock
 			state.fence_trace = trace;
 			state.fence_lock = true;
-			DT(3, this->name() << "-fence-lock: " << *trace);
+			DT(3, this->name() << " fence-lock: " << *trace);
 			// remove input
 			input.pop();
 			continue;
@@ -255,7 +277,7 @@ void LsuUnit::tick() {
 		// check pending queue capacity
 		if (!is_write && state.pending_rd_reqs.full()) {
 			if (!trace->log_once(true)) {
-				DT(4, "*** " << this->name() << "-queue-full: " << *trace);
+				DT(4, this->name() << " queue-full: " << *trace);
 			}
 			continue;
 		} else {
@@ -263,7 +285,7 @@ void LsuUnit::tick() {
 		}
 
 		if (remain_addrs_ == 0) {
-			pending_addrs_.clear();
+			addr_list_.clear();
 			if (trace->data) {
 			#ifdef EXT_V_ENABLE
 				if (std::get_if<VlsType>(&trace->op_type)) {
@@ -272,7 +294,7 @@ void LsuUnit::tick() {
 						if (!trace->tmask.test(t))
 							continue;
 						for (auto addr : trace_data->mem_addrs.at(t)) {
-							pending_addrs_.push_back(addr);
+							addr_list_.push_back(addr);
 						}
 					}
 				} else
@@ -282,21 +304,32 @@ void LsuUnit::tick() {
 					for (uint32_t t = 0; t < trace_data->mem_addrs.size(); ++t) {
 						if (!trace->tmask.test(t))
 							continue;
-						pending_addrs_.push_back(trace_data->mem_addrs.at(t));
+						addr_list_.push_back(trace_data->mem_addrs.at(t));
 					}
 				}
-				remain_addrs_ = pending_addrs_.size();
+				remain_addrs_ = addr_list_.size();
 			}
 		}
 
+		// check output backpressure
+		bool direct_commit = (is_write || 0 == addr_list_.size());
+		if (direct_commit && remain_addrs_ <= NUM_LSU_LANES) {
+			if (Outputs.at(iw).full())
+				continue; // stall
+		}
+
 		if (remain_addrs_ != 0) {
+			// check lmem switch backpressure
+			if (core_->lmem_switch_.at(block_idx)->ReqIn.full())
+				continue; // stall
+
 			// setup memory request
 			LsuReq lsu_req(NUM_LSU_LANES);
 			lsu_req.write = is_write;
-			uint32_t t0 = pending_addrs_.size() - remain_addrs_;
+			uint32_t t0 = addr_list_.size() - remain_addrs_;
 			for (uint32_t i = 0; i < NUM_LSU_LANES; ++i) {
 				lsu_req.mask.set(i);
-				lsu_req.addrs.at(i) = pending_addrs_.at(t0 + i).addr;
+				lsu_req.addrs.at(i) = addr_list_.at(t0 + i).addr;
 				--remain_addrs_;
 				if (remain_addrs_ == 0)
 					break;
@@ -314,8 +347,8 @@ void LsuUnit::tick() {
 			lsu_req.uuid = trace->uuid;
 
 			// send memory request
-			core_->lmem_switch_.at(block_idx)->ReqIn.push(lsu_req);
-			DT(3, this->name() << "-mem-req: " << lsu_req);
+			core_->lmem_switch_.at(block_idx)->ReqIn.send(lsu_req);
+			DT(3, this->name() << " mem-req: " << lsu_req);
 
 			// update stats
 			if (is_write) {
@@ -327,9 +360,8 @@ void LsuUnit::tick() {
 		}
 
 		if (remain_addrs_ == 0) {
-			// do not wait on writes
-			if (is_write || 0 == pending_addrs_.size()) {
-				Outputs.at(iw).push(trace, 1);
+			if (direct_commit) {
+				Outputs.at(iw).send(trace);
 			}
 			// remove input
 			input.pop();
@@ -339,9 +371,58 @@ void LsuUnit::tick() {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-SfuUnit::SfuUnit(const SimContext& ctx, Core* core)
-	: FuncUnit(ctx, core, "sfu-unit")
-{}
+SfuUnit::SfuUnit(const SimContext& ctx, const char* name, Core* core)
+	: FuncUnit(ctx, name, core)
+{
+#ifdef EXT_DXA_ENABLE
+	dxa_runtime_.resize(core->arch().num_warps());
+#endif
+}
+
+#ifdef EXT_DXA_ENABLE
+bool SfuUnit::execute_dxa_op(instr_trace_t* trace, DxaType dxa_type, const DxaTraceData& dxa_data) {
+	auto& runtime = dxa_runtime_.at(trace->wid);
+	switch (dxa_type) {
+	case DxaType::SETUP:
+		// Clear all coords to prevent stale leakage from previous
+		// higher-dimension instructions on this warp.
+		runtime.coords = {0, 0, 0, 0, 0};
+		// rs1 = smem_addr, rs2 = packed meta
+		runtime.smem_addr = dxa_data.rs1;
+		if (dxa_data.rs2 & 0x80000000u) {
+			// Packed launch metadata:
+			//   rs2[3:0]   = desc_slot
+			//   rs2[30:4]  = raw barrier payload
+			//   rs2[31]    = packed marker
+			uint32_t raw_bar = (dxa_data.rs2 >> 4) & 0x07ffffffu;
+			runtime.desc_slot = dxa_data.rs2 & 0x0fu;
+			runtime.bar_id = decode_barrier_addr(raw_bar, core_->arch());
+		} else {
+			runtime.desc_slot = dxa_data.rs1;
+			runtime.bar_id = decode_barrier_addr(dxa_data.rs2, core_->arch());
+		}
+		core_->barrier_event_attach(runtime.bar_id);
+		return true;
+	case DxaType::COORD01:
+		runtime.coords[0] = dxa_data.rs1;
+		runtime.coords[1] = dxa_data.rs2;
+		return true;
+	case DxaType::COORD23:
+		runtime.coords[2] = dxa_data.rs1;
+		runtime.coords[3] = dxa_data.rs2;
+		return true;
+	case DxaType::ISSUE: {
+		runtime.coords[4] = dxa_data.rs1;
+		bool accepted = core_->socket()->cluster()->dxa_core()->submit(
+		    core_, runtime.desc_slot, runtime.smem_addr, runtime.coords.data(), runtime.bar_id);
+		return accepted;
+	}
+	default:
+		std::abort();
+	}
+	return false;
+}
+#endif
 
 void SfuUnit::tick() {
 	// check input queue
@@ -350,7 +431,9 @@ void SfuUnit::tick() {
 		if (input.empty())
 			continue;
 		auto& output = Outputs.at(iw);
-		auto trace = input.front();
+		if (output.full())
+			continue; // stall
+		auto trace = input.peek();
 		bool release_warp = trace->fetch_stall;
 		int delay = 2;
 
@@ -358,7 +441,7 @@ void SfuUnit::tick() {
 			auto wctl_type = std::get<WctlType>(trace->op_type);
 			switch (wctl_type) {
 			case WctlType::WSPAWN:
-				output.push(trace, 2+delay);
+				output.send(trace, 2+delay);
 				if (trace->eop) {
 					auto trace_data = std::dynamic_pointer_cast<SfuTraceData>(trace->data);
 					release_warp = core_->wspawn(trace_data->arg1, trace_data->arg2);
@@ -368,31 +451,60 @@ void SfuUnit::tick() {
 			case WctlType::SPLIT:
 			case WctlType::JOIN:
 			case WctlType::PRED:
-				output.push(trace, 2+delay);
-				break;
-			case WctlType::BAR: {
-				output.push(trace, 2+delay);
+				output.send(trace, 2+delay);
 				if (trace->eop) {
 					auto trace_data = std::dynamic_pointer_cast<SfuTraceData>(trace->data);
-					release_warp = core_->barrier(trace_data->arg1, trace_data->arg2, trace->wid);
+					ThreadMask tmask(core_->arch().num_threads(), trace_data->arg1);
+					release_warp = core_->setTmask(trace->wid, tmask);
+				}
+				break;
+			case WctlType::WSYNC:
+				if (!trace->eop || core_->has_pending_instrs(trace->wid))
+					continue; //skips the rest of the loop. Does not pop the input.
+				output.send(trace, 2+delay);
+				release_warp = true;
+				break;
+			case WctlType::BAR: {
+				output.send(trace, 2+delay);
+				if (trace->eop) {
+					auto trace_data = std::dynamic_pointer_cast<BarTraceData>(trace->data);
+					if (trace->wb || trace_data->is_sync_bar) {
+						core_->barrier_arrive(trace_data->bar_id, trace_data->count, trace->wid, trace_data->is_sync_bar);
+						if (trace_data->is_sync_bar){
+							release_warp = false;
+						}
+					} else {
+						release_warp = !core_->barrier_wait(trace_data->bar_id,	trace_data->count, trace->wid);
+					}
 				}
 			} break;
 			default:
 				std::abort();
 			}
-			DT(3, this->name() << ": op=" << wctl_type << ", " << *trace);
+			DT(3, this->name() << " execute: op=" << wctl_type << ", " << *trace);
+#ifdef EXT_DXA_ENABLE
+		} else if (std::get_if<DxaType>(&trace->op_type)) {
+			auto dxa_type = std::get<DxaType>(trace->op_type);
+			auto dxa_data = std::dynamic_pointer_cast<DxaTraceData>(trace->data);
+			assert(dxa_data);
+			if (!this->execute_dxa_op(trace, dxa_type, *dxa_data)) {
+				continue; // DXA request queue backpressure
+			}
+			output.send(trace, 2+delay);
+			DT(3, this->name() << " execute: op=" << dxa_type << ", " << *trace);
+#endif
 		} else if (std::get_if<CsrType>(&trace->op_type)) {
 			auto csr_type = std::get<CsrType>(trace->op_type);
 			switch  (csr_type) {
 			case CsrType::CSRRW:
 			case CsrType::CSRRS:
 			case CsrType::CSRRC:
-				output.push(trace, 2+delay);
+				output.send(trace, 2+delay);
 				break;
 			default:
 				std::abort();
 			}
-			DT(3, this->name() << ": op=" << csr_type << ", " << *trace);
+			DT(3, this->name() << " execute: op=" << csr_type << ", " << *trace);
 		} else {
 			std::abort();
 		}
@@ -409,8 +521,8 @@ void SfuUnit::tick() {
 
 #ifdef EXT_V_ENABLE
 
-VpuUnit::VpuUnit(const SimContext& ctx, Core* core)
-	: FuncUnit(ctx, core, "vpu-unit")
+VpuUnit::VpuUnit(const SimContext& ctx, const char* name, Core* core)
+	: FuncUnit(ctx, name, core)
 {
 	// bind vector unit
 	for (uint32_t iw = 0; iw < ISSUE_WIDTH; ++iw) {
@@ -428,8 +540,8 @@ void VpuUnit::tick() {
 
 #ifdef EXT_TCU_ENABLE
 
-TcuUnit::TcuUnit(const SimContext& ctx, Core* core)
-	: FuncUnit(ctx, core, "tcu-unit")
+TcuUnit::TcuUnit(const SimContext& ctx, const char* name, Core* core)
+	: FuncUnit(ctx, name, core)
 {
 	// bind tensor unit
 	for (uint32_t iw = 0; iw < ISSUE_WIDTH; ++iw) {

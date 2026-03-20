@@ -1,6 +1,12 @@
 ROOT_DIR := $(realpath ../../..)
 include $(ROOT_DIR)/config.mk
 
+CLOCK_FREQ	?= 800
+DELAY_UNC 	?= 0.02
+DELAY_IO  	?= 0.05
+SAIF_FILE 	?=
+SAIF_INST 	?=
+
 SRC_DIR := $(VORTEX_HOME)/hw/syn/yosys
 LIB_DIR := $(VORTEX_HOME)/hw/syn/libs
 
@@ -48,16 +54,36 @@ endif
 
 # include paths
 FPU_INCLUDE = -I$(RTL_DIR)/fpu
-ifeq (,$(findstring -DEXT_F_DISABLE, $(CONFIGS)))
+ifeq (,$(filter -DEXT_F_DISABLE, $(CONFIGS)))
 	FPU_INCLUDE += -I$(THIRD_PARTY_DIR)/cvfpu/src/common_cells/include -I$(THIRD_PARTY_DIR)/cvfpu/src/common_cells/src -I$(THIRD_PARTY_DIR)/cvfpu/src/fpu_div_sqrt_mvp/hdl -I$(THIRD_PARTY_DIR)/cvfpu/src
 endif
-RTL_INCLUDE = -I$(RTL_DIR) -I$(RTL_DIR)/libs -I$(RTL_DIR)/interfaces -I$(RTL_DIR)/core -I$(RTL_DIR)/mem -I$(RTL_DIR)/cache
+RTL_INCLUDE = -I$(ROOT_DIR)/hw -I$(RTL_DIR) -I$(RTL_DIR)/libs -I$(RTL_DIR)/interfaces -I$(RTL_DIR)/core -I$(RTL_DIR)/mem -I$(RTL_DIR)/cache
 RTL_INCLUDE += $(FPU_INCLUDE)
 
 RTL_INCLUDE += -I$(LIB_DIR)/no_mem
 
+# Add TCU extension sources
+ifneq (,$(filter -DEXT_TCU_ENABLE, $(CONFIGS)))
+	RTL_PKGS += $(RTL_DIR)/tcu/VX_tcu_pkg.sv
+	RTL_INCLUDE += -I$(RTL_DIR)/tcu
+	ifneq (,$(filter -DTCU_TYPE_DPI, $(CONFIGS)))
+		RTL_INCLUDE += -I$(RTL_DIR)/tcu/dpi
+	endif
+	ifneq (,$(filter -DTCU_TYPE_DSP, $(CONFIGS)))
+		RTL_INCLUDE += -I$(RTL_DIR)/tcu/dsp
+	endif
+	ifneq (,$(filter -DTCU_TYPE_BHF, $(CONFIGS)))
+		RTL_INCLUDE += -I$(RTL_DIR)/tcu/bhf
+		RTL_INCLUDE += -J$(THIRD_PARTY_DIR)/hardfloat/source/RISCV
+		RTL_INCLUDE += -I$(THIRD_PARTY_DIR)/hardfloat/source
+	endif
+	ifneq (,$(filter -DTCU_TYPE_TFR, $(CONFIGS)))
+		RTL_INCLUDE += -I$(RTL_DIR)/tcu/tfr
+	endif
+endif
+
 # Add V extension sources
-ifneq (,$(findstring -DEXT_V_ENABLE, $(CONFIGS)))
+ifneq (,$(filter -DEXT_V_ENABLE, $(CONFIGS)))
 	RTL_PKGS += $(RTL_DIR)/vpu/VX_vpu_pkg.sv
 	RTL_INCLUDE += -I$(RTL_DIR)/vpu
 endif
@@ -106,6 +132,7 @@ synthesis: $(BUILD_DIR)/sources.txt
 	cd $(BUILD_DIR); TOP=$(TOP_LEVEL_ENTITY) \
 	SRC_FILE=sources.txt \
 	SDC_FILE=$(SRC_DIR)/project.sdc \
+	BB_MODULES="VX_dp_ram_asic,VX_sp_ram_asic" \
 	$(SYN_LIB_ENV) \
 	TOOL_DIR=$(SCRIPT_DIR) \
 	RUN_SYNTH=1 \
@@ -115,6 +142,8 @@ techmap: $(BUILD_DIR)/sources.txt
 	cd $(BUILD_DIR); TOP=$(TOP_LEVEL_ENTITY) \
 	SRC_FILE=sources.txt \
 	SDC_FILE=$(SRC_DIR)/project.sdc \
+	BB_MODULES="VX_dp_ram_asic,VX_sp_ram_asic" \
+	CLOCK_FREQ=$(CLOCK_FREQ) \
 	$(SYN_LIB_ENV) \
 	TOOL_DIR=$(SCRIPT_DIR) \
 	RUN_MAP=1 \
@@ -124,6 +153,12 @@ timing: $(BUILD_DIR)/sources.txt
 	cd $(BUILD_DIR); TOP=$(TOP_LEVEL_ENTITY) \
 	SRC_FILE=sources.txt \
 	SDC_FILE=$(SRC_DIR)/project.sdc \
+	BB_MODULES="VX_dp_ram_asic,VX_sp_ram_asic" \
+	CLOCK_FREQ=$(CLOCK_FREQ) \
+	DELAY_UNC=$(DELAY_UNC) \
+	DELAY_IO=$(DELAY_IO) \
+	SAIF_FILE="$(SAIF_FILE)" \
+	SAIF_INST="$(SAIF_INST)" \
 	$(SYN_LIB_ENV) \
 	TOOL_DIR=$(SCRIPT_DIR) \
 	RUN_STA=1 \

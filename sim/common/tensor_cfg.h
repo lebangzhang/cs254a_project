@@ -13,6 +13,7 @@
 
 #pragma once
 
+#include <VX_config.h>
 #include <stdint.h>
 #include <type_traits>
 #include <algorithm>
@@ -43,6 +44,45 @@ struct bf16 {
   static constexpr const char* name = "bf16";
 };
 
+struct fp8 {
+  using dtype = uint8_t;
+  static constexpr uint32_t id = 3;
+  static constexpr uint32_t bits = 8;
+  static constexpr const char* name = "fp8";
+};
+
+struct bf8 {
+  using dtype = uint8_t;
+  static constexpr uint32_t id = 4;
+  static constexpr uint32_t bits = 8;
+  static constexpr const char* name = "bf8";
+};
+
+struct tf32 {
+  using dtype = uint32_t;
+  static constexpr uint32_t id = 5;
+  static constexpr uint32_t bits = 32;
+  static constexpr const char* name = "tf32";
+};
+
+struct mxfp8 {
+  using dtype = uint8_t;
+  static constexpr uint32_t id = 6;
+  static constexpr uint32_t bits = 8;
+  static constexpr uint32_t scale_bits = 8;
+  static constexpr uint32_t ele_block = 32;    //elements per block
+  static constexpr const char* name = "mxfp8";
+};
+
+struct nvfp4 {
+  using dtype = uint8_t;
+  static constexpr uint32_t id = 7;
+  static constexpr uint32_t bits = 4;
+  static constexpr uint32_t scale_bits = 8;
+  static constexpr uint32_t ele_block = 16;
+  static constexpr const char* name = "nvfp4";
+};
+
 struct int32 {
   using dtype = int32_t;
   static constexpr uint32_t id = 8;
@@ -53,7 +93,7 @@ struct int32 {
 struct int8 {
   using dtype = int8_t;
   static constexpr uint32_t id = 9;
-  static constexpr uint32_t bits = 16;
+  static constexpr uint32_t bits = 8;
   static constexpr const char* name = "i8";
 };
 
@@ -78,18 +118,82 @@ struct uint4 {
   static constexpr const char* name = "u4";
 };
 
+struct mxint8 {
+  using dtype = int8_t;
+  static constexpr uint32_t id = 13;
+  static constexpr uint32_t bits = 8;
+  static constexpr uint32_t scale_bits = 8;
+  static constexpr uint32_t ele_blcok = 32;
+  static constexpr const char* name = "mxi8";
+};
+
 inline const char* fmt_string(uint32_t fmt) {
   switch (fmt) {
-  case fp32::id:  return fp32::name;
-  case fp16::id:  return fp16::name;
-  case bf16::id:  return bf16::name;
-  case int32::id: return int32::name;
-  case int8::id:  return int8::name;
-  case uint8::id: return uint8::name;
-  case int4::id:  return int4::name;
-  case uint4::id: return uint4::name;
-  default:        return "";
+  case fp32::id:   return fp32::name;
+  case fp16::id:   return fp16::name;
+  case bf16::id:   return bf16::name;
+  case fp8::id:    return fp8::name;
+  case bf8::id:    return bf8::name;
+  case tf32::id:   return tf32::name;
+  case mxfp8::id:  return mxfp8::name;
+  case nvfp4::id:  return nvfp4::name;
+  case int32::id:  return int32::name;
+  case int8::id:   return int8::name;
+  case uint8::id:  return uint8::name;
+  case int4::id:   return int4::name;
+  case uint4::id:  return uint4::name;
+  case mxint8::id: return mxint8::name;
+  default:         return "";
   }
+}
+
+inline constexpr bool sparse_scale_format(uint32_t fmt) {
+  switch (fmt) {
+  case mxfp8::id:
+  case nvfp4::id:
+  case mxint8::id:
+    return true;
+  default:
+    return false;
+  }
+}
+
+inline constexpr bool sparse_format_supported(uint32_t fmt) {
+  switch (fmt) {
+  case fp16::id:
+  case bf16::id:
+  case fp8::id:
+  case bf8::id:
+  case int8::id:
+  case uint8::id:
+  case int4::id:
+  case uint4::id:
+    return true;
+  default:
+    return false;
+  }
+}
+
+inline constexpr uint32_t sparse_meta_num_cols(uint32_t fmt, uint32_t nt) {
+  switch (fmt) {
+  case fp16::id:
+  case bf16::id:
+    return (nt + 7) / 8;
+  case fp8::id:
+  case bf8::id:
+  case int8::id:
+  case uint8::id:
+    return (nt + 3) / 4;
+  case int4::id:
+  case uint4::id:
+    return (nt + 1) / 2;
+  default:
+    return 0;
+  }
+}
+
+inline constexpr uint32_t sparse_meta_total_store_uops(uint32_t fmt, uint32_t stores_per_col, uint32_t nt) {
+  return sparse_meta_num_cols(fmt, nt) * stores_per_col;
 }
 
 template <uint32_t NT,      // number of threads per warp
@@ -137,9 +241,18 @@ public:
   static constexpr uint32_t a_sub_blocks = block_cap / a_block_size;  // number of A micro-tiles per register
   static constexpr uint32_t a_sub_steps  = m_steps / a_sub_blocks;    // number of A sub-steps per register
 
-  static constexpr uint32_t b_block_size = tcK * tcN;                 // size of B micro-tile
+  static constexpr uint32_t b_block_size = tcK * tcN;                   // size of B micro-tile (dense)
   static constexpr uint32_t b_sub_blocks = block_cap / b_block_size;  // number of B micro-tiles per register
   static constexpr uint32_t b_sub_steps  = n_steps / b_sub_blocks;    // number of B sub-steps per register
+
+  // Symmetric sparse flag (NT=4, NT=16: block_em == block_en)
+  static constexpr bool sym_sparse = (block_em == block_en);
+
+  // Symmetric: column-pair layout (block_cap lanes per block)
+  // Asymmetric: standard interleaved layout (tcK × tcN × 2 = block_cap lanes per block)
+  static constexpr uint32_t b_block_size_sp = sym_sparse ? block_cap : (tcK * tcN) * 2;
+  static constexpr uint32_t b_sub_blocks_sp = block_cap / b_block_size_sp;
+  static constexpr uint32_t b_sub_steps_sp  = n_steps / b_sub_blocks_sp;
 
   static constexpr uint32_t NRA = (xtileM * xtileK) / NT; // Number of A registers
   static constexpr uint32_t NRB = (xtileN * xtileK) / NT; // Number of B registers
@@ -163,6 +276,18 @@ public:
   static constexpr uint32_t tileM = xtileM;
   static constexpr uint32_t tileN = xtileN;
   static constexpr uint32_t tileK = xtileK * i_ratio; // Adjusted for input type size
+
+  // Metadata constants for 2:4 structured sparsity
+  static constexpr uint32_t itype_bits = It::bits;
+  static constexpr uint32_t rtl_i_ratio = 32 / itype_bits;
+  static constexpr uint32_t meta_block_width = NT * 2 * rtl_i_ratio; // bits
+  static constexpr uint32_t meta_cols = (meta_block_width + 31) / 32;
+  static constexpr uint32_t per_warp_depth = m_steps * (k_steps / 2);
+  static constexpr uint32_t meta_cols_per_load = (NT >= per_warp_depth) ? (NT / per_warp_depth) : 1;
+  static constexpr uint32_t stores_per_col = (per_warp_depth + NT - 1) / NT;
+  static constexpr uint32_t banks_per_store = (NT < per_warp_depth) ? NT : per_warp_depth;
+  static constexpr uint32_t num_meta_loads = (per_warp_depth * meta_cols + NT - 1) / NT;
+  static constexpr uint32_t meta_stride = num_meta_loads * NT;  // words per K-tile metadata
 };
 
 } // namespace tensor

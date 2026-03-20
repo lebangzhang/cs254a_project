@@ -37,9 +37,16 @@ module VX_core import VX_gpu_pkg::*; #(
 
     VX_mem_bus_if.master    icache_bus_if,
 
-`ifdef GBAR_ENABLE
-    VX_gbar_bus_if.master   gbar_bus_if,
+`ifdef EXT_DXA_ENABLE
+    VX_dxa_req_bus_if.master dxa_req_bus_if,
+    VX_dxa_bank_wr_if.slave  dxa_bank_wr_if,
 `endif
+
+    // KMU bus
+    VX_kmu_bus_if.slave     kmu_bus_if,
+
+    // Global barrier
+    VX_gbar_bus_if.master   gbar_bus_if,
 
     // Status
     output wire             busy
@@ -49,15 +56,18 @@ module VX_core import VX_gpu_pkg::*; #(
     VX_decode_if        decode_if();
     VX_sched_csr_if     sched_csr_if();
     VX_decode_sched_if  decode_sched_if();
-    VX_issue_sched_if   issue_sched_if[`ISSUE_WIDTH]();
+    VX_issue_sched_if   issue_sched_if();
     VX_commit_sched_if  commit_sched_if();
-    VX_commit_csr_if    commit_csr_if();
     VX_branch_ctl_if    branch_ctl_if[`NUM_ALU_BLOCKS]();
     VX_warp_ctl_if      warp_ctl_if();
 
     VX_dispatch_if      dispatch_if[NUM_EX_UNITS * `ISSUE_WIDTH]();
     VX_commit_if        commit_if[NUM_EX_UNITS * `ISSUE_WIDTH]();
     VX_writeback_if     writeback_if[`ISSUE_WIDTH]();
+
+`ifdef EXT_DXA_ENABLE
+    VX_txbar_bus_if     dxa_txbar_bus_if();
+`endif
 
     VX_lsu_mem_if #(
         .NUM_LANES (`NUM_LSU_LANES),
@@ -81,29 +91,33 @@ module VX_core import VX_gpu_pkg::*; #(
     VX_vpu_seq_csr_if vpu_seq_csr_if[`NUM_WARPS]();
 `endif
 
-    base_dcrs_t base_dcrs;
+    VX_dcr_csr_if dcr_csr_if();
 
-    VX_dcr_data dcr_data (
+    VX_dcr_flush_if dcr_flush_if();
+
+    VX_dcr_data #(
+        .INSTANCE_ID (`SFORMATF(("%s-dcr_data", INSTANCE_ID))),
+        .CORE_ID (CORE_ID)
+    ) dcr_data (
         .clk        (clk),
         .reset      (reset),
         .dcr_bus_if (dcr_bus_if),
-        .base_dcrs  (base_dcrs)
+        .dcr_csr_if (dcr_csr_if),
+        .dcr_flush_if(dcr_flush_if)
     );
 
     `SCOPE_IO_SWITCH (3);
 
-    VX_schedule #(
-        .INSTANCE_ID (`SFORMATF(("%s-schedule", INSTANCE_ID))),
+    VX_scheduler #(
+        .INSTANCE_ID (`SFORMATF(("%s-scheduler", INSTANCE_ID))),
         .CORE_ID (CORE_ID)
-    ) schedule (
+    ) scheduler (
         .clk            (clk),
         .reset          (reset),
 
     `ifdef PERF_ENABLE
         .sched_perf     (pipeline_perf.sched),
     `endif
-
-        .base_dcrs      (base_dcrs),
 
         .warp_ctl_if    (warp_ctl_if),
         .branch_ctl_if  (branch_ctl_if),
@@ -112,11 +126,11 @@ module VX_core import VX_gpu_pkg::*; #(
         .issue_sched_if (issue_sched_if),
         .commit_sched_if(commit_sched_if),
 
+        .kmu_bus_if     (kmu_bus_if),
+
         .schedule_if    (schedule_if),
-    `ifdef GBAR_ENABLE
-        .gbar_bus_if    (gbar_bus_if),
-    `endif
         .sched_csr_if   (sched_csr_if),
+        .gbar_bus_if    (gbar_bus_if),
 
         .busy           (busy)
     );
@@ -127,6 +141,9 @@ module VX_core import VX_gpu_pkg::*; #(
         `SCOPE_IO_BIND  (0)
         .clk            (clk),
         .reset          (reset),
+    `ifdef PERF_ENABLE
+        .fetch_perf     (pipeline_perf.fetch),
+    `endif
         .icache_bus_if  (icache_bus_if),
         .schedule_if    (schedule_if),
         .fetch_if       (fetch_if)
@@ -182,15 +199,20 @@ module VX_core import VX_gpu_pkg::*; #(
         .vpu_seq_csr_if  (vpu_seq_csr_if),
     `endif
 
-        .base_dcrs      (base_dcrs),
 
         .lsu_mem_if     (lsu_mem_if),
 
         .dispatch_if    (dispatch_if),
         .commit_if      (commit_if),
 
-        .commit_csr_if  (commit_csr_if),
         .sched_csr_if   (sched_csr_if),
+
+        .dcr_csr_if     (dcr_csr_if),
+
+    `ifdef EXT_DXA_ENABLE
+        .dxa_req_bus_if (dxa_req_bus_if),
+        .dxa_txbar_bus_if(dxa_txbar_bus_if),
+    `endif
 
         .warp_ctl_if    (warp_ctl_if),
         .branch_ctl_if  (branch_ctl_if)
@@ -206,7 +228,6 @@ module VX_core import VX_gpu_pkg::*; #(
 
         .writeback_if   (writeback_if),
 
-        .commit_csr_if  (commit_csr_if),
         .commit_sched_if(commit_sched_if)
     );
 
@@ -219,7 +240,12 @@ module VX_core import VX_gpu_pkg::*; #(
         .lmem_perf     (lmem_perf),
         .coalescer_perf(coalescer_perf),
     `endif
+    `ifdef EXT_DXA_ENABLE
+        .dxa_bank_wr_if (dxa_bank_wr_if),
+        .dxa_txbar_bus_if(dxa_txbar_bus_if),
+    `endif
         .lsu_mem_if    (lsu_mem_if),
+        .dcr_flush_if  (dcr_flush_if),
         .dcache_bus_if (dcache_bus_if)
     );
 

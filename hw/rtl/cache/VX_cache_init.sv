@@ -96,7 +96,10 @@ module VX_cache_init import VX_gpu_pkg::*; #(
     reg [`UP(UUID_WIDTH)-1:0] flush_uuid_r, flush_uuid_n;
 
     for (genvar i = 0; i < NUM_REQS; ++i) begin : g_core_bus_out_req
+        // block core requests if a flush is active,
+        // unless the lock for this specific request has been released
         wire input_enable = ~flush_req_enable || lock_released[i];
+
         assign core_bus_out_if[i].req_valid = core_bus_in_if[i].req_valid && input_enable;
         assign core_bus_out_if[i].req_data  = core_bus_in_if[i].req_data;
         assign core_bus_in_if[i].req_ready  = core_bus_out_if[i].req_ready && input_enable;

@@ -80,8 +80,8 @@ module VX_mem_coalescer #(
     `STATIC_ASSERT ((NUM_REQS > 1), ("invalid parameter"))
     `STATIC_ASSERT (`IS_DIVISBLE(NUM_REQS * DATA_IN_WIDTH, DATA_OUT_WIDTH), ("invalid parameter"))
     `STATIC_ASSERT ((NUM_REQS * DATA_IN_WIDTH >= DATA_OUT_WIDTH), ("invalid parameter"))
-    `RUNTIME_ASSERT ((~in_req_valid || in_req_mask != 0), ("%t: invalid request mask", $time))
-    `RUNTIME_ASSERT ((~out_rsp_valid || out_rsp_mask != 0), ("%t: invalid request mask", $time))
+    `RUNTIME_ASSERT ((~in_req_valid || in_req_mask != 0), ("invalid request mask"))
+    `RUNTIME_ASSERT ((~out_rsp_valid || out_rsp_mask != 0), ("invalid request mask"))
 
     localparam TAG_ID_WIDTH = TAG_WIDTH - UUID_WIDTH;
     //                           tag          + mask     + offest
@@ -344,6 +344,8 @@ module VX_mem_coalescer #(
     assign misses = misses_r;
 
 `ifdef DBG_TRACE_MEM
+    import "DPI-C" function void dpi_trace(input int level, input string format /*verilator sformat*/);
+
     wire [`UP(UUID_WIDTH)-1:0] out_req_uuid;
     wire [`UP(UUID_WIDTH)-1:0] out_rsp_uuid;
 
@@ -381,7 +383,7 @@ module VX_mem_coalescer #(
                 `TRACE(2, (", data="))
                 `TRACE_ARRAY1D(2, "0x%0h", out_req_data, OUT_REQS)
             end else begin
-                `TRACE(2,  ("%d: %s out-req-rd: valid=%b, addr=", $time, INSTANCE_ID, out_req_mask))
+                `TRACE(2,  ("%t: %s out-req-rd: valid=%b, addr=", $time, INSTANCE_ID, out_req_mask))
                 `TRACE_ARRAY1D(2, "0x%h", out_req_addr, OUT_REQS)
                 `TRACE(2, (", flags="))
                 `TRACE_ARRAY1D(2, "%b", out_req_flags, OUT_REQS)

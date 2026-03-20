@@ -22,8 +22,8 @@
 
 using namespace vortex;
 
-VOpcUnit::VOpcUnit(const SimContext &ctx, Core* core)
-  : SimObject<VOpcUnit>(ctx, "vopc-unit")
+VOpcUnit::VOpcUnit(const SimContext &ctx, const char* name, Core* core)
+  : SimObject<VOpcUnit>(ctx, name)
   , Input(this)
   , Output(this)
   , core_(core) {
@@ -63,7 +63,12 @@ void VOpcUnit::tick() {
   // 0. Process incoming instructions
   if (Input.empty())
     return;
-  auto trace = Input.front();
+
+  // check output backpressure
+  if (this->Output.full())
+    return; // stall
+
+  auto trace = Input.peek();
 
   // 1. First Entry initialization
   if(!instr_pending_) {

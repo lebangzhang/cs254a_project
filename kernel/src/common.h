@@ -13,8 +13,6 @@
 
 #define RISCV_CUSTOM0 0x0B
 
-#define IO_MPM_EXITCODE (IO_MPM_ADDR + 8)
-
 #ifdef XLEN_64
   #define LOAD_IMMEDIATE64(rd, imm) \
     li   t0, (imm >> 32); \

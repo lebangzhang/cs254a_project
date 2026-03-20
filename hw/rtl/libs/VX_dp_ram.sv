@@ -13,18 +13,22 @@
 
 `include "VX_platform.vh"
 
-`define RAM_INITIALIZATION \
-    if (INIT_ENABLE != 0) begin : g_init \
-        if (INIT_FILE != "") begin : g_file \
-            initial $readmemh(INIT_FILE, ram); \
-        end else begin : g_value \
-            initial begin \
-                for (integer i = 0; i < SIZE; ++i) begin : g_i \
-                    ram[i] = INIT_VALUE; \
+`ifndef ASIC
+    `define RAM_INITIALIZATION \
+        if (INIT_ENABLE != 0) begin : g_init \
+            if (INIT_FILE != "") begin : g_file \
+                initial $readmemh(INIT_FILE, ram); \
+            end else begin : g_value \
+                initial begin \
+                    for (integer i = 0; i < SIZE; ++i) begin : g_i \
+                        ram[i] = INIT_VALUE; \
+                    end \
                 end \
             end \
-        end \
-    end
+        end
+`else
+    `define RAM_INITIALIZATION
+`endif
 
 `ifdef SIMULATION
     `define RAM_RESET_BLOCK if (RESET_RAM && reset) begin \
@@ -392,7 +396,7 @@ module VX_dp_ram #(
 
             assign rdata = (prev_write && (prev_waddr == raddr)) ? prev_data : ram[raddr];
             if (RDW_ASSERT) begin : g_rw_asert
-                `RUNTIME_ASSERT(~read || (rdata == ram[raddr]), ("%t: read after write hazard", $time))
+                `RUNTIME_ASSERT(~read || (rdata == ram[raddr]), ("read after write hazard"))
             end
         end
     end

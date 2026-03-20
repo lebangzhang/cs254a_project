@@ -43,6 +43,31 @@ struct SfuTraceData : public ITraceData {
   SfuTraceData(Word arg1, Word arg2) : arg1(arg1), arg2(arg2) {}
 };
 
+#ifdef EXT_DXA_ENABLE
+struct DxaTraceData : public ITraceData {
+  using Ptr = std::shared_ptr<DxaTraceData>;
+  Word rs1;
+  Word rs2;
+  uint32_t op;
+  DxaTraceData(Word rs1, Word rs2, uint32_t op)
+    : rs1(rs1)
+    , rs2(rs2)
+    , op(op) {}
+};
+#endif
+
+struct BarTraceData : public ITraceData {
+  using Ptr = std::shared_ptr<BarTraceData>;
+  Word bar_id;
+  Word count;
+  int is_sync_bar;
+  BarTraceData(Word bar_id, Word count, bool is_sync_bar)
+    : bar_id(bar_id)
+    , count(count)
+    , is_sync_bar(is_sync_bar)
+  {}
+};
+
 struct instr_trace_t {
 public:
   //--

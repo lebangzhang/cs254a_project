@@ -71,6 +71,20 @@ proc run_setup {} {
   # Create project
   create_project $project_name $project_name -force -part $device_part
 
+  # 1. Synthesis: Enable Retiming
+  set_property strategy "Flow_PerfOptimized_High" [get_runs synth_1]
+  set_property STEPS.SYNTH_DESIGN.ARGS.RETIMING true [get_runs synth_1]
+
+  # 2. Implementation: Use ExtraTimingOpt
+  set_property strategy "Performance_ExtraTimingOpt" [get_runs impl_1]
+
+  # 3. Implementation: Force Physical Optimization steps
+  set_property STEPS.PHYS_OPT_DESIGN.IS_ENABLED true [get_runs impl_1]
+  set_property STEPS.PHYS_OPT_DESIGN.ARGS.DIRECTIVE AggressiveExplore [get_runs impl_1]
+
+  set_property STEPS.POST_ROUTE_PHYS_OPT_DESIGN.IS_ENABLED true [get_runs impl_1]
+  set_property STEPS.POST_ROUTE_PHYS_OPT_DESIGN.ARGS.DIRECTIVE AggressiveExplore [get_runs impl_1]
+
   # Add constrains file
   read_xdc $xdc_file
 
@@ -151,8 +165,20 @@ proc run_report {} {
   report_place_status -file place.rpt
   report_route_status -file route.rpt
 
+  # Generate methodology reports to check for any issues
+  report_methodology -file methodology.rpt
+
   # Generate timing report
   report_timing -unique_pins -nworst 100 -delay_type max -sort_by group -file timing.rpt
+
+  # Generate a high fanout net report
+  report_high_fanout_nets -fanout_greater_than 100 -max_nets 50 -file high_fanout_nets.rpt
+
+  # Generate clock utilization report to see register usage
+  report_clock_utilization -file clock_utilization.rpt
+
+  # Generate detailed RAM report
+  report_ram_utilization -detail -file ram_utilization.rpt
 
   # Generate power and drc reports
   report_power -file power.rpt

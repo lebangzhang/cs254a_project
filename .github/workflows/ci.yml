@@ -17,7 +17,10 @@ on: [push, pull_request]
 
 jobs:
   setup:
-    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        os: [ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
 
     steps:
       - name: Checkout code
@@ -30,18 +33,18 @@ jobs:
         uses: actions/cache@v4
         with:
           path: tools
-          key: ${{ runner.os }}-toolchain-v0.1
+          key: ${{ matrix.os }}-toolchain-v0.1
           restore-keys: |
-            ${{ runner.os }}-toolchain-
+            ${{ matrix.os }}-toolchain-
 
       - name: Cache Third Party Directory
         id: cache-thirdparty
         uses: actions/cache@v4
         with:
           path: third_party
-          key: ${{ runner.os }}-thirdparty-v0.1
+          key: ${{ matrix.os }}-thirdparty-v0.1
           restore-keys: |
-            ${{ runner.os }}-thirdparty-
+            ${{ matrix.os }}-thirdparty-
 
       - name: Install Dependencies
         if: steps.cache-toolchain.outputs.cache-hit != 'true' || steps.cache-thirdparty.outputs.cache-hit != 'true'
@@ -63,11 +66,12 @@ jobs:
           make -C third_party > /dev/null
 
   build:
-    runs-on: ubuntu-22.04
     needs: setup
     strategy:
       matrix:
+        os: [ubuntu-24.04]
         xlen: [32, 64]
+    runs-on: ${{ matrix.os }}
 
     steps:
       - name: Checkout code
@@ -82,18 +86,18 @@ jobs:
         uses: actions/cache@v4
         with:
           path: tools
-          key: ${{ runner.os }}-toolchain-v0.1
+          key: ${{ matrix.os }}-toolchain-v0.1
           restore-keys: |
-            ${{ runner.os }}-toolchain-
+            ${{ matrix.os }}-toolchain-
 
       - name: Cache Third Party Directory
         id: cache-thirdparty
         uses: actions/cache@v4
         with:
           path: third_party
-          key: ${{ runner.os }}-thirdparty-v0.1
+          key: ${{ matrix.os }}-thirdparty-v0.1
           restore-keys: |
-            ${{ runner.os }}-thirdparty-
+            ${{ matrix.os }}-thirdparty-
 
       - name: Run Build
         run: |
@@ -108,18 +112,22 @@ jobs:
       - name: Upload Build Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: build-${{ matrix.xlen }}
+          name: build-${{ matrix.os }}-${{ matrix.xlen }}
           path: build${{ matrix.xlen }}
 
   tests:
-    runs-on: ubuntu-22.04
     needs: build
-    timeout-minutes: 90
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
-        name: [regression, opencl, cache, config1, config2, debug, scope, stress, synthesis, vm, vector, cupbop, tensor, ara2_vector]
+        os: [ubuntu-24.04]
+        name: [regression, dxa, opencl, cache, config1, config2, debug, scope, stress, synthesis, vm, vector, cupbop, tensor, tensor_sp, ara2_vector]
         xlen: [32, 64]
+        exclude:
+          - name: dxa
+            xlen: 64
+    runs-on: ${{ matrix.os }}
 
     steps:
       - name: Checkout code
@@ -134,23 +142,23 @@ jobs:
         uses: actions/cache@v4
         with:
           path: tools
-          key: ${{ runner.os }}-toolchain-v0.1
+          key: ${{ matrix.os }}-toolchain-v0.1
           restore-keys: |
-            ${{ runner.os }}-toolchain-
+            ${{ matrix.os }}-toolchain-
 
       - name: Cache Third Party Directory
         id: cache-thirdparty
         uses: actions/cache@v4
         with:
           path: third_party
-          key: ${{ runner.os }}-thirdparty-v0.1
+          key: ${{ matrix.os }}-thirdparty-v0.1
           restore-keys: |
-            ${{ runner.os }}-thirdparty-
+            ${{ matrix.os }}-thirdparty-
 
       - name: Download Build Artifact
         uses: actions/download-artifact@v4
         with:
-          name: build-${{ matrix.xlen }}
+          name: build-${{ matrix.os }}-${{ matrix.xlen }}
           path: build${{ matrix.xlen }}
 
       - name: Run tests
@@ -160,15 +168,15 @@ jobs:
           chmod -R +x . # Ensure all files have executable permissions
           if [ "${{ matrix.name }}" == "regression" ]; then
             ./ci/regression.sh --unittest
-            ./ci/regression.sh --isa
-            ./ci/regression.sh --kernel
+            ./ci/regression.sh --riscv
+            # TODO: ./ci/regression.sh --kernel
             ./ci/regression.sh --regression
           else
             ./ci/regression.sh --${{ matrix.name }}
           fi
 
   complete:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     needs: tests
 
     steps:

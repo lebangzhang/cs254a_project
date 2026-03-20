@@ -519,18 +519,17 @@ uint64_t rv_fsgnjx_d(uint64_t a, uint64_t b) {
   return r;
 }
 
-uint32_t rv_dtof_r(uint64_t a, uint32_t frm) {
+uint32_t rv_dtof(uint64_t a, uint32_t frm, uint32_t* fflags) {
   rv_init(frm);
-  return rv_dtof(a);
-}
-
-uint32_t rv_dtof(uint64_t a) {
   auto r = f64_to_f32(to_float64_t(a));
+  if (fflags) { *fflags = softfloat_exceptionFlags; }
   return from_float32_t(r);
 }
 
-uint64_t rv_ftod(uint32_t a) {
+uint64_t rv_ftod(uint32_t a, uint32_t frm, uint32_t* fflags) {
+  rv_init(frm);
   auto r = f32_to_f64(to_float32_t(a));
+  if (fflags) { *fflags = softfloat_exceptionFlags; }
   return from_float64_t(r);
 }
 
@@ -560,6 +559,120 @@ uint16_t rv_ftob_s(uint32_t a, uint32_t frm, uint32_t* fflags) {
   auto r = f32_to_bf16(to_float32_t(a));
   if (fflags) { *fflags = softfloat_exceptionFlags; }
   return from_bfloat16_t(r);
+}
+
+uint32_t rv_e4m3tof_s(uint8_t a, uint32_t frm, uint32_t* fflags) {
+  rv_init(frm);
+  float8_t f8;
+  f8.v = a;
+  float32_t f32 = f8e4m3_to_f32(f8);
+  if (fflags) { *fflags = softfloat_exceptionFlags; }
+  return f32.v;
+}
+
+uint8_t rv_ftoe4m3_s(uint32_t a, uint32_t frm, uint32_t* fflags) {
+  rv_init(frm);
+  float32_t f32;
+  f32.v = a;
+  float8_t f8 = f32_to_f8e4m3(f32);
+  if (fflags) { *fflags = softfloat_exceptionFlags; }
+  return f8.v;
+}
+
+uint32_t rv_e5m2tof_s(uint8_t a, uint32_t frm, uint32_t* fflags) {
+  rv_init(frm);
+  bfloat8_t bf8;
+  bf8.v = a;
+  float32_t f32 = f8e5m2_to_f32(bf8);
+  if (fflags) { *fflags = softfloat_exceptionFlags; }
+  return f32.v;
+}
+
+uint8_t rv_ftoe5m2_s(uint32_t a, uint32_t frm, uint32_t* fflags) {
+  rv_init(frm);
+  float32_t f32;
+  f32.v = a;
+  bfloat8_t bf8 = f32_to_f8e5m2(f32);
+  if (fflags) { *fflags = softfloat_exceptionFlags; }
+  return bf8.v;
+}
+
+uint32_t rv_tf32tof_s(uint32_t a, uint32_t frm, uint32_t* fflags) {
+  rv_init(frm);
+  tfloat32_t tf32;
+  tf32.v = a;
+  float32_t f32 = tf32_to_f32(tf32);
+  if (fflags) { *fflags = softfloat_exceptionFlags; }
+  return f32.v;
+}
+
+uint32_t rv_ftotf32_s(uint32_t a, uint32_t frm, uint32_t* fflags) {
+  rv_init(frm);
+  float32_t f32;
+  f32.v = a;
+  tfloat32_t tf32 = f32_to_tf32(f32);
+  if (fflags) { *fflags = softfloat_exceptionFlags; }
+  return tf32.v;
+}
+
+uint32_t rv_mxfp8tof_s(uint8_t a, uint8_t sf, uint32_t frm, uint32_t* fflags) {
+  rv_init(frm);
+  mxfloat8_t mxfp8;
+  mxfp8.v = a;
+  mxfp8.sf = sf;
+  float32_t f32 = mxfp8_to_f32(mxfp8);
+  if (fflags) { *fflags = softfloat_exceptionFlags; }
+  return f32.v;
+}
+
+uint8_t rv_ftomxfp8_s(uint32_t a, uint8_t sf, uint32_t frm, uint32_t* fflags) {
+  rv_init(frm);
+  float32_t f32;
+  f32.v = a;
+  sfexp8_t scale_factor;
+  scale_factor.sf = sf;
+  mxfloat8_t mxfp8 = f32_to_mxfp8(f32, scale_factor);
+  if (fflags) { *fflags = softfloat_exceptionFlags; }
+  return mxfp8.v;
+}
+
+uint32_t rv_nvfp4tof_s(uint8_t a, uint8_t sf, uint32_t frm, uint32_t* fflags) {
+  rv_init(frm);
+  nvfloat4_t nvfp4;
+  nvfp4.v = a;
+  nvfp4.sf = sf;
+  float32_t f32 = nvfp4_to_f32(nvfp4);
+  if (fflags) { *fflags = softfloat_exceptionFlags; }
+  return f32.v;
+}
+
+uint8_t rv_ftonvfp4_s(uint32_t a, uint8_t sf, uint32_t frm, uint32_t* fflags) {
+  rv_init(frm);
+  float32_t f32;
+  f32.v = a;
+  sffloat8_t scale_factor;
+  scale_factor.sf = sf;
+  nvfloat4_t nvfp4 = f32_to_nvfp4(f32, scale_factor);
+  if (fflags) { *fflags = softfloat_exceptionFlags; }
+  return nvfp4.v;
+}
+
+uint32_t rv_e2m1tof_s(uint8_t a, uint32_t frm, uint32_t* fflags) {
+  rv_init(frm);
+  float4_t f4;
+  f4.v = a;
+  float32_t f32 = f4e2m1_to_f32(f4);
+  if (fflags) { *fflags = softfloat_exceptionFlags; }
+  return f32.v;
+}
+
+uint8_t rv_ftoe2m1_s(uint32_t a, uint32_t frm, uint32_t* fflags) {
+  rv_init(frm);
+  float32_t f32;
+  f32.v = a;
+  float4_t f4 = f32_to_f4e2m1(f32);
+  if (fflags) { *fflags = softfloat_exceptionFlags; }
+  return f4.v;
 }
 
 #ifdef __cplusplus

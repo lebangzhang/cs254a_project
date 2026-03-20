@@ -1,3 +1,16 @@
+// Copyright © 2019-2023
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 #pragma once
 
 #include "arch.h"
@@ -30,17 +43,10 @@ public:
   };
 
   struct PerfStats {
-    uint64_t reads;
-    uint64_t writes;
-    uint64_t latency;
-    uint64_t stalls;
-
-    PerfStats()
-      : reads(0)
-      , writes(0)
-      , latency(0)
-      , stalls(0)
-    {}
+    uint64_t reads = 0;
+    uint64_t writes = 0;
+    uint64_t latency = 0;
+    uint64_t stalls = 0;
 
     PerfStats& operator+=(const PerfStats& rhs) {
       this->reads   += rhs.reads;
@@ -51,8 +57,8 @@ public:
     }
   };
 
-  std::vector<SimPort<instr_trace_t*>> Inputs;
-  std::vector<SimPort<instr_trace_t*>> Outputs;
+  std::vector<SimChannel<instr_trace_t*>> Inputs;
+  std::vector<SimChannel<instr_trace_t*>> Outputs;
 
   VecUnit(const SimContext& ctx, const char* name, const Arch& arch, Core* core);
   ~VecUnit();

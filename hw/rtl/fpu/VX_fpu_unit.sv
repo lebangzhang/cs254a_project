@@ -37,11 +37,11 @@ module VX_fpu_unit import VX_gpu_pkg::*, VX_fpu_pkg::*; #(
         .data_t (fpu_execute_t)
     ) per_block_execute_if[BLOCK_SIZE]();
 
-    VX_dispatch_unit #(
+    VX_lane_dispatch #(
         .BLOCK_SIZE (BLOCK_SIZE),
         .NUM_LANES  (NUM_LANES),
         .OUT_BUF    (PARTIAL_BW ? 3 : 0)
-    ) dispatch_unit (
+    ) lane_dispatch (
         .clk        (clk),
         .reset      (reset),
         .dispatch_if(dispatch_if),
@@ -60,7 +60,19 @@ module VX_fpu_unit import VX_gpu_pkg::*, VX_fpu_pkg::*; #(
         fflags_t fpu_rsp_fflags;
         wire fpu_rsp_has_fflags;
 
-        fpu_header_t fpu_hdr;
+        fpu_header_t fpu_hdr, fpu_hdr_wb, fpu_hdr_store;
+
+        // FPU always writes back, so header.wb is always 1 at dispatch.
+        always_comb begin
+            fpu_hdr_store    = per_block_execute_if[block_idx].data.header;
+            fpu_hdr_store.wb = 1'b0;
+        end
+
+        // Force wb=1 on the readback path.
+        always_comb begin
+            fpu_hdr_wb    = fpu_hdr;
+            fpu_hdr_wb.wb = 1'b1;
+        end
 
         wire [TAG_WIDTH-1:0] fpu_req_tag, fpu_rsp_tag;
         wire mdata_full;
@@ -79,7 +91,7 @@ module VX_fpu_unit import VX_gpu_pkg::*, VX_fpu_pkg::*; #(
             .reset        (reset),
             .acquire_en   (execute_fire),
             .write_addr   (fpu_req_tag),
-            .write_data   (per_block_execute_if[block_idx].data.header),
+            .write_data   (fpu_hdr_store),
             .read_data    (fpu_hdr),
             .read_addr    (fpu_rsp_tag),
             .release_en   (fpu_rsp_fire),
@@ -98,7 +110,7 @@ module VX_fpu_unit import VX_gpu_pkg::*, VX_fpu_pkg::*; #(
         assign fpu_req_valid = per_block_execute_if[block_idx].valid && ~mdata_full;
         assign per_block_execute_if[block_idx].ready = fpu_req_ready && ~mdata_full;
 
-    `ifdef FPU_DPI
+    `ifdef FPU_TYPE_DPI
 
         VX_fpu_dpi #(
             .NUM_LANES  (NUM_LANES),
@@ -127,7 +139,7 @@ module VX_fpu_unit import VX_gpu_pkg::*, VX_fpu_pkg::*; #(
             .ready_out  (fpu_rsp_ready)
         );
 
-    `elsif FPU_FPNEW
+    `elsif FPU_TYPE_FPNEW
 
         VX_fpu_fpnew #(
             .NUM_LANES  (NUM_LANES),
@@ -156,7 +168,7 @@ module VX_fpu_unit import VX_gpu_pkg::*, VX_fpu_pkg::*; #(
             .ready_out  (fpu_rsp_ready)
         );
 
-    `elsif FPU_DSP
+    `elsif FPU_TYPE_DSP
 
         VX_fpu_dsp #(
             .NUM_LANES  (NUM_LANES),
@@ -230,19 +242,18 @@ module VX_fpu_unit import VX_gpu_pkg::*, VX_fpu_pkg::*; #(
             .reset     (reset),
             .valid_in  (fpu_rsp_valid),
             .ready_in  (fpu_rsp_ready),
-            .data_in   ({fpu_hdr, fpu_rsp_result}),
+            .data_in   ({fpu_hdr_wb, fpu_rsp_result}),
             .data_out  (per_block_result_if[block_idx].data),
             .valid_out (per_block_result_if[block_idx].valid),
             .ready_out (per_block_result_if[block_idx].ready)
         );
-        assign per_block_result_if[block_idx].data.header.wb = 1'b1;
     end
 
-    VX_gather_unit #(
+    VX_lane_gather #(
         .BLOCK_SIZE (BLOCK_SIZE),
         .NUM_LANES  (NUM_LANES),
         .OUT_BUF    (PARTIAL_BW ? 3 : 0)
-    ) gather_unit (
+    ) lane_gather (
         .clk       (clk),
         .reset     (reset),
         .result_if (per_block_result_if),

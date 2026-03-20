@@ -28,12 +28,12 @@ module VX_lsu_slice import VX_gpu_pkg::*; #(
     VX_result_if.master     result_if,
     VX_lsu_mem_if.master    lsu_mem_if
 );
-    localparam NUM_LANES  = `NUM_LSU_LANES;
-    localparam PID_BITS   = `CLOG2(`NUM_THREADS / NUM_LANES);
-    localparam LSUQ_SIZEW = `LOG2UP(`LSUQ_IN_SIZE);
-    localparam REQ_ASHIFT = `CLOG2(LSU_WORD_SIZE);
-    localparam MEM_ASHIFT = `CLOG2(`MEM_BLOCK_SIZE);
-    localparam MEM_ADDRW  = `MEM_ADDR_WIDTH - MEM_ASHIFT;
+    localparam NUM_LANES    = `NUM_LSU_LANES;
+    localparam PID_BITS     = `CLOG2(`NUM_THREADS / NUM_LANES);
+    localparam LSUQ_SIZEW   = `LOG2UP(`LSUQ_IN_SIZE);
+    localparam REQ_ASHIFT   = `CLOG2(LSU_WORD_SIZE);
+    localparam MEM_ASHIFT   = `CLOG2(`MEM_BLOCK_SIZE);
+    localparam MEM_ADDRW    = `MEM_ADDR_WIDTH - MEM_ASHIFT;
 
     // tag_width = header + op_type + align + pkt_addr + fence
     localparam TAG_WIDTH = $bits(lsu_header_t) + INST_LSU_BITS + (NUM_LANES * REQ_ASHIFT) + LSUQ_SIZEW + 1;
@@ -265,8 +265,8 @@ module VX_lsu_slice import VX_gpu_pkg::*; #(
 
         assign mem_rsp_sop_pkt = pkt_sop[pkt_raddr];
         assign mem_rsp_eop_pkt = mem_rsp_eop && pkt_eop[pkt_raddr] && (pkt_ctr[pkt_raddr] == 1);
-        `RUNTIME_ASSERT(~(mem_req_rd_fire && full), ("%t: allocator full!", $time))
-        `RUNTIME_ASSERT(~(mem_req_rd_sop_fire && pkt_ctr[pkt_waddr] != 0), ("%t: oops! broken sop request!", $time))
+        `RUNTIME_ASSERT(~(mem_req_rd_fire && full), ("allocator full!"))
+        `RUNTIME_ASSERT(~(mem_req_rd_sop_fire && pkt_ctr[pkt_waddr] != 0), ("oops! broken sop request!"))
         `UNUSED_VAR (mem_rsp_sop)
     end else begin : g_no_pid
         assign pkt_waddr = 0;
