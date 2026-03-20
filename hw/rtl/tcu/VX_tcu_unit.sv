@@ -36,7 +36,7 @@ module VX_tcu_unit import VX_gpu_pkg::*, VX_tcu_pkg::*; #(
     `SCOPE_IO_SWITCH (BLOCK_SIZE);
 
     VX_execute_if #(
-        .data_t (tcu_exe_t)
+        .data_t (tcu_execute_t)
     ) per_block_execute_if[BLOCK_SIZE]();
 
     VX_dispatch_unit #(
@@ -51,17 +51,17 @@ module VX_tcu_unit import VX_gpu_pkg::*, VX_tcu_pkg::*; #(
     );
 
     VX_result_if #(
-        .data_t (tcu_res_t)
+        .data_t (tcu_result_t)
     ) per_block_result_if[BLOCK_SIZE]();
 
     for (genvar block_idx = 0; block_idx < BLOCK_SIZE; ++block_idx) begin : g_blocks
 
         VX_execute_if #(
-            .data_t (tcu_exe_t)
+            .data_t (tcu_execute_t)
         ) pe_execute_if[PE_COUNT]();
 
         VX_result_if #(
-            .data_t (tcu_res_t)
+            .data_t (tcu_result_t)
         ) pe_result_if[PE_COUNT]();
 
         VX_pe_switch #(
@@ -82,22 +82,12 @@ module VX_tcu_unit import VX_gpu_pkg::*, VX_tcu_pkg::*; #(
 
         VX_tcu_fp #(
             .INSTANCE_ID (`SFORMATF(("%s-fp%0d", INSTANCE_ID, block_idx)))
-        ) tcu_fp (
+        ) tcu_core (
             `SCOPE_IO_BIND (block_idx)
             .clk        (clk),
             .reset      (reset),
-            .execute_if (pe_execute_if[0]),
-            .result_if  (pe_result_if[0])
-        );
-
-        VX_tcu_int #(
-            .INSTANCE_ID (`SFORMATF(("%s-int%0d", INSTANCE_ID, block_idx)))
-        ) tcu_int (
-            `SCOPE_IO_BIND (block_idx)
-            .clk        (clk),
-            .reset      (reset),
-            .execute_if (pe_execute_if[1]),
-            .result_if  (pe_result_if[1])
+            .execute_if (per_block_execute_if[0]),
+            .result_if  (per_block_result_if[0])
         );
     end
 

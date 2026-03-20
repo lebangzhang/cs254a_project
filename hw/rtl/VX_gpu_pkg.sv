@@ -788,14 +788,11 @@ package VX_gpu_pkg;
         logic [PC_BITS-1:0]                 PC;
     } schedule_t;
 
-    `DECL_EXECUTE_T (alu_exe_t, `NUM_ALU_LANES);
-    `DECL_RESULT_T  (alu_res_t, `NUM_ALU_LANES);
+    `DECL_EXECUTE_T (alu, `NUM_ALU_LANES);
 
-    `DECL_EXECUTE_T (lsu_exe_t, `NUM_LSU_LANES);
-    `DECL_RESULT_T (lsu_res_t, `NUM_LSU_LANES);
+    `DECL_EXECUTE_T (lsu, `NUM_LSU_LANES);
 
-    `DECL_EXECUTE_T (sfu_exe_t, `NUM_SFU_LANES);
-    `DECL_RESULT_T (sfu_res_t, `NUM_SFU_LANES);
+    `DECL_EXECUTE_T (sfu, `NUM_SFU_LANES);
 
     //////////////////////////// Perf counter types ///////////////////////////
 

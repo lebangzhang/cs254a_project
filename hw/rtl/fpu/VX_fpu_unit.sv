@@ -34,7 +34,7 @@ module VX_fpu_unit import VX_gpu_pkg::*, VX_fpu_pkg::*; #(
     localparam PARTIAL_BW = (BLOCK_SIZE != `ISSUE_WIDTH) || (NUM_LANES != `SIMD_WIDTH);
 
     VX_execute_if #(
-        .data_t (fpu_exe_t)
+        .data_t (fpu_execute_t)
     ) per_block_execute_if[BLOCK_SIZE]();
 
     VX_dispatch_unit #(
@@ -49,7 +49,7 @@ module VX_fpu_unit import VX_gpu_pkg::*, VX_fpu_pkg::*; #(
     );
 
     VX_result_if #(
-        .data_t (fpu_res_t)
+        .data_t (fpu_result_t)
     ) per_block_result_if[BLOCK_SIZE]();
 
     for (genvar block_idx = 0; block_idx < BLOCK_SIZE; ++block_idx) begin : g_blocks

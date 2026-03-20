@@ -7,31 +7,18 @@ from itertools import cycle
 
 def main():
     parser = argparse.ArgumentParser(description="Plot grouped benchmark comparison.")
-    parser.add_argument('--benchmarks', nargs='+', required=True,
-                       help='Benchmark names to compare')
-    parser.add_argument('--designs', nargs='+', required=True,
-                       help='Design names to compare (e.g., X Y)')
-    parser.add_argument('--logfiles', nargs='+', required=True,
-                       help='Paths to log files in order: [X_A, Y_A, X_B, Y_B, ...]')
-    parser.add_argument('--counter', required=True,
-                       help='Performance counter to extract')
-    parser.add_argument('--ylabel', required=True,
-                       help='Y-axis label for the performance counter')
-    parser.add_argument('--title', required=True,
-                       help='Title for the graph')
-    parser.add_argument('--xlabel', required=True,
-                       help='X-axis label for benchmark groups')
-    parser.add_argument('--output', required=True,
-                       help="Output file path of Excel table")
-    parser.add_argument('--plot', required=True,
-                       help="Output file path of Figures")
-    parser.add_argument('--group_size', type=int,
-                       help="Group benchmarks into categories of this size")
-    parser.add_argument('--group_spacing', type=float, default=1.0,
-                       help="Spacing between benchmark groups (default: 1.0)")
-    parser.add_argument('--bar_width', type=float, default=0.8,
-                       help="Width of each bar (default: 0.8)")
-
+    parser.add_argument('--benchmarks', nargs='+', required=True, help='Benchmark names to compare')
+    parser.add_argument('--designs', nargs='+', required=True, help='Design names to compare (e.g., X Y)')
+    parser.add_argument('--logfiles', nargs='+', required=True, help='Paths to log files in order: [X_A, Y_A, X_B, Y_B, ...]')
+    parser.add_argument('--counter', required=True, help='Performance counter to extract')
+    parser.add_argument('--ylabel', required=True, help='Y-axis label for the performance counter')
+    parser.add_argument('--title', required=True, help='Title for the graph')
+    parser.add_argument('--xlabel', required=True, help='X-axis label for benchmark groups')
+    parser.add_argument('--output', required=True, help="Output file path of Excel table")
+    parser.add_argument('--plot', required=True, help="Output file path of Figures")
+    parser.add_argument('--group_size', type=int, help="Group benchmarks into categories of this size")
+    parser.add_argument('--group_spacing', type=float, default=1.0, help="Spacing between benchmark groups (default: 1.0)")
+    parser.add_argument('--bar_width', type=float, default=0.8, help="Width of each bar (default: 0.8)")
     args = parser.parse_args()
 
     # Validate inputs
