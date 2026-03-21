@@ -110,7 +110,7 @@ IMUL_DPI = "expr: (not $SYNTHESIS) and $DPI_ENABLE"
 IDIV_DPI = "expr: (not $SYNTHESIS) and $DPI_ENABLE"
 
 [sfu]
-NUM_SFU_LANES = "expr: min($SIMD_WIDTH, $NUM_THREADS"
+NUM_SFU_LANES = "expr: min($SIMD_WIDTH, $NUM_THREADS)"
 NUM_SFU_BLOCKS = 1
 
 [lsu]

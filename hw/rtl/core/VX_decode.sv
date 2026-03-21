@@ -673,18 +673,6 @@ module VX_decode import
                 `endif
                     7'h04: begin // Load packing: vx_packlb_f / vx_packlh_f
                         case (funct3)
-                            3'h0: begin // WMMA
-                                ex_type = EX_TCU;
-                                op_type = INST_OP_BITS'(INST_TCU_WMMA);
-                                op_args.tcu.fmt_s  = rs1[3:0];
-                                op_args.tcu.fmt_d  = rd[3:0];
-                                op_args.tcu.step_m = '0;
-                                op_args.tcu.step_n = '0;
-                                `USED_FREG (rd);
-                                `USED_FREG (rs1);
-                                `USED_FREG (rs2);
-                                `USED_FREG (rs3);
-                            end
                             3'h1: begin // vx_packlb_f — pack 4 strided bytes into float
                                 ex_type              = EX_LSU;
                                 op_type              = INST_OP_BITS'(INST_LSU_LBU);

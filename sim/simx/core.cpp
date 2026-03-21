@@ -367,8 +367,8 @@ void Core::issue() {
       // check scoreboard
       has_instrs = true;
       auto trace = ibuffer->peek();
-      if (scoreboard_.in_use(trace)) {
-        auto uses = scoreboard_.get_uses(trace);
+      std::vector<Scoreboard::reg_use_t> uses;
+      if (scoreboard_.in_use(trace, &uses)) {
         if (!trace->log_once(true)) {
           DTH(4, "*** scoreboard-stall: dependents={");
           for (uint32_t j = 0, n = uses.size(); j < n; ++j) {

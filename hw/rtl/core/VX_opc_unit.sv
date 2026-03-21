@@ -36,7 +36,7 @@ module VX_opc_unit import VX_gpu_pkg::*; #(
     localparam GPR_ENTRIES    = GPR_FILE_SIZE / GPR_DATA_SIZE;
     localparam GPR_ADDR_BITS  = `CLOG2(GPR_ENTRIES / NUM_REGS);
     localparam GPR_ADDR_WIDTH = `UP(GPR_ADDR_BITS);
-    localparam GPR_TAG_WIDTH  = UUID_WIDTH + ISSUE_WIS_W + SIMD_IDX_W + `SIMD_WIDTH + PC_BITS + 1 + EX_BITS + INST_OP_BITS + INST_ARGS_BITS + NUM_REGS_BITS + 1 + 1;
+    localparam GPR_TAG_WIDTH  = UUID_WIDTH + ISSUE_WIS_W + SIMD_IDX_W + `SIMD_WIDTH + PC_BITS + 1 + NUM_XREGS + EX_BITS + INST_OP_BITS + INST_ARGS_BITS + NUM_REGS_BITS + BYTESEL_BITS + 1 + 1;
     localparam OUT_DATAW      = $bits(operands_t);
 
     `UNUSED_VAR (writeback_if.data.sop)
@@ -71,7 +71,7 @@ module VX_opc_unit import VX_gpu_pkg::*; #(
     end
 
     for (genvar i = 0; i < `SIMD_WIDTH; ++i) begin : g_gpr_wr_byteen
-        assign gpr_wb_byteen[i*XLENB+:XLENB] = {XLENB{writeback_if.data.tmask[i]}};
+        assign gpr_wb_byteen[i*XLENB+:XLENB] = writeback_if.data.byteen[i];
     end
 
     assign gpr_req_tag = {
@@ -81,10 +81,12 @@ module VX_opc_unit import VX_gpu_pkg::*; #(
         simd_out,
         scoreboard_if.data.PC,
         scoreboard_if.data.wb,
+        scoreboard_if.data.wr_xregs,
         scoreboard_if.data.ex_type,
         scoreboard_if.data.op_type,
         scoreboard_if.data.op_args,
         scoreboard_if.data.rd,
+        scoreboard_if.data.bytesel,
         simd_sop,
         simd_eop
     };

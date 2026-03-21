@@ -81,10 +81,6 @@ package VX_gpu_pkg;
     `PACKAGE_ASSERT(VT_COUNT >= 1)
     `PACKAGE_ASSERT(VT_COUNT <= `NUM_THREADS)
 
-    localparam XREG_FFLAGS = 0;
-    localparam XREG_FRM    = 1;
-    localparam NUM_XREGS   = 2;
-
     localparam SSIMD_WIDTH = `MIN(`SIMD_WIDTH, `NUM_THREADS);
     localparam SSIMD_COUNT = `NUM_THREADS / SSIMD_WIDTH;
     localparam SSIMD_IDX_BITS = `CLOG2(SSIMD_COUNT);
@@ -111,6 +107,10 @@ package VX_gpu_pkg;
 
     localparam SIMD_IDX_BITS = `CLOG2(SIMD_COUNT);
     localparam SIMD_IDX_W = `UP(SIMD_IDX_BITS);
+
+    localparam XREG_FFLAGS = 0;
+    localparam XREG_FRM    = 1;
+    localparam NUM_XREGS   = 2;
 
     localparam NUM_SREGS = REG_STYPES * RV_REGS;
     localparam NUM_SREGS_BITS = `CLOG2(NUM_SREGS);
