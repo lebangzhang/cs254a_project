@@ -219,6 +219,11 @@ private:
   uint32_t    ipdom_size_;
   wspawn_t    wspawn_;
 
+
+#ifdef EXT_V_ENABLE
+  VecUnit::Ptr vec_unit_;
+#endif
+
   PoolAllocator<Instr, 64> instr_pool_;
 };
 
