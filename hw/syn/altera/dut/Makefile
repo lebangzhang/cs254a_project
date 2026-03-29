@@ -9,7 +9,7 @@ SCRIPT_DIR := $(VORTEX_HOME)/hw/scripts
 
 IP_CACHE_DIR := $(ROOT_DIR)/hw/syn/altera/ip_cache/$(DEVICE_FAMILY)
 
-.PHONY: unittest scope mem_unit lmem cache fpu core issue vortex top
+.PHONY: unittest scope mem_unit lmem cache fpu tcu dxa core issue vortex top
 
 ip-gen: $(IP_CACHE_DIR)/ip_gen.log
 $(IP_CACHE_DIR)/ip_gen.log:

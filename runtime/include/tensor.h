@@ -168,6 +168,11 @@ inline float element_magnitude(const typename TensorT::dtype* data, uint32_t off
 template <typename TensorT>
 inline bool prune_2to4_matrix(typename TensorT::dtype* dense, uint32_t rows, uint32_t cols) {
   constexpr uint32_t kBlock = 4;
+  // For types with i_ratio=1 (one element per 32-bit word, e.g. tf32), the gather
+  // hardware processes each half-group of 2 independently. Each sparse K-step covers
+  // exactly one half-group, so we must guarantee exactly one non-zero per pair of 2
+  // consecutive elements (positions {0,1} and {2,3} within each group of 4).
+  constexpr bool per_half = (sizeof(typename TensorT::dtype) == sizeof(uint32_t));
   uint32_t cols_expanded = detail::expanded_cols<TensorT>(cols);
   if ((cols_expanded % kBlock) != 0) {
     return false;
@@ -177,11 +182,22 @@ inline bool prune_2to4_matrix(typename TensorT::dtype* dense, uint32_t rows, uin
     for (uint32_t group = 0; group < (cols_expanded / kBlock); ++group) {
       uint32_t k_start = group * kBlock;
       uint32_t base = row * cols_expanded + k_start;
-      uint32_t keep0, keep1;
-      detail::select_top2<TensorT>(dense, base, keep0, keep1);
-      for (uint32_t i = 0; i < kBlock; ++i) {
-        if (i != keep0 && i != keep1) {
-          detail::data_accessor_t<TensorT>::write(dense, base + i, 0);
+      if constexpr (per_half) {
+        // 1-of-2 pruning per half: keep the larger-magnitude element from each pair
+        for (uint32_t h = 0; h < 2; ++h) {
+          uint32_t h_base = base + h * 2;
+          float m0 = detail::element_magnitude<TensorT>(dense, h_base + 0);
+          float m1 = detail::element_magnitude<TensorT>(dense, h_base + 1);
+          uint32_t zero_idx = (m0 >= m1) ? 1 : 0;
+          detail::data_accessor_t<TensorT>::write(dense, h_base + zero_idx, 0);
+        }
+      } else {
+        uint32_t keep0, keep1;
+        detail::select_top2<TensorT>(dense, base, keep0, keep1);
+        for (uint32_t i = 0; i < kBlock; ++i) {
+          if (i != keep0 && i != keep1) {
+            detail::data_accessor_t<TensorT>::write(dense, base + i, 0);
+          }
         }
       }
     }
@@ -241,6 +257,114 @@ inline bool compress_2to4_matrix(typename TensorT::dtype* compressed,
       detail::data_accessor_t<TensorT>::write(compressed, row * stride_comp + out_base + 0, value0);
       detail::data_accessor_t<TensorT>::write(compressed, row * stride_comp + out_base + 1, value1);
       metadata[row * meta_cols + group] = static_cast<uint8_t>((1u << idx0) | (1u << idx1));
+    }
+  }
+
+  return true;
+}
+
+inline uint8_t select_mxfp8_scale(float max_abs) {
+  if (!(max_abs > 0.0f) || !std::isfinite(max_abs)) {
+    return 127;
+  }
+  constexpr float kE4M3Max = 448.0f;
+  float target = max_abs / kE4M3Max;
+  int32_t scale_exp = static_cast<int32_t>(std::ceil(std::log2(target)));
+  int32_t sf = scale_exp + 127;
+  sf = std::max(0, std::min(255, sf));
+  return static_cast<uint8_t>(sf);
+}
+
+inline bool quantize_mxfp8_a_rowmajor(uint8_t* quantized,
+                                      std::vector<uint8_t>& scale_meta,
+                                      const float* dense,
+                                      uint32_t rows,
+                                      uint32_t cols) {
+  if ((cols % mxfp8::ele_block) != 0) {
+    return false;
+  }
+
+  uint32_t k_blocks = cols / mxfp8::ele_block;
+  scale_meta.resize(rows * k_blocks);
+
+  for (uint32_t row = 0; row < rows; ++row) {
+    for (uint32_t kb = 0; kb < k_blocks; ++kb) {
+      uint32_t k0 = kb * mxfp8::ele_block;
+      float max_abs = 0.0f;
+      for (uint32_t i = 0; i < mxfp8::ele_block; ++i) {
+        float v = dense[row * cols + k0 + i];
+        max_abs = std::max(max_abs, std::abs(v));
+      }
+      uint8_t sf = select_mxfp8_scale(max_abs);
+      scale_meta[row * k_blocks + kb] = sf;
+      for (uint32_t i = 0; i < mxfp8::ele_block; ++i) {
+        float v = dense[row * cols + k0 + i];
+        quantized[row * cols + k0 + i] = rv_ftomxfp8_s(bit_cast<uint32_t>(v), sf, 0, nullptr);
+      }
+    }
+  }
+
+  return true;
+}
+
+inline bool quantize_mxfp8_b_rowmajor(uint8_t* quantized,
+                                      std::vector<uint8_t>& scale_meta,
+                                      const float* dense_rowmajor,
+                                      uint32_t K,
+                                      uint32_t N) {
+  if ((K % mxfp8::ele_block) != 0) {
+    return false;
+  }
+
+  uint32_t k_blocks = K / mxfp8::ele_block;
+  scale_meta.resize(k_blocks * N);
+
+  for (uint32_t kb = 0; kb < k_blocks; ++kb) {
+    uint32_t k0 = kb * mxfp8::ele_block;
+    for (uint32_t col = 0; col < N; ++col) {
+      float max_abs = 0.0f;
+      for (uint32_t i = 0; i < mxfp8::ele_block; ++i) {
+        float v = dense_rowmajor[(k0 + i) * N + col];
+        max_abs = std::max(max_abs, std::abs(v));
+      }
+      uint8_t sf = select_mxfp8_scale(max_abs);
+      scale_meta[kb * N + col] = sf;
+      for (uint32_t i = 0; i < mxfp8::ele_block; ++i) {
+        float v = dense_rowmajor[(k0 + i) * N + col];
+        quantized[(k0 + i) * N + col] = rv_ftomxfp8_s(bit_cast<uint32_t>(v), sf, 0, nullptr);
+      }
+    }
+  }
+
+  return true;
+}
+
+inline bool quantize_mxfp8_b_colmajor(uint8_t* quantized_rowmajor,
+                                      std::vector<uint8_t>& scale_meta,
+                                      const float* dense_colmajor,
+                                      uint32_t K,
+                                      uint32_t N) {
+  if ((K % mxfp8::ele_block) != 0) {
+    return false;
+  }
+
+  uint32_t k_blocks = K / mxfp8::ele_block;
+  scale_meta.resize(N * k_blocks);
+
+  for (uint32_t col = 0; col < N; ++col) {
+    for (uint32_t kb = 0; kb < k_blocks; ++kb) {
+      uint32_t k0 = kb * mxfp8::ele_block;
+      float max_abs = 0.0f;
+      for (uint32_t i = 0; i < mxfp8::ele_block; ++i) {
+        float v = dense_colmajor[col * K + k0 + i];
+        max_abs = std::max(max_abs, std::abs(v));
+      }
+      uint8_t sf = select_mxfp8_scale(max_abs);
+      scale_meta[col * k_blocks + kb] = sf;
+      for (uint32_t i = 0; i < mxfp8::ele_block; ++i) {
+        float v = dense_colmajor[col * K + k0 + i];
+        quantized_rowmajor[(k0 + i) * N + col] = rv_ftomxfp8_s(bit_cast<uint32_t>(v), sf, 0, nullptr);
+      }
     }
   }
 

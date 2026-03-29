@@ -15,8 +15,7 @@
 
 module VX_dxa_unit import VX_gpu_pkg::*, VX_dxa_pkg::*; #(
     parameter `STRING INSTANCE_ID = "",
-    parameter CORE_ID = 0,
-    parameter NUM_LANES = 1
+    parameter CORE_ID = 0
 ) (
     input wire              clk,
     input wire              reset,
@@ -24,35 +23,57 @@ module VX_dxa_unit import VX_gpu_pkg::*, VX_dxa_pkg::*; #(
     VX_execute_if.slave     execute_if,
     VX_result_if.master     result_if,
     VX_dxa_req_bus_if.master dxa_req_bus_if,
-    VX_txbar_bus_if.master txbar_bus_if
+    VX_txbar_bus_if.master  txbar_bus_if
 );
     `UNUSED_SPARAM (INSTANCE_ID)
     `UNUSED_VAR (execute_if.data.rs3_data)
-    localparam LANE_BITS = `CLOG2(NUM_LANES);
 
-    sfu_header_t header_out;
-    wire issue_ready_in;
-    wire issue_valid_in;
-    wire [`UP(LANE_BITS)-1:0] issue_tid;
-    wire [`XLEN-1:0] issue_rs1_data;
-    wire [`XLEN-1:0] issue_rs2_data;
+    // Wgather-based layout (lane index = thread_id & 3):
+    //   Lane 0: rs1=smem_addr, rs2=coord2
+    //   Lane 1: rs1=meta,      rs2=coord3
+    //   Lane 2: rs1=coord0,    rs2=coord4
+    //   Lane 3: rs1=coord1,    rs2=cta_mask (multicast)
+    wire [`XLEN-1:0] lane0_rs1 = execute_if.data.rs1_data[0];
+    wire [`XLEN-1:0] lane1_rs1 = execute_if.data.rs1_data[1];
+    wire [`XLEN-1:0] lane2_rs1 = execute_if.data.rs1_data[2];
+    wire [`XLEN-1:0] lane3_rs1 = execute_if.data.rs1_data[3];
+    wire [`XLEN-1:0] lane0_rs2 = execute_if.data.rs2_data[0];
+    wire [`XLEN-1:0] lane1_rs2 = execute_if.data.rs2_data[1];
+    wire [`XLEN-1:0] lane2_rs2 = execute_if.data.rs2_data[2];
+    wire [`XLEN-1:0] lane3_rs2 = execute_if.data.rs2_data[3];
+    `UNUSED_VAR (lane3_rs2)
 
-    if (LANE_BITS != 0) begin : g_issue_tid
-        VX_priority_encoder #(
-            .N (NUM_LANES),
-            .REVERSE (1)
-        ) issue_tid_select (
-            .data_in   (execute_if.data.header.tmask),
-            .index_out (issue_tid),
-            `UNUSED_PIN (onehot_out),
-            `UNUSED_PIN (valid_out)
-        );
-    end else begin : g_issue_tid_w0
-        assign issue_tid = 0;
+    wire wb_ready;
+
+    assign dxa_req_bus_if.req_valid = execute_if.valid && wb_ready && txbar_bus_if.ready;
+    assign dxa_req_bus_if.req_data.core_id   = NC_WIDTH'(CORE_ID);
+    assign dxa_req_bus_if.req_data.uuid      = execute_if.data.header.uuid;
+    assign dxa_req_bus_if.req_data.wid       = execute_if.data.header.wid;
+    assign dxa_req_bus_if.req_data.smem_addr = lane0_rs1;
+    assign dxa_req_bus_if.req_data.meta      = lane1_rs1;
+    assign dxa_req_bus_if.req_data.coords[0] = lane2_rs1;
+    assign dxa_req_bus_if.req_data.coords[1] = lane3_rs1;
+    assign dxa_req_bus_if.req_data.coords[2] = lane0_rs2;
+    assign dxa_req_bus_if.req_data.coords[3] = lane1_rs2;
+    assign dxa_req_bus_if.req_data.coords[4] = lane2_rs2;
+`ifdef EXT_DXA_MULTICAST_ENABLE
+    assign dxa_req_bus_if.req_data.cta_mask     = lane3_rs2[`NUM_WARPS-1:0];
+    assign dxa_req_bus_if.req_data.is_multicast = (execute_if.data.op_args.dxa.op == 3'd5);
+`endif
+
+    // meta[3:0]=desc_slot, meta[4+:NW_BITS]=bar_owner, meta[(4+BAR_ID_SHIFT)+:NB_BITS]=bar_slot
+    wire [BAR_ADDR_W-1:0] bar_addr;
+    if (`NUM_WARPS > 1) begin : g_bar_addr
+        assign bar_addr = {lane1_rs1[4 +: NW_BITS], lane1_rs1[(4 + BAR_ID_SHIFT) +: NB_BITS]};
+    end else begin : g_bar_addr_wo
+        assign bar_addr = lane1_rs1[(4 + BAR_ID_SHIFT) +: NB_BITS];
     end
 
-    assign issue_rs1_data = execute_if.data.rs1_data[issue_tid];
-    assign issue_rs2_data = execute_if.data.rs2_data[issue_tid];
+    assign txbar_bus_if.valid       = execute_if.valid && wb_ready && dxa_req_bus_if.req_ready;
+    assign txbar_bus_if.data.addr   = bar_addr;
+    assign txbar_bus_if.data.is_done = 1'b0;
+
+    sfu_header_t header_out;
 
     VX_elastic_buffer #(
         .DATAW ($bits(sfu_header_t)),
@@ -60,113 +81,34 @@ module VX_dxa_unit import VX_gpu_pkg::*, VX_dxa_pkg::*; #(
     ) rsp_buf (
         .clk       (clk),
         .reset     (reset),
-        .valid_in  (issue_valid_in),
-        .ready_in  (issue_ready_in),
+        .valid_in  (execute_if.valid && dxa_req_bus_if.req_ready && txbar_bus_if.ready),
+        .ready_in  (wb_ready),
         .data_in   (execute_if.data.header),
         .data_out  (header_out),
         .valid_out (result_if.valid),
         .ready_out (result_if.ready)
     );
 
-    if (1) begin : g_cluster_level
-        reg [1:0] boot_guard_r;
-        wire boot_ready = boot_guard_r[1];
-        wire issue_valid_safe;
-        wire is_setup0_req;
-        wire req_tx_ready;
-        wire req_fire;
-        wire [BAR_ADDR_W-1:0] setup0_bar_addr;
-        wire tx_setup_valid;
-        wire setup0_is_packed;
-        wire [NB_BITS-1:0] setup0_bar_slot;
-        wire [NW_BITS-1:0] setup0_bar_owner;
-
-        // Treat X/unknown valid as 0 and add a short boot guard to avoid
-        // reset-exit ghost traffic on DXA request/response channels.
-        assign issue_valid_safe = boot_ready && (execute_if.valid === 1'b1);
-        assign is_setup0_req = (execute_if.data.op_args.dxa.op == DXA_OP_SETUP);
-        assign req_tx_ready = ~is_setup0_req || txbar_bus_if.ready;
-    // `ifdef DXA_FIX_RSP_DUP
-        // Fix: gate response buffer accept on ALL downstream ready signals.
-        // Without this, the buffer can accept duplicate entries when the DXA
-        // request bus is not ready, causing pending-counter underflow on commit.
-        assign issue_valid_in = issue_valid_safe && dxa_req_bus_if.req_ready && req_tx_ready;
-    // `else
-        // assign issue_valid_in = issue_valid_safe;
-    // `endif
-        assign execute_if.ready = issue_ready_in && dxa_req_bus_if.req_ready && req_tx_ready && ~reset;
-
-        assign dxa_req_bus_if.req_valid = issue_valid_safe && issue_ready_in && req_tx_ready;
-        assign dxa_req_bus_if.req_data.core_id = NC_WIDTH'(CORE_ID);
-        assign dxa_req_bus_if.req_data.uuid    = execute_if.data.header.uuid;
-        assign dxa_req_bus_if.req_data.wid     = execute_if.data.header.wid;
-        assign dxa_req_bus_if.req_data.op      = execute_if.data.op_args.dxa.op;
-        assign dxa_req_bus_if.req_data.rs1     = issue_rs1_data;
-        assign dxa_req_bus_if.req_data.rs2     = issue_rs2_data;
-
-        // Packed launch metadata: [3:0]=desc, [30:4]=barrier payload, [31]=marker.
-        assign setup0_is_packed = issue_rs2_data[31];
-        assign setup0_bar_slot = setup0_is_packed ? issue_rs2_data[20 +: NB_BITS]
-                                                  : issue_rs2_data[16 +: NB_BITS];
-        if (`NUM_WARPS > 1) begin : g_setup_bar_owner
-            assign setup0_bar_owner = setup0_is_packed ? issue_rs2_data[4 +: NW_BITS]
-                                                       : issue_rs2_data[NW_BITS-1:0];
-        end else begin : g_setup_bar_owner_wo
-            assign setup0_bar_owner = '0;
-        end
-
-        if (`NUM_WARPS > 1) begin : g_setup_bar_addr_w
-            assign setup0_bar_addr = {setup0_bar_owner, setup0_bar_slot};
-        end else begin : g_setup_bar_addr_wo
-            assign setup0_bar_addr = setup0_bar_slot;
-        end
-
-        assign req_fire = boot_ready && dxa_req_bus_if.req_valid && dxa_req_bus_if.req_ready;
-        assign tx_setup_valid = req_fire && is_setup0_req;
-        assign txbar_bus_if.valid        = tx_setup_valid;
-        assign txbar_bus_if.data.addr    = setup0_bar_addr;
-        assign txbar_bus_if.data.is_done = 1'b0;
-
-        always @(posedge clk) begin
-            if (reset) begin
-                boot_guard_r <= 2'b00;
-            end else begin
-                if (~boot_guard_r[1]) begin
-                    boot_guard_r <= boot_guard_r + 2'b01;
-                end
-            end
-        end
-
-    `ifdef DBG_TRACE_DXA
-        always @(posedge clk) begin
-            if (~reset) begin
-                if (req_fire) begin
-                    `TRACE(1, ("%t: %s dxa-req: op=%0d wid=%0d rs1=0x%0h rs2=0x%0h setup0=%b\n",
-                        $time, INSTANCE_ID, dxa_req_bus_if.req_data.op, execute_if.data.header.wid, issue_rs1_data, issue_rs2_data, is_setup0_req))
-                    // Structured trace for pipeline visualization
-                    $write("DXA_PIPE,%0d,DXA_INSTR,op=%0d,wid=%0d,PC=0x%0h\n",
-                        $time, dxa_req_bus_if.req_data.op,
-                        execute_if.data.header.wid,
-                        {execute_if.data.header.PC, 1'b0});
-                end
-                if (tx_setup_valid) begin
-                    `TRACE(1, ("%t: %s tx-setup: addr=%0d packed=%b slot=%0d owner=%0d\n",
-                        $time, INSTANCE_ID, setup0_bar_addr, setup0_is_packed, setup0_bar_slot, setup0_bar_owner))
-                    $write("DXA_PIPE,%0d,TX_SETUP,bar=%0d,slot=%0d\n",
-                        $time, setup0_bar_addr, setup0_bar_slot);
-                end
-                if (txbar_bus_if.valid && txbar_bus_if.ready) begin
-                    `TRACE(1, ("%t: %s tx-bar-fire: addr=%0d done=%b\n",
-                        $time, INSTANCE_ID, txbar_bus_if.data.addr, txbar_bus_if.data.is_done))
-                    $write("DXA_PIPE,%0d,TX_BAR_FIRE,bar=%0d,done=%0d\n",
-                        $time, txbar_bus_if.data.addr, txbar_bus_if.data.is_done);
-                end
-            end
-        end
-    `endif
-    end
-
     assign result_if.data.header = header_out;
-    assign result_if.data.data = '0;
+    assign result_if.data.data   = '0;
+
+    assign execute_if.ready = wb_ready && dxa_req_bus_if.req_ready && txbar_bus_if.ready;
+
+`ifdef DBG_TRACE_DXA
+    always_ff @(posedge clk) begin
+        if (~reset && dxa_req_bus_if.req_valid && dxa_req_bus_if.req_ready) begin
+            `TRACE(1, ("%t: %s dxa-req: wid=%0d, smem=0x%0h, meta=0x%0h, c0=%0d, c1=%0d, c2=%0d, c3=%0d, c4=%0d\n",
+                $time, INSTANCE_ID, dxa_req_bus_if.req_data.wid,
+                dxa_req_bus_if.req_data.smem_addr, dxa_req_bus_if.req_data.meta,
+                dxa_req_bus_if.req_data.coords[0], dxa_req_bus_if.req_data.coords[1],
+                dxa_req_bus_if.req_data.coords[2], dxa_req_bus_if.req_data.coords[3],
+                dxa_req_bus_if.req_data.coords[4]))
+        end
+        if (~reset && txbar_bus_if.valid && txbar_bus_if.ready) begin
+            `TRACE(1, ("%t: %s txbar-fire: addr=%0d, done=%b\n",
+                $time, INSTANCE_ID, txbar_bus_if.data.addr, txbar_bus_if.data.is_done))
+        end
+    end
+`endif
 
 endmodule

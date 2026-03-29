@@ -68,6 +68,10 @@ VX_DCR_DXA_DESC_TILESIZE4_OFF = 19
 
 VX_DCR_DXA_DESC_CFILL_OFF = 20
 
+# Multicast fields (slots 21-22, gated by EXT_DXA_MULTICAST_ENABLE)
+VX_DCR_DXA_DESC_SMEM_STRIDE_OFF = 21
+VX_DCR_DXA_DESC_BAR_STRIDE_OFF = 22
+
 VX_DCR_DXA_DESC_COUNT = 16
 VX_DCR_DXA_STATE_END = 0x280
 
@@ -158,7 +162,8 @@ VX_CSR_CTA_LMEM_ADDR  = 0xCDF
 VX_DCR_MPM_CLASS_BASE = 0
 VX_DCR_MPM_CLASS_CORE = 1
 VX_DCR_MPM_CLASS_MEM = 2
-# VX_DCR_MPM_CLASS_DXA = 6  # removed: DXA perf counters replaced by DBG_TRACE_DXA
+VX_DCR_MPM_CLASS_DXA = 6
+VX_DCR_MPM_CLASS_TCU = 7
 
 [csr_mpm_base]
 VX_CSR_MCYCLE = 0xB00
@@ -303,4 +308,26 @@ VX_CSR_MPM_LMEM_BANK_ST_H = 0xB9D
 VX_CSR_MPM_COALESCER_MISS = 0xB1F  # coalescer misses
 VX_CSR_MPM_COALESCER_MISS_H = 0xB9F
 
-# [csr_mpm_dxa] — removed: DXA perf counters replaced by DBG_TRACE_DXA logs
+[csr_mpm_dxa]
+# PERF: DXA copy engine (cluster-level, same value on all cores in cluster)
+VX_CSR_MPM_DXA_TRANSFERS  = 0xB03  # completed DXA tile transfers
+VX_CSR_MPM_DXA_TRANSFERS_H  = 0xB83
+VX_CSR_MPM_DXA_GMEM_READS  = 0xB04  # GMEM cache-line requests issued (after dedup)
+VX_CSR_MPM_DXA_GMEM_READS_H  = 0xB84
+VX_CSR_MPM_DXA_GMEM_DEDUP  = 0xB05  # GMEM cache-line requests saved by intra-row dedup
+VX_CSR_MPM_DXA_GMEM_DEDUP_H  = 0xB85
+VX_CSR_MPM_DXA_LMEM_WRITES  = 0xB06  # SMEM word writes issued
+VX_CSR_MPM_DXA_LMEM_WRITES_H  = 0xB86
+VX_CSR_MPM_DXA_GMEM_LT  = 0xB07  # total GMEM latency cycles (sum; avg = LT/TRANSFERS)
+VX_CSR_MPM_DXA_GMEM_LT_H  = 0xB87
+
+[csr_mpm_tcu]
+# PERF: WGMMA tile-buffer (per-core; summed across blocks)
+VX_CSR_MPM_TCU_TBUF_FETCH_ST   = 0xB03  # cycles spent fetching A/B tiles into tile buffer
+VX_CSR_MPM_TCU_TBUF_FETCH_ST_H = 0xB83
+VX_CSR_MPM_TCU_WGMMA_INSTRS    = 0xB04  # WGMMA µops executed (fire count)
+VX_CSR_MPM_TCU_WGMMA_INSTRS_H  = 0xB84
+VX_CSR_MPM_TCU_WGMMA_STALLS    = 0xB05  # cycles: WGMMA valid but stalled
+VX_CSR_MPM_TCU_WGMMA_STALLS_H  = 0xB85
+VX_CSR_MPM_TCU_LMEM_READS      = 0xB06  # LMEM read transactions issued by tile buffer
+VX_CSR_MPM_TCU_LMEM_READS_H    = 0xB86

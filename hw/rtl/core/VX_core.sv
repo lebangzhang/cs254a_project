@@ -56,7 +56,7 @@ module VX_core import VX_gpu_pkg::*; #(
     VX_decode_if        decode_if();
     VX_sched_csr_if     sched_csr_if();
     VX_decode_sched_if  decode_sched_if();
-    VX_issue_sched_if   issue_sched_if();
+    VX_issue_sched_if   issue_sched_if[`ISSUE_WIDTH]();
     VX_commit_sched_if  commit_sched_if();
     VX_branch_ctl_if    branch_ctl_if[`NUM_ALU_BLOCKS]();
     VX_warp_ctl_if      warp_ctl_if();
@@ -75,10 +75,22 @@ module VX_core import VX_gpu_pkg::*; #(
         .TAG_WIDTH (LSU_TAG_WIDTH)
     ) lsu_mem_if[`NUM_LSU_BLOCKS]();
 
+`ifdef TCU_WGMMA_ENABLE
+    localparam TCU_LMEM_BANK_ADDR_W = `LMEM_LOG_SIZE - `CLOG2(LSU_WORD_SIZE) - `CLOG2(`LMEM_NUM_BANKS);
+    VX_tcu_lmem_if #(
+        .DATA_WIDTH(`LMEM_NUM_BANKS * `XLEN),
+        .ADDR_WIDTH(TCU_LMEM_BANK_ADDR_W)
+    ) tcu_lmem_if();
+`endif
+
 `ifdef PERF_ENABLE
     lmem_perf_t lmem_perf;
     coalescer_perf_t coalescer_perf;
     pipeline_perf_t pipeline_perf;
+`ifdef EXT_TCU_ENABLE
+    tcu_perf_t tcu_perf;
+    assign pipeline_perf.tcu = tcu_perf;
+`endif
     sysmem_perf_t sysmem_perf_tmp;
     always @(*) begin
         sysmem_perf_tmp = sysmem_perf;
@@ -193,6 +205,9 @@ module VX_core import VX_gpu_pkg::*; #(
     `ifdef PERF_ENABLE
         .sysmem_perf    (sysmem_perf_tmp),
         .pipeline_perf  (pipeline_perf),
+    `ifdef EXT_TCU_ENABLE
+        .tcu_perf       (tcu_perf),
+    `endif
     `endif
 
     `ifdef EXT_V_ENABLE
@@ -209,6 +224,9 @@ module VX_core import VX_gpu_pkg::*; #(
 
         .dcr_csr_if     (dcr_csr_if),
 
+    `ifdef TCU_WGMMA_ENABLE
+        .tcu_lmem_if    (tcu_lmem_if),
+    `endif
     `ifdef EXT_DXA_ENABLE
         .dxa_req_bus_if (dxa_req_bus_if),
         .dxa_txbar_bus_if(dxa_txbar_bus_if),
@@ -239,6 +257,9 @@ module VX_core import VX_gpu_pkg::*; #(
     `ifdef PERF_ENABLE
         .lmem_perf     (lmem_perf),
         .coalescer_perf(coalescer_perf),
+    `endif
+    `ifdef TCU_WGMMA_ENABLE
+        .tcu_lmem_if   (tcu_lmem_if),
     `endif
     `ifdef EXT_DXA_ENABLE
         .dxa_bank_wr_if (dxa_bank_wr_if),

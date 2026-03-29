@@ -55,6 +55,16 @@ typedef std::bitset<MAX_NUM_WARPS>   WarpMask;
 
 ///////////////////////////////////////////////////////////////////////////////
 
+// Decode a packed kernel bar_id (local_group_id | (bar_no << 8)) to a flat barrier index.
+// Preserves the global barrier flag (bit 31).
+inline uint32_t bar_decode_id(uint32_t bar_id_raw, uint32_t num_barriers) {
+  uint32_t cta_no = bar_id_raw & 0xffu;
+  uint32_t bar_no = (bar_id_raw >> 8) & 0x7fffffu;
+  return (cta_no * num_barriers + bar_no) | (bar_id_raw & 0x80000000u);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
 union reg_data_t {
   uint8_t  u8;
   uint16_t u16;
@@ -294,6 +304,21 @@ inline std::ostream &operator<<(std::ostream &os, const ShflType& shfl) {
 
 ///////////////////////////////////////////////////////////////////////////////
 
+enum class WgatherType {
+  WGATHER
+};
+
+struct IntrWgatherArgs {
+  uint32_t src_lane : 2;
+};
+
+inline std::ostream &operator<<(std::ostream &os, const WgatherType& /*type*/) {
+  os << "WGATHER";
+  return os;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
 enum class MdvType {
   MUL,
   MULHU,
@@ -485,25 +510,13 @@ inline std::ostream &operator<<(std::ostream &os, const WctlType& type) {
 #ifdef EXT_DXA_ENABLE
 
 enum class DxaType {
-  SETUP,
-  COORD01,
-  COORD23,
   ISSUE
 };
 
-struct IntrDxaArgs {
-  uint32_t op : 3;
-};
+struct IntrDxaArgs {};
 
-inline std::ostream &operator<<(std::ostream &os, const DxaType& type) {
-  switch (type) {
-  case DxaType::SETUP:   os << "DXA.SETUP"; break;
-  case DxaType::COORD01: os << "DXA.COORD01"; break;
-  case DxaType::COORD23: os << "DXA.COORD23"; break;
-  case DxaType::ISSUE:   os << "DXA.ISSUE"; break;
-  default:
-    assert(false);
-  }
+inline std::ostream &operator<<(std::ostream &os, const DxaType& /*type*/) {
+  os << "DXA.ISSUE";
   return os;
 }
 
@@ -700,11 +713,12 @@ inline std::ostream &operator<<(std::ostream &os, const VpuOpType& type) {
 
 enum class TcuType {
   WMMA,
-  WMMA_SP,
+  WGMMA,
   META_STORE,
 };
 
 struct IntrTcuArgs {
+  uint32_t is_sparse : 1;
   uint32_t fmt_s  : 4;
   uint32_t fmt_d  : 4;
   uint32_t step_m : 4;
@@ -714,8 +728,8 @@ struct IntrTcuArgs {
 
 inline std::ostream &operator<<(std::ostream &os, const TcuType& type) {
   switch (type) {
-  case TcuType::WMMA: os << "WMMA"; break;
-  case TcuType::WMMA_SP: os << "WMMA_SP"; break;
+  case TcuType::WMMA:       os << "WMMA"; break;
+  case TcuType::WGMMA:      os << "WGMMA"; break;
   case TcuType::META_STORE: os << "META_STORE"; break;
   default:
     assert(false);
@@ -735,6 +749,7 @@ using OpType = std::variant<
 , CsrType
 , VoteType
 , ShflType
+, WgatherType
 , WctlType
 #ifdef EXT_DXA_ENABLE
 , DxaType
@@ -757,6 +772,7 @@ using IntrArgs = std::variant<
 , IntrAmoArgs
 , IntrFpuArgs
 , IntrCsrArgs
+, IntrWgatherArgs
 , IntrWctlArgs
 #ifdef EXT_DXA_ENABLE
 , IntrDxaArgs

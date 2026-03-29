@@ -16,13 +16,11 @@
 #endif
 
 typedef struct {
-  uint32_t grid_dim[2];
-  uint32_t block_dim[2];
   uint32_t M, N, K;
   uint64_t A_addr;
   uint64_t B_addr;
   uint64_t C_addr;
-  uint64_t meta_addr;
+  uint64_t meta_sp_addr;
   uint64_t cycles_addr;
 } kernel_arg_t;
 

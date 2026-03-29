@@ -31,9 +31,17 @@ public:
 
 	struct PerfStats {
 		uint64_t latency = 0;
+		uint64_t tbuf_fetch_stalls = 0;
+		uint64_t wgmma_instrs = 0; // WGMMA µops executed
+		uint64_t wgmma_stalls = 0; // not cycle-accurate in simx (always 0)
+		uint64_t lmem_reads   = 0; // LMEM read transactions per wgmma() call
 
 		PerfStats& operator+=(const PerfStats& rhs) {
-			this->latency += rhs.latency;
+			this->latency          += rhs.latency;
+			this->tbuf_fetch_stalls += rhs.tbuf_fetch_stalls;
+			this->wgmma_instrs     += rhs.wgmma_instrs;
+			this->wgmma_stalls     += rhs.wgmma_stalls;
+			this->lmem_reads       += rhs.lmem_reads;
 			return *this;
 		}
 	};
@@ -49,28 +57,34 @@ public:
   virtual void tick();
 
 	void wmma(uint32_t wid,
-				uint32_t fmt_s,
-				uint32_t fmt_d,
-				uint32_t step_m,
-				uint32_t step_n,
-				uint32_t step_k,
-	          	const std::vector<reg_data_t>& rs1_data,
-					  const std::vector<reg_data_t>& rs2_data,
-					  const std::vector<reg_data_t>& rs3_data,
-					  std::vector<reg_data_t>& rd_data,
-					  ExeTraceData* trace_data);
+	          uint32_t fmt_s,
+	          uint32_t fmt_d,
+	          uint32_t step_m,
+	          uint32_t step_n,
+	          uint32_t step_k,
+	          const std::vector<reg_data_t>& rs1_data,
+	          const std::vector<reg_data_t>& rs2_data,
+	          const std::vector<reg_data_t>& rs3_data,
+	          const std::vector<reg_data_t>& mx_a0_data,
+	          const std::vector<reg_data_t>& mx_a1_data,
+	          const std::vector<reg_data_t>& mx_b0_data,
+	          const std::vector<reg_data_t>& mx_b1_data,
+	          std::vector<reg_data_t>& rd_data,
+	          ExeTraceData* trace_data,
+	          bool is_sparse);
 
-	void wmma_sp(uint32_t wid,
-				uint32_t fmt_s,
-				uint32_t fmt_d,
-				uint32_t step_m,
-				uint32_t step_n,
-        		uint32_t step_k,
-				const std::vector<reg_data_t>& rs1_data,
-				const std::vector<reg_data_t>& rs2_data,
-				const std::vector<reg_data_t>& rs3_data,
-				std::vector<reg_data_t>& rd_data,
-				ExeTraceData* trace_data);
+	void wgmma(uint32_t wid,
+	           uint32_t fmt_s,
+	           uint32_t fmt_d,
+	           uint32_t step_m,
+	           uint32_t step_n,
+	           uint32_t step_k,
+	           uint32_t a_desc,
+	           uint32_t b_desc,
+	           const std::vector<reg_data_t>& rs1_data,
+	           std::vector<reg_data_t>& rd_data,
+	           ExeTraceData* trace_data,
+	           bool is_sparse = false);
 
 	void meta_store(uint32_t wid,
 					uint32_t fmt_s,

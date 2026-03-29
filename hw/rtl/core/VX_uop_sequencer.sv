@@ -135,9 +135,8 @@ module VX_uop_sequencer import
     // ------------------------------------------------------------------
     assign uop_in_valid[UOP_TCU] = (uop_in_data.ex_type == EX_TCU)
         && (uop_in_data.op_type == INST_TCU_WMMA
-    `ifdef TCU_SPARSE_ENABLE
-        || uop_in_data.op_type == INST_TCU_WMMA_SP
-        || uop_in_data.op_type == INST_TCU_META_STORE
+    `ifdef TCU_WGMMA_ENABLE
+        || uop_in_data.op_type == INST_TCU_WGMMA
     `endif
         );
     VX_tcu_uops tcu_uops (
@@ -149,24 +148,6 @@ module VX_uop_sequencer import
         .uop_idx   (uop_ctr),
         .ibuf_out  (uop_out_data[UOP_TCU]),
         .uop_count (uop_out_count[UOP_TCU])
-    );
-`endif
-
-`ifdef EXT_DXA_ENABLE
-    // ------------------------------------------------------------------
-    // DXA uop expander
-    // ------------------------------------------------------------------
-    assign uop_in_valid[UOP_DXA] = (uop_in_data.ex_type == EX_SFU)
-                                && (uop_in_data.op_type == INST_SFU_DXA);
-    VX_dxa_uops dxa_uops (
-        .clk       (clk),
-        .reset     (reset),
-        .ibuf_in   (uop_in_data),
-        .start     (uop_in_start[UOP_DXA]),
-        .advance   (uop_in_next[UOP_DXA]),
-        .uop_idx   (uop_ctr),
-        .ibuf_out  (uop_out_data[UOP_DXA]),
-        .uop_count (uop_out_count[UOP_DXA])
     );
 `endif
 

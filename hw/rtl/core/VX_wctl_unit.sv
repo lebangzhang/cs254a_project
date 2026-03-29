@@ -47,9 +47,10 @@ module VX_wctl_unit import VX_gpu_pkg::*; #(
     wire is_split  = (execute_if.data.op_type == INST_SFU_SPLIT);
     wire is_join   = (execute_if.data.op_type == INST_SFU_JOIN);
     wire is_bar    = (execute_if.data.op_type == INST_SFU_BAR);
+    wire is_wsync  = (execute_if.data.op_type == INST_SFU_WSYNC);
 
     wire wctl_valid;
-    wire wspawn_valid, tmc_valid, split_valid, sjoin_valid, bar_valid;
+    wire wspawn_valid, tmc_valid, split_valid, sjoin_valid, bar_valid, wsync_valid;
 
     wire [`UP(LANE_BITS)-1:0] last_tid;
     if (LANE_BITS != 0) begin : g_last_tid
@@ -134,12 +135,12 @@ module VX_wctl_unit import VX_gpu_pkg::*; #(
     // barrier
 
     wire [BAR_ADDR_W-1:0] wctl_bar_addr;
-    `CONCAT(wctl_bar_addr, rs1_data[NW_BITS-1:0], rs1_data[16 +: NB_BITS], NW_BITS, NB_BITS)
+    `CONCAT(wctl_bar_addr, rs1_data[NW_BITS-1:0], rs1_data[BAR_ID_SHIFT +: NB_BITS], NW_BITS, NB_BITS)
 
     wire wctl_bar_enable = wctl_valid && is_bar;
 
     assign bar_valid    = wctl_bar_enable || txbar_bus_if.valid;
-    assign bar.id       = rs1_data[16 +: NB_BITS];
+    assign bar.id       = rs1_data[BAR_ID_SHIFT +: NB_BITS];
     assign bar.is_event = txbar_bus_if.valid && ~wctl_bar_enable;
     assign bar.is_sync  = wctl_bar_enable ? execute_if.data.op_args.wctl.is_sync_bar : 1'b0;
     assign bar.is_global= wctl_bar_enable ? rs1_data[31] : 1'b0;
@@ -164,12 +165,12 @@ module VX_wctl_unit import VX_gpu_pkg::*; #(
 `ifdef DBG_TRACE_DXA
     always @(posedge clk) begin
         if (txbar_bus_if.valid && !reset) begin
-            `TRACE(2, ("%t: %s-wctl: txbar valid=%b ready=%b is_done=%b addr=0x%0h wctl_bar_enable=%b same_addr=%b pending=%b\n",
+            `TRACE(2, ("%t: %s-wctl: txbar valid=%b, ready=%b, is_done=%b, addr=0x%0h, wctl_bar_enable=%b, same_addr=%b, pending=%b\n",
                 $time, INSTANCE_ID, txbar_bus_if.valid, txbar_bus_if.ready, txbar_bus_if.data.is_done,
                 txbar_bus_if.data.addr, wctl_bar_enable, same_bar_addr, bar.pending_event))
         end
         if (wctl_bar_enable && !reset) begin
-            `TRACE(2, ("%t: %s-wctl: BAR wid=%0d bar_addr=0x%0h is_arrive=%b is_sync=%b phase=%b\n",
+            `TRACE(2, ("%t: %s-wctl: BAR wid=%0d, bar_addr=0x%0h, is_arrive=%b, is_sync=%b, phase=%b\n",
                 $time, INSTANCE_ID, execute_if.data.header.wid, wctl_bar_addr,
                 bar.is_arrive, bar.is_sync, bar.phase))
         end
@@ -193,11 +194,18 @@ module VX_wctl_unit import VX_gpu_pkg::*; #(
 
     // Send scheduler request
 
+    // WSYNC: hold execute until this warp's pipeline is drained (alm_empty=1
+    // means only WSYNC itself is pending — all prior instructions committed).
+    wire wsync_drain = execute_if.valid && is_wsync
+                    && !warp_ctl_if.warp_pending_alm_empty[execute_if.data.header.wid];
+
     wire execute_fire = execute_if.valid && execute_if.ready;
     assign wctl_valid = execute_fire && execute_if.data.header.eop;
 
+    assign wsync_valid = wctl_valid && is_wsync;
+
     VX_pipe_register #(
-        .DATAW (5 + NW_WIDTH + WCTL_WIDTH),
+        .DATAW (6 + NW_WIDTH + WCTL_WIDTH),
         .RESETW (1)
     ) wctl_reg (
         .clk      (clk),
@@ -209,6 +217,7 @@ module VX_wctl_unit import VX_gpu_pkg::*; #(
             split_valid,
             sjoin_valid,
             bar_valid,
+            wsync_valid,
             execute_if.data.header.wid,
             tmc,
             wspawn,
@@ -222,6 +231,7 @@ module VX_wctl_unit import VX_gpu_pkg::*; #(
             warp_ctl_if.split_valid,
             warp_ctl_if.sjoin_valid,
             warp_ctl_if.bar_valid,
+            warp_ctl_if.wsync_valid,
             warp_ctl_if.wid,
             warp_ctl_if.tmc,
             warp_ctl_if.wspawn,
@@ -238,19 +248,21 @@ module VX_wctl_unit import VX_gpu_pkg::*; #(
     wire bar_rsp_valid_r;
     wire bar_phase_r;
 
+    wire rsp_buf_ready;
     VX_elastic_buffer #(
         .DATAW ($bits(sfu_header_t) + DV_STACK_SIZEW + 1 + 1),
         .SIZE  (2)
     ) rsp_buf (
         .clk       (clk),
         .reset     (reset),
-        .valid_in  (execute_if.valid),
-        .ready_in  (execute_if.ready),
+        .valid_in  (execute_if.valid && !wsync_drain),
+        .ready_in  (rsp_buf_ready),
         .data_in   ({execute_if.data.header, warp_ctl_if.dvstack_ptr, warp_ctl_if.bar_phase, bar_rsp_valid}),
         .data_out  ({result_if.data.header,  dvstack_ptr_r,           bar_phase_r,           bar_rsp_valid_r}),
         .valid_out (result_if.valid),
         .ready_out (result_if.ready)
     );
+    assign execute_if.ready = rsp_buf_ready && !wsync_drain;
 
     // Result data
     for (genvar i = 0; i < NUM_LANES; ++i) begin : g_result_if

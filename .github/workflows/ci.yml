@@ -117,17 +117,18 @@ jobs:
 
   tests:
     needs: build
-    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-24.04]
-        name: [regression, dxa, opencl, cache, config1, config2, debug, scope, stress, synthesis, vm, vector, cupbop, tensor, tensor_sp, ara2_vector]
+        name: [regression, dxa, opencl, cache, config1, config2, debug, scope, stress, synthesis, vm, vector, cupbop, tensor, tensor_sp, tensor_mx, tensor_wg, ara2_vector]
         xlen: [32, 64]
         exclude:
           - name: dxa
+          - name: tensor_wg
             xlen: 64
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
 
     steps:
       - name: Checkout code

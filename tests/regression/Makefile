@@ -15,14 +15,14 @@ all:
 	$(MAKE) -C sort
 	$(MAKE) -C fence
 	$(MAKE) -C vecadd
-	$(MAKE) -C vecadd_v2
+	$(MAKE) -C vecadd_v1
 	$(MAKE) -C sgemm
-	$(MAKE) -C sgemm_v2
+	$(MAKE) -C sgemm_v1
 	$(MAKE) -C conv3
 	$(MAKE) -C relu
 	$(MAKE) -C sgemv
 	$(MAKE) -C sgemm2
-	$(MAKE) -C sgemm2_v2
+	$(MAKE) -C sgemm2_v1
 	$(MAKE) -C madmax
 	$(MAKE) -C stencil3d
 	$(MAKE) -C raycast
@@ -31,11 +31,15 @@ all:
 	$(MAKE) -C pathfinder
 	$(MAKE) -C softmax
 	$(MAKE) -C sgemm_tcu
+	$(MAKE) -C sgemm2_tcu
 	$(MAKE) -C sgemm_tcu_sp
+	$(MAKE) -C sgemm_tcu_mx
 	$(MAKE) -C sgemm2_dxa
 	$(MAKE) -C async_barrier
 	$(MAKE) -C async_gbarrier
 	$(MAKE) -C packld
+	$(MAKE) -C wgather
+	$(MAKE) -C wsync
 
 run-simx:
 	$(MAKE) -C basic run-simx
@@ -51,23 +55,25 @@ run-simx:
 	$(MAKE) -C sort run-simx
 	$(MAKE) -C fence run-simx
 	$(MAKE) -C vecadd run-simx
-	$(MAKE) -C vecadd_v2 run-simx
+	$(MAKE) -C vecadd_v1 run-simx
 	$(MAKE) -C sgemm run-simx
-	$(MAKE) -C sgemm_v2 run-simx
+	$(MAKE) -C sgemm_v1 run-simx
 	$(MAKE) -C conv3 run-simx
 	$(MAKE) -C relu run-simx
 	$(MAKE) -C sgemv run-simx
 	$(MAKE) -C sgemm2 run-simx
-	$(MAKE) -C sgemm2_v2 run-simx
+	$(MAKE) -C sgemm2_v1 run-simx
 	$(MAKE) -C madmax run-simx
 	$(MAKE) -C stencil3d run-simx
 	$(MAKE) -C raycast run-simx
 	$(MAKE) -C bfs run-simx
 	$(MAKE) -C jacobi run-simx
-# $(MAKE) -C pathfinder run-simx
+	$(MAKE) -C pathfinder run-simx
 	$(MAKE) -C softmax run-simx
 	$(MAKE) -C async_barrier run-simx
 	$(MAKE) -C packld run-simx
+	$(MAKE) -C wgather run-simx
+	$(MAKE) -C wsync run-simx
 
 run-rtlsim:
 	$(MAKE) -C basic run-rtlsim
@@ -83,23 +89,25 @@ run-rtlsim:
 	$(MAKE) -C sort run-rtlsim
 	$(MAKE) -C fence run-rtlsim
 	$(MAKE) -C vecadd run-rtlsim
-	$(MAKE) -C vecadd_v2 run-rtlsim
+	$(MAKE) -C vecadd_v1 run-rtlsim
 	$(MAKE) -C sgemm run-rtlsim
-	$(MAKE) -C sgemm_v2 run-rtlsim
+	$(MAKE) -C sgemm_v1 run-rtlsim
 	$(MAKE) -C conv3 run-rtlsim
 	$(MAKE) -C relu run-rtlsim
 	$(MAKE) -C sgemv run-rtlsim
 	$(MAKE) -C sgemm2 run-rtlsim
-	$(MAKE) -C sgemm2_v2 run-rtlsim
+	$(MAKE) -C sgemm2_v1 run-rtlsim
 	$(MAKE) -C madmax run-rtlsim
 	$(MAKE) -C stencil3d run-rtlsim
 	$(MAKE) -C raycast run-rtlsim
 	$(MAKE) -C bfs run-rtlsim
 	$(MAKE) -C jacobi run-rtlsim
-#   $(MAKE) -C pathfinder run-rtlsim
+	$(MAKE) -C pathfinder run-rtlsim
 	$(MAKE) -C softmax run-rtlsim
 	$(MAKE) -C async_barrier run-rtlsim
 	$(MAKE) -C packld run-rtlsim
+	$(MAKE) -C wgather run-rtlsim
+	$(MAKE) -C wsync run-rtlsim
 
 clean:
 	$(MAKE) -C basic clean
@@ -114,17 +122,19 @@ clean:
 	$(MAKE) -C diverge clean
 	$(MAKE) -C sort clean
 	$(MAKE) -C fence clean
-	$(MAKE) -C vecadd_v2 clean
 	$(MAKE) -C vecadd clean
+	$(MAKE) -C vecadd_v1 clean
 	$(MAKE) -C sgemm clean
-	$(MAKE) -C sgemm_v2 clean
+	$(MAKE) -C sgemm_v1 clean
 	$(MAKE) -C sgemm_tcu clean
+	$(MAKE) -C sgemm2_tcu clean
 	$(MAKE) -C sgemm_tcu_sp clean
+	$(MAKE) -C sgemm_tcu_mx clean
 	$(MAKE) -C conv3 clean
 	$(MAKE) -C relu clean
 	$(MAKE) -C sgemv clean
 	$(MAKE) -C sgemm2 clean
-	$(MAKE) -C sgemm2_v2 clean
+	$(MAKE) -C sgemm2_v1 clean
 	$(MAKE) -C madmax clean
 	$(MAKE) -C stencil3d clean
 	$(MAKE) -C raycast clean
@@ -136,3 +146,5 @@ clean:
 	$(MAKE) -C async_barrier clean
 	$(MAKE) -C async_gbarrier clean
 	$(MAKE) -C packld clean
+	$(MAKE) -C wgather clean
+	$(MAKE) -C wsync clean

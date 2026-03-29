@@ -45,6 +45,7 @@ EXT_DMA_ENABLE = false
 EXT_DXA_ENABLE = false
 # Cluster-level DXA engine count (decoupled from NUM_CORES/SOCKET_SIZE).
 NUM_DXA_UNITS = "expr: max(1, up($NUM_CORES / 8))"
+DXA_MEM_PORTS = "expr: min($NUM_DXA_UNITS, up($NUM_CORES / $SOCKET_SIZE) * $L1_MEM_PORTS)"
 
 EXT_M_ENABLED = "expr: 1 if $EXT_M_ENABLE else 0"
 EXT_F_ENABLED = "expr: 1 if $EXT_F_ENABLE else 0"
@@ -122,17 +123,24 @@ LSUQ_IN_SIZE = "expr: (2 * ($SIMD_WIDTH / $NUM_LSU_LANES))"
 LSUQ_OUT_SIZE = "expr: max($LSUQ_IN_SIZE, $LSU_LINE_SIZE / ($XLEN / 8))"
 
 [fpu]
-# FPU_TYPE is a string enum: 'DPI'|'DSP'|'FPNEW'
-FPU_TYPE = "expr: 'DSP' if $SYNTHESIS else ('DPI' if $DPI_ENABLE else 'FPNEW')"
+# FPU_TYPE is a string enum: 'DPI'|'DSP'|'FPNEW'|'STD'
+# synthesis: ASIC=>STD, FPGA=>DSP; 64-bit=>FPNEW (STD/DSP are F32-only)
+# simulation: DPI=>DPI, else STD; 64-bit=>FPNEW (unless DPI)
+FPU_TYPE = "expr: ('FPNEW' if $XLEN_64 else ('STD' if $ASIC else 'DSP')) if $SYNTHESIS else ('DPI' if $DPI_ENABLE else ('FPNEW' if $XLEN_64 else 'STD'))"
 FPU_RV64F = "expr: $XLEN_64 and $FLEN_32"
 
 NUM_FPU_LANES = "expr: $SIMD_WIDTH"
 NUM_FPU_BLOCKS = "expr: $ISSUE_WIDTH"
 FPUQ_SIZE = "expr: 2 * ($SIMD_WIDTH // $NUM_FPU_LANES)"
 
-LATENCY_FMA  = "expr: 4 if ($FPU_TYPE_DPI or $FPU_TYPE_FPNEW or ($FPU_TYPE_DSP and $QUARTUS)) else (16 if ($FPU_TYPE_DSP and $VIVADO) else 4)"
-LATENCY_FDIV = "expr: 15 if $FPU_TYPE_DPI else (16 if $FPU_TYPE_FPNEW else (15 if ($FPU_TYPE_DSP and $QUARTUS) else (28 if ($FPU_TYPE_DSP and $VIVADO) else 16)))"
-LATENCY_FSQRT= "expr: 10 if $FPU_TYPE_DPI else (16 if $FPU_TYPE_FPNEW else (10 if ($FPU_TYPE_DSP and $QUARTUS) else (28 if ($FPU_TYPE_DSP and $VIVADO) else 16)))"
+# local helpers (lowercase = not emitted)
+fpu_dsp_quartus = "expr: $FPU_TYPE_DSP and $QUARTUS"
+fpu_dsp_vivado  = "expr: $FPU_TYPE_DSP and $VIVADO"
+
+# NOTE: for FPU_TYPE_STD, LATENCY_FDIV must equal LATENCY_FSQRT (shared serializer in VX_fpu_std)
+LATENCY_FMA  = "expr: 16 if $fpu_dsp_vivado else (4 if $fpu_dsp_quartus else 7)"
+LATENCY_FDIV = "expr: 15 if $FPU_TYPE_DPI else (16 if $FPU_TYPE_FPNEW else (17 if $FPU_TYPE_STD else (15 if $fpu_dsp_quartus else (28 if $fpu_dsp_vivado else 17))))"
+LATENCY_FSQRT= "expr: 10 if $FPU_TYPE_DPI else (16 if $FPU_TYPE_FPNEW else (17 if $FPU_TYPE_STD else (10 if $fpu_dsp_quartus else (28 if $fpu_dsp_vivado else 17))))"
 LATENCY_FNCP = 2
 LATENCY_FCVT = 5
 
@@ -227,8 +235,10 @@ TCU_TF32_ENABLE = true
 TCU_BF16_ENABLE = true
 TCU_FP8_ENABLE = true
 TCU_INT_ENABLE = true
+TCU_MX_ENABLE = false
 TCU_MXI8_ENABLE = false
 TCU_SPARSE_ENABLE = false
+TCU_WGMMA_ENABLE = false
 
 [ara]
 NUM_ARA_LANES = "expr: $SIMD_WIDTH"
@@ -289,7 +299,7 @@ DEBUG_LEVEL = 3
 [[enum]]
 XLEN = [32, 64]
 FLEN = [32, 64]
-FPU_TYPE = ["DPI", "DSP", "FPNEW"]
+FPU_TYPE = ["DPI", "DSP", "FPNEW", "STD"]
 TCU_TYPE = ["DPI", "DSP", "BHF", "TFR"]
 VM_ADDR_MODE = ["BARE", "SV32", "SV39", "SV48", "SV57"]
 
