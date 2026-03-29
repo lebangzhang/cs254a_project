@@ -20,7 +20,7 @@ JOBS ?= $(shell echo $$(( $(NCPUS) > $(MAX_JOBS) ? $(MAX_JOBS) : $(NCPUS) )))
 
 CONFIGS += -DSYNTHESIS -DVIVADO -DNDEBUG
 
-XCONFIGS := $(shell python3 $(ROOT_DIR)/ci/gen_config.py --config $(VORTEX_HOME)/hw/VX_config.toml --cflags '$(CONFIGS)')
+XCONFIGS := $(shell python3 $(ROOT_DIR)/ci/gen_config.py --config=$(VORTEX_HOME)/hw/VX_config.toml --cflags='$(CONFIGS)')
 
 # Power analysis via VCD switching-activity annotation.
 # VCD      : path to the VCD file produced by rtlsim (required for 'power' target)

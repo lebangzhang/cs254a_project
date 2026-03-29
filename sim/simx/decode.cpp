@@ -23,6 +23,7 @@
 #include "debug.h"
 #include "types.h"
 #include "emulator.h"
+#include "core.h"
 #include "arch.h"
 #include "instr.h"
 
@@ -525,7 +526,7 @@ void Emulator::decode(uint32_t code, uint32_t wid, uint64_t uuid) {
   auto& ibuffer = warps_.at(wid).ibuffer;
 
 #ifdef EXT_V_ENABLE
-  if (vec_unit_->decode(code, wid, uuid)) {
+  if (core_->vec_unit()->decode(code, wid, uuid)) {
     return; // instruction was decoded by vector unit
   }
 #endif
