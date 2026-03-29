@@ -65,8 +65,8 @@ void VOpcUnit::tick() {
     return;
 
   // check output backpressure
-  if (this->Output.full())
-    return; // stall
+  /*if (this->Output.full())*/
+    /*return; // stall*/
 
   auto trace = Input.peek();
 
@@ -85,7 +85,7 @@ void VOpcUnit::tick() {
     scalar_stalls = this->compute_scalar_stalls(trace);
     vector_stalls = this->compute_vector_stalls(trace);
 
-    // Initialize vector counter for state machine
+    // Initialize counter for state machine
     // uops_vector_timing_counter = (Time for 1 vector uop)
     // curr_vector_timing_counter = (Time for 1 scalar) + (Time for 1 vector uop) + (Initial time to move from Idle)
     uops_vector_timing_counter = (vector_stalls + VOPC_VECTOR_UOP_DELAY);
@@ -170,6 +170,7 @@ void VOpcUnit::tick() {
 
     // Issue all except last trace in pipelined manner
     // Note: Shouldn't affect timing in most scenarios because only 1 gpr_requests being sent
+    /*
     uint32_t i = 0;
     for(i = 0; i < (total_gpr_requests-1); i++){
 
@@ -189,7 +190,14 @@ void VOpcUnit::tick() {
 
     // Set instruction as done
     done = true;
+    */ 
 
+    // Issue Only 1 Trace to Execution
+    if(this->Output.try_send(trace, VOPC_SCALAR_DELAY + scalar_stalls)) {
+        DT(3, "*** VOPC_scalar_trace: " << *trace);
+        Input.pop();
+        done = true; 
+    }
 
   // Vector instruction : State Machine Timing
   } else {
@@ -206,8 +214,6 @@ void VOpcUnit::tick() {
       if(curr_vector_timing_counter == 0){
           this->send_last_trace(trace);
       }
-
-
 
     // Standard Instruction
     // Access GPR for 1 chunk
@@ -229,11 +235,15 @@ void VOpcUnit::tick() {
         // Check if there is still a uop to send
         if(curr_vgpr_requests-1 > 0) {
 
-          // Send uop to execution
-          this->send_uop_trace(trace);
+          // If output port empty -> Send uop to execution 
+          if(!(this->Output.full())){
 
-          // Decrement vgpr requests
-          curr_vgpr_requests -= 1;
+            // Send uop to execution
+            this->send_uop_trace(trace);
+
+            // Decrement vgpr requests
+            curr_vgpr_requests -= 1;
+          } 
 
         // Send the last trace
         } else {
@@ -269,24 +279,29 @@ void VOpcUnit::tick() {
 
           // Case 1b: Other traces to send out
           } else {
-            // Send uop to execution
-            this->send_uop_trace(trace);
 
-            // Set WB hasn't been received
-            wb_rsp_received = false;
+            // Check if there is space to push Output 
+            if(!(this->Output.full())){
 
-            // Decrement vgpr requests
-            if(curr_vgpr_requests >= 2){
-              curr_vgpr_requests -= 2;
-            } else {
-              curr_vgpr_requests -= 1;
+              // Send uop to execution
+              this->send_uop_trace(trace);
+
+              // Set WB hasn't been received
+              wb_rsp_received = false;
+
+              // Decrement vgpr requests
+              if(curr_vgpr_requests >= 2){
+                curr_vgpr_requests -= 2;
+              } else {
+                curr_vgpr_requests -= 1;
+              }
+              
+              // Next height
+              curr_red_tree_h = (curr_red_tree_h + 1) % (red_tree_height);
+
+              // Reset curr_vector_timing_counter for the next height
+              this->compute_red_vector_timing_counter(curr_red_tree_h);
             }
-
-            // Next height
-            curr_red_tree_h = (curr_red_tree_h + 1) % (red_tree_height);
-
-            // Reset curr_vector_timing_counter for the next height
-            this->compute_red_vector_timing_counter(curr_red_tree_h);
           }
         }
 
@@ -312,17 +327,19 @@ void VOpcUnit::tick() {
             // Case 2b : Other traces to send out
             } else {
 
-              // Send uop to execution
-              this->send_uop_trace(trace);
-
-              // Set WB hasn't been received
-              wb_rsp_received = false;
-
-              // Next height
-              curr_red_tree_h = (curr_red_tree_h + 1) % (red_tree_height);
-
-              // Reset curr_vector_timing_counter for the next height
-              this->compute_red_vector_timing_counter(curr_red_tree_h);
+              if(!(this->Output.full())){
+                // Send uop to execution
+                this->send_uop_trace(trace);
+  
+                // Set WB hasn't been received
+                wb_rsp_received = false;
+  
+                // Next height
+                curr_red_tree_h = (curr_red_tree_h + 1) % (red_tree_height);
+  
+                // Reset curr_vector_timing_counter for the next height
+                this->compute_red_vector_timing_counter(curr_red_tree_h);
+              } 
             }
           }
         }
@@ -374,13 +391,13 @@ void VOpcUnit::compute_red_vector_timing_counter(uint32_t red_tree_h){
 
 
 void VOpcUnit::send_last_trace(instr_trace_t* trace) {
+  if(this->Output.try_send(trace)){
+    DT(3, "*** VOPC_final_vector_trace: " << *trace);
+    Input.pop();
 
-  this->Output.push(trace);
-  DT(3, "*** VOPC_final_vector_trace: " << *trace);
-  Input.pop();
-
-  // Set instruction as done
-  done = true;
+    // Set instruction as done
+    done = true;
+  }
 }
 
 
@@ -402,7 +419,7 @@ void VOpcUnit::send_uop_trace(instr_trace_t* trace) {
   new_trace->wb = false;
 
   // Issue Trace to Execution
-  this->Output.push(new_trace);
+  this->Output.send(new_trace);
   DT(3, "*** VOPC_vector_trace: Time: (Look at clock); Trace: "  << *trace);
 
 }
@@ -519,7 +536,6 @@ uint32_t VOpcUnit::compute_total_vgpr_requests(instr_trace_t* trace) {
 uint32_t VOpcUnit::compute_total_gpr_requests(instr_trace_t* trace) {
 
   // Calculate how many requests made to rf
-
   uint32_t total_requests = 0;
 
   // Case: All threads fit into 1 chunk
