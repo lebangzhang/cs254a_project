@@ -48,8 +48,13 @@ module VX_vpu_uops import VX_vpu_pkg::*, VX_gpu_pkg::*; (
 
     wire csr_has_lmul = (vpu_csrs.vtype.vlmul != 0);
 
-    // Match the legacy expander: 1 uop when LMUL=1, else 8 uops.
-    assign uop_count = csr_has_lmul ? UOP_CTR_W'(8) : UOP_CTR_W'(1);
+    // For RVV whole-register LSU ops: uop_count = nf + 1.
+    // Otherwise match legacy expander: 1 uop when LMUL=0, else 8 uops.
+    wire is_rvv_lsu = (ibuf_in.ex_type == EX_LSU) && ibuf_in.op_args.lsu.is_rvv;
+    wire [UOP_CTR_W-1:0] lsu_uop_count = UOP_CTR_W'(ibuf_in.op_args.lsu.nf) + UOP_CTR_W'(1);
+
+    assign uop_count = is_rvv_lsu ? lsu_uop_count
+                                  : (csr_has_lmul ? UOP_CTR_W'(8) : UOP_CTR_W'(1));
 
     wire [REG_TYPE_BITS-1:0] rd_type  = get_reg_type(ibuf_in.rd);
     wire [REG_TYPE_BITS-1:0] rs1_type = get_reg_type(ibuf_in.rs1);
@@ -68,6 +73,10 @@ module VX_vpu_uops import VX_vpu_pkg::*, VX_gpu_pkg::*; (
         end
         if (rs2_type == REG_TYPE_V) begin
             ibuf_r.rs2[4:0] = ibuf_in.rs2[4:0] + 5'(ctr);
+        end
+        // Stash uop index in lsu.offset[1:0] for dispatcher to compute stride.
+        if (is_rvv_lsu) begin
+            ibuf_r.op_args.lsu.offset = {10'd0, uop_idx[1:0]};
         end
     end
 

@@ -85,7 +85,7 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
         assign gpr_wb_addr = '0;
     end
 
-    assign gpr_wb_valid = writeback_if.valid && (get_reg_type(writeback_if.data.rd) != REG_TYPE_V);
+    assign gpr_wb_valid = writeback_if.valid && (get_reg_type(writeback_if.data.rd) == REG_TYPE_V);
 
     assign gpr_req_valid = soperands_if.valid;
 
@@ -208,6 +208,8 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
 
     always @(*) begin
         state_n = state;
+        simd_ctr_n = simd_ctr;
+        sew_ctr_n = sew_ctr;
         dispatch_tmask_n = dispatch_tmask;
         dispatch_ex_type_n = dispatch_ex_type;
         dispatch_op_type_n = dispatch_op_type;
@@ -222,6 +224,15 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
         STATE_IDLE: begin
             if (soperands_fire) begin
                 state_n = STATE_FETCH;
+                simd_ctr_n = VSIMD_IDX_W'(VSIMD_COUNT - 1);
+                sew_ctr_n  = SEW_IDX_W'(0);
+                dispatch_ex_type_n = soperands_if.data.ex_type;
+                dispatch_op_type_n = soperands_if.data.op_type;
+                dispatch_op_args_n = soperands_if.data.op_args;
+                dispatch_wb_n      = soperands_if.data.wb;
+                dispatch_rd_n      = soperands_if.data.rd;
+                dispatch_sop_n     = 1'b1;
+                dispatch_eop_n     = (VSIMD_COUNT == 1);
             end
         end
         STATE_FETCH: begin
@@ -247,6 +258,8 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
                     if (sew_ctr != 0) begin
                         sew_ctr_n = sew_ctr - 1;
                     end
+                    dispatch_sop_n = 1'b0;
+                    dispatch_eop_n = (simd_ctr_n == 0) && (sew_ctr_n == 0);
                     state_n = STATE_FETCH;
                 end
             end

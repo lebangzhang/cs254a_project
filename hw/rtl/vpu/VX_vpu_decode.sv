@@ -57,7 +57,9 @@ module VX_vpu_decode_vl import VX_gpu_pkg::*, VX_vpu_pkg::*; (
         d.op_args.lsu.is_store = 0;
         d.op_args.lsu.offset = 12'({mew, umop, mop, nf});
         d.op_args.lsu.is_float = rd_is_float;
-        `USED_REG (rd_is_float ? REG_TYPE_F : REG_TYPE_I, rd, 1);
+        d.op_args.lsu.is_rvv = 1;
+        d.op_args.lsu.nf = nf;
+        `USED_REG (REG_TYPE_V, rd, 1);
         `USED_IREG (rs1);
         `USED_REG (rs2_is_vector ? REG_TYPE_V : REG_TYPE_I, rs2, rs2_enable);
         d.reg_ids = reg_ids;
@@ -100,8 +102,8 @@ module VX_vpu_decode_vs import VX_gpu_pkg::*, VX_vpu_pkg::*; (
     reg [NUM_SRC_OPDS:0] use_regs;
 
     wire rs3_is_float  = (width == 3'b001 || width == 3'b010 || width == 3'b011 || width == 3'b100);
-    wire rs2_is_vector = (mop != 2'b10);
-    wire rs2_enable    = (mop != 2'b00);
+    `UNUSED_VAR (rs3_is_float)
+    `UNUSED_VAR (rs2)
 
     vpu_decode_t d;
     always @* begin
@@ -111,10 +113,15 @@ module VX_vpu_decode_vs import VX_gpu_pkg::*, VX_vpu_pkg::*; (
         d.op_type = op;
         d.op_args.lsu.is_store = 1;
         d.op_args.lsu.offset = 12'({mew, umop, mop, nf});
-        d.op_args.lsu.is_float = rs3_is_float;
-        `USED_REG (rs3_is_float ? REG_TYPE_F : REG_TYPE_I, rs3, 1);
+        d.op_args.lsu.is_float = 0;
+        d.op_args.lsu.is_rvv = 1;
+        d.op_args.lsu.nf = nf;
+        // Re-slot vs3 (store data) into rs2 slot as a VGPR; rs1 is scalar base.
+        reg_ids = '0;
+        use_regs = '0;
         `USED_IREG (rs1);
-        `USED_REG (rs2_is_vector ? REG_TYPE_V : REG_TYPE_I, rs2, rs2_enable);
+        reg_ids[RV_RS2]  = make_reg_num(REG_TYPE_V, RV_REGS_BITS'(rs3));
+        use_regs[RV_RS2] = 1'b1;
         d.reg_ids = reg_ids;
         d.use_regs = use_regs;
     end
@@ -177,9 +184,15 @@ module VX_vpu_decode_vop import VX_gpu_pkg::*, VX_vpu_pkg::*; (
             6'b000111: fpu_op_type = INST_FPU_MISC;
             6'b011010: fpu_op_type = INST_FPU_CMP;
             6'b011011: fpu_op_type = INST_FPU_CMP;
+            6'b101100: fpu_op_type = INST_FPU_MADD; // vfmacc
+            6'b010111: fpu_op_type = INST_FPU_MISC; // vfmv.v.f
+            6'b010000: fpu_op_type = INST_FPU_MISC; // vfmv.s.f / vfmv.f.s
             default: fpu_op_type = 'x;
         endcase
     end
+
+    // vfmacc family reads vd as a source
+    wire fpu_uses_rd_as_rs3 = (funct6 == 6'b101100);
 
      vpu_decode_t d;
     always @* begin
@@ -285,6 +298,32 @@ module VX_vpu_decode_vop import VX_gpu_pkg::*, VX_vpu_pkg::*; (
             end
         end
         endcase
+
+        // vfmacc: vd is read as rs3
+        if (fpu_uses_rd_as_rs3 && (funct3 == 3'b001 || funct3 == 3'b101)) begin
+            reg_ids[RV_RS3]  = make_reg_num(REG_TYPE_V, RV_REGS_BITS'(rd));
+            use_regs[RV_RS3] = 1'b1;
+        end
+
+        // vfmv.v.f / vfmv.s.f (OPFVF): rs1=FREG, rd=VGPR, vs2 unused
+        if (funct3 == 3'b101 && (funct6 == 6'b010111 || funct6 == 6'b010000)) begin
+            reg_ids[RV_RS1]  = make_reg_num(REG_TYPE_F, RV_REGS_BITS'(rs1));
+            use_regs[RV_RS1] = 1'b1;
+            reg_ids[RV_RS2]  = '0;
+            use_regs[RV_RS2] = 1'b0;
+            reg_ids[RV_RD]   = make_reg_num(REG_TYPE_V, RV_REGS_BITS'(rd));
+            use_regs[RV_RD]  = 1'b1;
+        end
+
+        // vfmv.f.s (OPFVV): rd=FREG, vs2=VGPR, rs1 unused
+        if (funct3 == 3'b001 && funct6 == 6'b010000) begin
+            reg_ids[RV_RS1]  = '0;
+            use_regs[RV_RS1] = 1'b0;
+            reg_ids[RV_RS2]  = make_reg_num(REG_TYPE_V, RV_REGS_BITS'(rs2));
+            use_regs[RV_RS2] = 1'b1;
+            reg_ids[RV_RD]   = make_reg_num(REG_TYPE_F, RV_REGS_BITS'(rd));
+            use_regs[RV_RD]  = 1'b1;
+        end
 
         d.reg_ids = reg_ids;
         d.use_regs = use_regs;

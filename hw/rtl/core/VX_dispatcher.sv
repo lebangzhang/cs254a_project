@@ -86,19 +86,41 @@ module VX_dispatcher import VX_gpu_pkg::*; #(
     // Multiply via shift-and-add on the 2-bit index — no multiplier needed.
     wire is_pack_lsu = (operands_if.data.op_args.lsu.pack != 2'b00);
     wire [1:0] pld_uop_idx = operands_if.data.op_args.lsu.offset[1:0];
+`ifdef EXT_V_ENABLE
+    wire is_rvv_lsu = operands_if.data.op_args.lsu.is_rvv;
+    // EEW bytes from LSU op_type encoding: LB/SB=1, LH/SH=2, LW/SW=4, LD/SD=8
+    reg [3:0] eew_bytes;
+    always_comb begin
+        case (operands_if.data.op_type[1:0])
+            2'b00: eew_bytes = 4'd1; // byte
+            2'b01: eew_bytes = 4'd2; // half
+            2'b10: eew_bytes = 4'd4; // word
+            2'b11: eew_bytes = 4'd8; // double
+        endcase
+    end
+`else
+    wire is_rvv_lsu = 1'b0;
+    wire [3:0] eew_bytes = 4'd0;
+    `UNUSED_VAR (eew_bytes)
+`endif
 
     for (genvar j = 0; j < `SIMD_WIDTH; ++j) begin : g_eff_rs1
         wire [`XLEN-1:0] stride_off =
             ({`XLEN{pld_uop_idx[0]}} & (operands_if.data.rs2_data[j] << 0))
           + ({`XLEN{pld_uop_idx[1]}} & (operands_if.data.rs2_data[j] << 1));
-        assign eff_rs1_data[j] = is_pack_lsu
-            ? (operands_if.data.rs1_data[j] + stride_off)
-            :  operands_if.data.rs1_data[j];
+        // RVV unit-stride whole-reg: element index = lane + uop_idx*SIMD_WIDTH
+        wire [`XLEN-1:0] rvv_elem_idx = `XLEN'(j) + (`XLEN'(pld_uop_idx) * `XLEN'(`SIMD_WIDTH));
+        wire [`XLEN-1:0] rvv_off = rvv_elem_idx * `XLEN'(eew_bytes);
+        assign eff_rs1_data[j] = is_rvv_lsu
+            ? (operands_if.data.rs1_data[0] + rvv_off)
+            : (is_pack_lsu
+                ? (operands_if.data.rs1_data[j] + stride_off)
+                :  operands_if.data.rs1_data[j]);
     end
 
     always_comb begin
         eff_op_args = operands_if.data.op_args;
-        if (is_pack_lsu) begin
+        if (is_pack_lsu || is_rvv_lsu) begin
             eff_op_args.lsu.offset = '0;
         end
     end

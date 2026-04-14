@@ -669,7 +669,9 @@ package VX_gpu_pkg;
     `PACKAGE_ASSERT($bits(fpu_args_t) == INST_ARGS_BITS)
 
     typedef struct packed {
-        logic [(INST_ARGS_BITS-1-1-12-2)-1:0] __padding;  // 9 bits
+        logic [(INST_ARGS_BITS-1-1-12-2-1-3)-1:0] __padding;  // 5 bits
+        logic [2:0] nf;      // RVV: nf field (nf+1 regs for whole-reg ops)
+        logic is_rvv;        // RVV load/store
         logic [1:0] pack;  // 0=normal, 1=PACKLB (4×byte), 2=PACKLH (2×halfword)
         logic is_store;
         logic is_float;
