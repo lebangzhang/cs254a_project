@@ -55,6 +55,9 @@ module VX_dispatcher import VX_gpu_pkg::*; #(
                     operands_if.data.wis,
                     operands_if.data.sid,
                     operands_if.data.tmask,
+                `ifdef EXT_V_ENABLE
+                    operands_if.data.sew,
+                `endif
                     operands_if.data.PC,
                     operands_if.data.wb,
                     operands_if.data.wr_xregs,
@@ -115,6 +118,9 @@ module VX_dispatcher import VX_gpu_pkg::*; #(
             operands_if.data.wis,
             operands_if.data.sid,
             operands_if.data.tmask,
+        `ifdef EXT_V_ENABLE
+            operands_if.data.sew,
+        `endif
             operands_if.data.PC,
             operands_if.data.wb,
             operands_if.data.wr_xregs,

@@ -265,7 +265,8 @@ module VX_vpu_decode_vop import VX_gpu_pkg::*, VX_vpu_pkg::*; (
             `USED_VREG (rd);
         end
         3'b111: begin // OPCFG
-            d.op_type = EX_SFU;
+            d.ex_type = EX_SFU;
+            d.op_type = INST_OP_BITS'(INST_SFU_VSET);
             d.op_args.vset.use_imm = 0;
             d.op_args.vset.use_zimm = 0;
             d.op_args.vset.zimm = zimm;

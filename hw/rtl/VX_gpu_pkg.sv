@@ -127,7 +127,8 @@ package VX_gpu_pkg;
 
     localparam UOP_PACKLD = 0;
     localparam UOP_TCU = UOP_PACKLD + 1;
-    localparam UOP_MAX = UOP_TCU + `EXT_TCU_ENABLED;
+    localparam UOP_VPU = UOP_TCU + `EXT_TCU_ENABLED;
+    localparam UOP_MAX = UOP_VPU + `EXT_V_ENABLED;
     localparam UOP_CTR_W = 8;
 
     localparam CTA_TID_WIDTH = `UP(NW_BITS + NT_BITS);
@@ -450,6 +451,9 @@ package VX_gpu_pkg;
     localparam INST_SFU_DXA =    4'h9;
 `endif
     localparam INST_SFU_WSYNC =  4'hA;
+`ifdef EXT_V_ENABLE
+    localparam INST_SFU_VSET =   4'hB;
+`endif
     localparam INST_SFU_BITS =   4;
 
     function automatic logic [3:0] inst_sfu_csr(input logic [2:0] funct3);

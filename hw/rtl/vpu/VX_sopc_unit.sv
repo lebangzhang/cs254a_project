@@ -39,7 +39,7 @@ module VX_sopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
     localparam GPR_ENTRIES    = GPR_FILE_SIZE / GPR_DATA_SIZE;
     localparam GPR_ADDR_BITS  = `CLOG2(GPR_ENTRIES / NUM_SREGS);
     localparam GPR_ADDR_WIDTH = `UP(GPR_ADDR_BITS);
-    localparam GPR_TAG_WIDTH  = UUID_WIDTH + ISSUE_WIS_W + SSIMD_IDX_W + SSIMD_WIDTH + PC_BITS + 1 + EX_BITS + INST_OP_BITS + INST_ARGS_BITS + NUM_REGS_BITS
+    localparam GPR_TAG_WIDTH  = UUID_WIDTH + ISSUE_WIS_W + SSIMD_IDX_W + SSIMD_WIDTH + PC_BITS + 1 + NUM_XREGS + EX_BITS + INST_OP_BITS + INST_ARGS_BITS + NUM_REGS_BITS + BYTESEL_BITS
                                            + (NUM_SRC_OPDS * NUM_REGS_BITS + NUM_SRC_OPDS) + 1 + 1 + 1;
     localparam OUT_DATAW      = GPR_TAG_WIDTH + NUM_SRC_OPDS * GPR_DATA_WIDTH;
 
@@ -93,10 +93,12 @@ module VX_sopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
         simd_out,
         scoreboard_if.data.PC,
         scoreboard_if.data.wb,
+        scoreboard_if.data.wr_xregs,
         scoreboard_if.data.ex_type,
         scoreboard_if.data.op_type,
         scoreboard_if.data.op_args,
         scoreboard_if.data.rd,
+        scoreboard_if.data.bytesel,
         src_regs,
         scoreboard_if.data.used_rs,
         scoreboard_if.data.is_rvv,
@@ -180,10 +182,12 @@ module VX_sopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
             operands_tmask,
             operands_if.data.PC,
             operands_if.data.wb,
+            operands_if.data.wr_xregs,
             operands_if.data.ex_type,
             operands_if.data.op_type,
             operands_if.data.op_args,
             operands_if.data.rd,
+            operands_if.data.bytesel,
             src_regs_o,
             used_rs_o,
             is_rvv_o,
@@ -195,6 +199,7 @@ module VX_sopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
         .ready_out(operands_if.ready)
     );
 
+    assign operands_if.data.sew      = '0;
     assign operands_if.data.sid      = SIMD_IDX_W'(operands_sid);
     assign operands_if.data.tmask    = `SIMD_WIDTH'(operands_tmask);
     assign operands_if.data.rs1_data = (`SIMD_WIDTH * `XLEN)'(operands_rs_data[0]);
