@@ -134,7 +134,7 @@ module VX_opc_unit import VX_gpu_pkg::*; #(
         .rsp_rd_data  (gpr_rsp_data),
         .rsp_rd_tag   (gpr_rsp_tag),
         .rsp_rd_ready (gpr_rsp_ready),
-        .req_wr_valid (writeback_if.valid),
+        .req_wr_valid (writeback_if.valid && writeback_if.data.wb),
         .req_wr_addr  (gpr_wb_addr),
         .req_wr_rid   (writeback_if.data.rd),
         .req_wr_mask  (gpr_wb_byteen),

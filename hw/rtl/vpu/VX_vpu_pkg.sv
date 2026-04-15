@@ -114,24 +114,40 @@ package VX_vpu_pkg;
         return NUM_VREGS_BITS'(reg_num);
     endfunction
 
-    /*
-    localparam VLMAX_SEW08_LMUL1 =  `VLEN / 8;
-    localparam VLMAX_SEW16_LMUL1 =  `VLEN / 16;
-    localparam VLMAX_SEW32_LMUL1 =  `VLEN / 32;
-    localparam VLMAX_SEW64_LMUL1 =  `VLEN / 64;
-    localparam VEC_IMM_BITS      =  15;
-
-    function automatic logic [VL_MAX_W-1:0] vlmax_cacl(input logic[2:0] vlmul, input logic[1:0] vsew);
-        logic [VL_MAX_W-1:0] vlen_lmul = (vlmul == 3'b000) ? VLENB       : // vlmul = 1
-                                         (vlmul == 3'b001) ? VLENB << 1  : // vlmul = 2
-                                         (vlmul == 3'b010) ? VLENB << 2  : // vlmul = 4
-                                         (vlmul == 3'b011) ? VLENB << 3  : // vlmul = 8
-                                         (vlmul == 3'b111) ? VLENB >> 1  : // vlmul = 1/2
-                                         (vlmul == 3'b110) ? VLENB >> 2  : // vlmul = 1/4
-                                                            VLENB >> 3;   // vlmul = 1/8 (101)
-        return (vlen_lmul >> vsew);
+    // Compute vlmax per RVV spec.
+    //   vlmul[2] (MSB) distinguishes fractional (1) vs integer (0) LMUL.
+    //   fractional: vlen_mul = VLENB >> (8 - vlmul)   // vlmul in {5,6,7} -> LMUL 1/8,1/4,1/2
+    //   integer:    vlen_mul = VLENB << vlmul         // vlmul in {0..3}  -> LMUL 1,2,4,8
+    //   vlmax = vlen_mul >> vsew
+    // Mirrors simx/vec_unit.cpp configure().
+    localparam VLMAX_CALC_W = VL_MAX_W + 4;
+    function automatic logic [VL_MAX_W-1:0] vlmax_cacl(
+        input logic [2:0] vlmul,
+        input logic [2:0] vsew
+    );
+        logic [VLMAX_CALC_W-1:0] vlenb_w;
+        logic [VLMAX_CALC_W-1:0] vlen_mul;
+        vlenb_w = VLMAX_CALC_W'(VLENB);
+        if (vlmul[2]) begin
+            vlen_mul = vlenb_w >> (4'd8 - {1'b0, vlmul});
+        end else begin
+            vlen_mul = vlenb_w << vlmul;
+        end
+        return VL_MAX_W'(vlen_mul >> vsew);
     endfunction
-    */
+
+    // vill = (SEW > XLEN) || (vlmax > VLEN)
+    // SEW bytes = (1 << vsew); compare to XLENB.
+    function automatic logic vill_calc(
+        input logic [2:0]          vsew,
+        input logic [VL_MAX_W-1:0] vlmax
+    );
+        logic sew_exceeds;
+        logic vlmax_exceeds;
+        sew_exceeds   = ((32'd1 << vsew) > 32'(XLENB));
+        vlmax_exceeds = ({1'b0, vlmax} > (VL_MAX_W+1)'(`VLEN));
+        return sew_exceeds | vlmax_exceeds;
+    endfunction
 
 endpackage
 

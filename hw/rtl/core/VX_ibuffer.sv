@@ -25,7 +25,7 @@ module VX_ibuffer import VX_gpu_pkg::*; #(
 `endif
 
 `ifdef EXT_V_ENABLE
-    VX_vpu_seq_csr_if.master vpu_seq_csr_if [PER_ISSUE_WARPS],
+    VX_vpu_seq_csr_if.slave  vpu_seq_csr_if [PER_ISSUE_WARPS],
     VX_vpu_seq_opc_if.slave  vpu_seq_opc_if [`NUM_OPCS],
 `endif
 

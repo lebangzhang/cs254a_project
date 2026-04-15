@@ -206,6 +206,10 @@ module VX_scoreboard import VX_gpu_pkg::*; #(
             staging_if[w].data.ex_type,
             staging_if[w].data.op_type,
             staging_if[w].data.op_args,
+        `ifdef EXT_V_ENABLE
+            staging_if[w].data.is_rvv,
+            staging_if[w].data.is_masked,
+        `endif
             staging_if[w].data.wb,
             staging_if[w].data.wr_xregs,
             staging_if[w].data.used_rs,

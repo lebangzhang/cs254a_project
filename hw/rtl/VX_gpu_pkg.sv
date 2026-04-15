@@ -105,6 +105,29 @@ package VX_gpu_pkg;
     localparam REG_TYPES  = REG_STYPES;
 `endif
 
+    // RVV LSU uop expansion fields. These widths are derived from `VLEN and
+    // `SIMD_WIDTH so the lsu_args_t struct scales with the compile-time VPU
+    // configuration. They are declared unconditionally so lsu_args_t has a
+    // stable shape between baseline and EXT_V_ENABLE builds.
+    //   max_LMUL = 8 per RVV spec → emul_idx ∈ [0, 7] → 3 bits.
+    //   max_simd_groups = max(1, (VLEN / SEW_MIN) / SIMD_WIDTH) with SEW_MIN=8.
+`ifdef EXT_V_ENABLE
+    localparam VPU_MAX_SIMD_GROUPS = `MAX(1, (`VLEN / 8) / `SIMD_WIDTH);
+`else
+    localparam VPU_MAX_SIMD_GROUPS = 1;
+`endif
+    localparam VPU_GROUP_IDX_BITS  = `CLOG2(VPU_MAX_SIMD_GROUPS + 1);
+    localparam VPU_EMUL_IDX_BITS   = `CLOG2(8 + 1); // max_LMUL = 8
+    localparam VPU_FIELD_IDX_BITS  = 3;             // nf is 3 bits per RVV spec
+    localparam VPU_NF_BITS         = 3;
+    // Total bit count of lsu_args_t fields (excluding __padding).
+    localparam LSU_ARGS_USED_BITS  = VPU_FIELD_IDX_BITS + VPU_EMUL_IDX_BITS
+                                   + VPU_GROUP_IDX_BITS + VPU_NF_BITS
+                                   + 2 /*pack*/
+                                   + 1 /*is_store*/ + 1 /*is_float*/
+                                   + 1 /*is_masked*/
+                                   + 12 /*offset*/;
+
     localparam SIMD_IDX_BITS = `CLOG2(SIMD_COUNT);
     localparam SIMD_IDX_W = `UP(SIMD_IDX_BITS);
 
@@ -127,7 +150,8 @@ package VX_gpu_pkg;
 
     localparam UOP_PACKLD = 0;
     localparam UOP_TCU = UOP_PACKLD + 1;
-    localparam UOP_MAX = UOP_TCU + `EXT_TCU_ENABLED;
+    localparam UOP_VPU = UOP_TCU + `EXT_TCU_ENABLED;
+    localparam UOP_MAX = UOP_VPU + `EXT_V_ENABLED;
     localparam UOP_CTR_W = 8;
 
     localparam CTA_TID_WIDTH = `UP(NW_BITS + NT_BITS);
@@ -450,6 +474,9 @@ package VX_gpu_pkg;
     localparam INST_SFU_DXA =    4'h9;
 `endif
     localparam INST_SFU_WSYNC =  4'hA;
+`ifdef EXT_V_ENABLE
+    localparam INST_SFU_VSET =   4'hB;
+`endif
     localparam INST_SFU_BITS =   4;
 
     function automatic logic [3:0] inst_sfu_csr(input logic [2:0] funct3);
@@ -646,9 +673,12 @@ package VX_gpu_pkg;
 
     //////////////////////// instruction arguments ////////////////////////////
 
-    localparam INST_ARGS_BITS = 3 + ALU_TYPE_BITS + 20;
+    // Always reserve at least 1 bit of padding so every *_args_t struct can
+    // declare a non-degenerate __padding field (avoids [-1:0] ranges).
+    localparam INST_ARGS_BITS = `MAX(3 + ALU_TYPE_BITS + 20, LSU_ARGS_USED_BITS) + 1;
 
     typedef struct packed {
+        logic [(INST_ARGS_BITS-3-ALU_TYPE_BITS-20)-1:0] __padding;
         logic use_PC;
         logic use_imm;
         logic is_w;
@@ -664,11 +694,27 @@ package VX_gpu_pkg;
     } fpu_args_t;
     `PACKAGE_ASSERT($bits(fpu_args_t) == INST_ARGS_BITS)
 
+    // LSU args. Scalar path uses `offset` as a signed 12-bit immediate.
+    // RVV path (is_rvv=1) reinterprets offset and adds uop expansion state:
+    //   offset[11:7] = umop  (5 bits)  -- raw lumop/sumop from instr_i[24:20]
+    //   offset[6:5]  = mop   (2 bits)  -- mop field from instr_i[27:26]
+    //   offset[4:2]  = width (3 bits)  -- width field from instr_i[14:12], EEW = 1<<width
+    //   offset[1:0]  = 0 (unused)
+    // `nf` holds the nf field (nfields = nf+1).
+    // `field_idx`/`emul_idx` are written by the uop expander so the dispatcher
+    // can compute address and VGPR id without dividing by nfields.
+    //   vgpr_id = base + field_idx * emul + emul_idx
+    // Note: emul_idx is only 2 bits, so emul up to 4 is supported (vlmul in {0,1,2}).
     typedef struct packed {
-        logic [(INST_ARGS_BITS-1-1-12-2)-1:0] __padding;  // 9 bits
-        logic [1:0] pack;  // 0=normal, 1=PACKLB (4×byte), 2=PACKLH (2×halfword)
+        logic [(INST_ARGS_BITS-LSU_ARGS_USED_BITS)-1:0] __padding;
+        logic [VPU_GROUP_IDX_BITS-1:0] group_idx; // RVV: which SIMD group within EMUL register
+        logic [VPU_FIELD_IDX_BITS-1:0] field_idx; // RVV: which field within a segment uop (0..nf)
+        logic [VPU_EMUL_IDX_BITS-1:0]  emul_idx;  // RVV: which register within the EMUL group
+        logic [VPU_NF_BITS-1:0] nf;     // RVV: nf field (nfields = nf+1)
+        logic [1:0] pack;               // 0=normal, 1=PACKLB (4×byte), 2=PACKLH (2×halfword)
         logic is_store;
         logic is_float;
+        logic is_masked;                // RVV: 1 = v0 mask predication active (vm=0)
         logic [11:0] offset;
     } lsu_args_t;
     `PACKAGE_ASSERT($bits(lsu_args_t) == INST_ARGS_BITS)
@@ -683,7 +729,9 @@ package VX_gpu_pkg;
 
 `ifdef EXT_V_ENABLE
     typedef struct packed {
-        logic [(INST_ARGS_BITS-1-1-5-12)-1:0] __padding;
+        logic [(INST_ARGS_BITS-1-1-1-1-5-12)-1:0] __padding;
+        logic        rd_zero;
+        logic        rs1_zero;
         logic        use_imm;
         logic        use_zimm;
         logic [4:0]  imm;
@@ -823,6 +871,7 @@ package VX_gpu_pkg;
         logic [`SIMD_WIDTH-1:0]             tmask;
     `ifdef EXT_V_ENABLE
         vpu_sew_t                           sew;
+        logic                               is_rvv;
     `endif
         logic [PC_BITS-1:0]                 PC;
         logic [EX_BITS-1:0]                 ex_type;
@@ -847,6 +896,7 @@ package VX_gpu_pkg;
         logic [`SIMD_WIDTH-1:0]             tmask;
     `ifdef EXT_V_ENABLE
         vpu_sew_t                           sew;
+        logic                               is_rvv;
     `endif
         logic [PC_BITS-1:0]                 PC;
         logic                               wb;

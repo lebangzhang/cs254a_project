@@ -94,6 +94,11 @@ module VX_sfu_unit import VX_gpu_pkg::*; #(
         if (inst_sfu_is_csr(per_block_execute_if[0].data.op_type)) begin
             pe_select = PE_IDX_CSRS;
         end
+    `ifdef EXT_V_ENABLE
+        if (per_block_execute_if[0].data.op_type == INST_SFU_VSET) begin
+            pe_select = PE_IDX_CSRS;
+        end
+    `endif
     `ifdef EXT_DXA_ENABLE
         if (per_block_execute_if[0].data.op_type == INST_SFU_DXA) begin
             pe_select = PE_IDX_DXA;

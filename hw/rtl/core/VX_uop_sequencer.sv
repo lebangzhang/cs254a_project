@@ -28,7 +28,7 @@ module VX_uop_sequencer import
     input reset,
 
 `ifdef EXT_V_ENABLE
-    VX_vpu_seq_csr_if.master vpu_seq_csr_if,
+    VX_vpu_seq_csr_if.slave  vpu_seq_csr_if,
     VX_vpu_seq_opc_if.slave  vpu_seq_opc_if,
 `endif
 
@@ -148,6 +148,25 @@ module VX_uop_sequencer import
         .uop_idx   (uop_ctr),
         .ibuf_out  (uop_out_data[UOP_TCU]),
         .uop_count (uop_out_count[UOP_TCU])
+    );
+`endif
+
+`ifdef EXT_V_ENABLE
+    // ------------------------------------------------------------------
+    // VPU uop expander
+    // ------------------------------------------------------------------
+    assign uop_in_valid[UOP_VPU] = uop_in_data.is_rvv;
+    VX_vpu_uops vpu_uops (
+        .clk            (clk),
+        .reset          (reset),
+        .vpu_seq_csr_if (vpu_seq_csr_if),
+        .vpu_seq_opc_if (vpu_seq_opc_if),
+        .ibuf_in        (uop_in_data),
+        .start          (uop_in_start[UOP_VPU]),
+        .advance        (uop_in_next[UOP_VPU]),
+        .uop_idx        (uop_ctr),
+        .ibuf_out       (uop_out_data[UOP_VPU]),
+        .uop_count      (uop_out_count[UOP_VPU])
     );
 `endif
 

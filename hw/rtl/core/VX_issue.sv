@@ -26,7 +26,7 @@ module VX_issue import VX_gpu_pkg::*; #(
 `endif
 
 `ifdef EXT_V_ENABLE
-    VX_vpu_seq_csr_if.master vpu_seq_csr_if [`NUM_WARPS],
+    VX_vpu_seq_csr_if.slave  vpu_seq_csr_if [`NUM_WARPS],
 `endif
 
     VX_decode_if.slave      decode_if,

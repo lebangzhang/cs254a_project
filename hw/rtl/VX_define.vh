@@ -453,6 +453,7 @@
         logic                            sop; \
         logic                            eop; \
         vpu_sew_t                        sew; \
+        logic                            is_rvv; \
         logic [PC_BITS-1:0]              PC; \
         logic                            wb; \
         logic [NUM_XREGS-1:0]            wr_xregs; \
