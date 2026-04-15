@@ -200,6 +200,7 @@ module VX_sopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
     );
 
     assign operands_if.data.sew      = '0;
+    assign operands_if.data.is_rvv   = is_rvv_o;
     assign operands_if.data.sid      = SIMD_IDX_W'(operands_sid);
     assign operands_if.data.tmask    = `SIMD_WIDTH'(operands_tmask);
     assign operands_if.data.rs1_data = (`SIMD_WIDTH * `XLEN)'(operands_rs_data[0]);

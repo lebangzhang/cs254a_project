@@ -35,6 +35,12 @@ module VX_vpu_uops import VX_vpu_pkg::*, VX_gpu_pkg::*; (
     `UNUSED_VAR (advance)
     `UNUSED_VAR (vpu_seq_opc_if.wis)
 
+    // VLEN-derived widths used by RVV LSU expansion.
+    //   elements_per_vreg(vsew) = VLEN >> (3 + vsew)         // SEW=8<<vsew bits
+    //   simd_groups(vsew)       = max(1, elements_per_vreg / SIMD_WIDTH)
+    // VLENB = VLEN/8. simd_groups = max(1, VLENB / (SIMD_WIDTH << vsew)).
+    localparam SG_LOG2_MAX_W   = `CLOG2(VPU_GROUP_IDX_BITS + 1); // width to hold sg_log2
+
     vpu_csrs_t vpu_csrs;
 
     always @(posedge clk) begin
@@ -48,10 +54,43 @@ module VX_vpu_uops import VX_vpu_pkg::*, VX_gpu_pkg::*; (
 
     wire csr_has_lmul = (vpu_csrs.vtype.vlmul != 0);
 
-    // For RVV whole-register LSU ops: uop_count = nf + 1.
-    // Otherwise match legacy expander: 1 uop when LMUL=0, else 8 uops.
-    wire is_rvv_lsu = (ibuf_in.ex_type == EX_LSU) && ibuf_in.op_args.lsu.is_rvv;
-    wire [UOP_CTR_W-1:0] lsu_uop_count = UOP_CTR_W'(ibuf_in.op_args.lsu.nf) + UOP_CTR_W'(1);
+    // RVV LSU expansion: uop_count = nfields * emul * simd_groups.
+    // Whole-register form (umop==01000): nfields=1, emul=nf+1.
+    // Otherwise: nfields=nf+1, emul derived from vtype.vlmul (LMUL>=1 only here;
+    // fractional LMUL collapses to emul=1).
+    wire is_rvv_lsu = (ibuf_in.ex_type == EX_LSU) && ibuf_in.is_rvv;
+    wire [4:0] rvv_umop = ibuf_in.op_args.lsu.offset[11:7];
+    wire is_whole_reg  = (rvv_umop == 5'b01000);
+    wire [VPU_NF_BITS-1:0] nf_v = ibuf_in.op_args.lsu.nf;
+
+    // emul from vlmul: 000->1, 001->2, 010->4, 011->8, frac (1xx)->1
+    localparam EMUL_W = VPU_EMUL_IDX_BITS + 1; // wide enough to hold value 8
+    reg [EMUL_W-1:0] emul_v;
+    always @(*) begin
+        case (vpu_csrs.vtype.vlmul)
+            3'b000:  emul_v = EMUL_W'(1);
+            3'b001:  emul_v = EMUL_W'(2);
+            3'b010:  emul_v = EMUL_W'(4);
+            3'b011:  emul_v = EMUL_W'(8);
+            default: emul_v = EMUL_W'(1);
+        endcase
+    end
+
+    wire [EMUL_W-1:0] nfields     = EMUL_W'(nf_v) + EMUL_W'(1);
+    wire [EMUL_W-1:0] eff_nfields = is_whole_reg ? EMUL_W'(1) : nfields;
+    wire [EMUL_W-1:0] eff_emul    = is_whole_reg ? nfields : emul_v;
+
+    // Compute simd_groups based on current SEW.
+    // simd_groups = max(1, VLENB >> (vsew + SIMD_W_LOG2))
+    // Equivalently elements_per_vreg = VLENB >> vsew, then >> SIMD_W_LOG2.
+    localparam SG_W = VPU_GROUP_IDX_BITS + 1; // wide enough for VPU_MAX_SIMD_GROUPS
+    wire [2:0] vsew = vpu_csrs.vtype.vsew;
+    wire [SG_W-1:0] sg_raw = SG_W'(VPU_MAX_SIMD_GROUPS) >> vsew;
+    wire [SG_W-1:0] simd_groups = (sg_raw == SG_W'(0)) ? SG_W'(1) : sg_raw;
+
+    // Total uops = nfields * emul * simd_groups (all powers of two).
+    wire [UOP_CTR_W-1:0] lsu_uop_count =
+        UOP_CTR_W'(eff_nfields) * UOP_CTR_W'(eff_emul) * UOP_CTR_W'(simd_groups);
 
     assign uop_count = is_rvv_lsu ? lsu_uop_count
                                   : (csr_has_lmul ? UOP_CTR_W'(8) : UOP_CTR_W'(1));
@@ -59,24 +98,79 @@ module VX_vpu_uops import VX_vpu_pkg::*, VX_gpu_pkg::*; (
     wire [REG_TYPE_BITS-1:0] rd_type  = get_reg_type(ibuf_in.rd);
     wire [REG_TYPE_BITS-1:0] rs1_type = get_reg_type(ibuf_in.rs1);
     wire [REG_TYPE_BITS-1:0] rs2_type = get_reg_type(ibuf_in.rs2);
+    wire [REG_TYPE_BITS-1:0] rs3_type = get_reg_type(ibuf_in.rs3);
 
     wire [2:0] ctr = uop_idx[2:0];
+
+    // Decompose linear uop_idx into (field_idx, emul_idx, group_idx) using
+    // shift-based division (all denominators are powers of 2). Layout:
+    //   uop_idx = ((field_idx * emul) + emul_idx) * simd_groups + group_idx
+    // Inner = group, middle = emul, outer = field.
+    // sg_log2 = log2(simd_groups). Since simd_groups is a power of 2 in [1, MAX],
+    // we precompute it as a small width using a priority encoder.
+    reg [SG_LOG2_MAX_W-1:0] sg_log2;
+    always @(*) begin
+        sg_log2 = '0;
+        for (int k = 0; k < VPU_GROUP_IDX_BITS + 1; k++) begin
+            if (simd_groups[k]) sg_log2 = SG_LOG2_MAX_W'(k);
+        end
+    end
+
+    reg [VPU_EMUL_IDX_BITS:0] em_log2; // log2(eff_emul), value in [0..3]
+    always @(*) begin
+        em_log2 = '0;
+        for (int k = 0; k < EMUL_W; k++) begin
+            if (eff_emul[k]) em_log2 = (VPU_EMUL_IDX_BITS+1)'(k);
+        end
+    end
+
+    wire [UOP_CTR_W-1:0] uop_idx_w = uop_idx;
+    wire [UOP_CTR_W-1:0] after_g = uop_idx_w >> sg_log2;
+    wire [UOP_CTR_W-1:0] after_em = after_g >> em_log2;
+
+    wire [UOP_CTR_W-1:0] group_idx_full = uop_idx_w & ((UOP_CTR_W'(1) << sg_log2) - UOP_CTR_W'(1));
+    wire [UOP_CTR_W-1:0] emul_idx_full  = after_g & ((UOP_CTR_W'(1) << em_log2) - UOP_CTR_W'(1));
+    wire [UOP_CTR_W-1:0] field_idx_full = after_em;
+
+    wire [VPU_GROUP_IDX_BITS-1:0] group_idx_w = group_idx_full[VPU_GROUP_IDX_BITS-1:0];
+    wire [VPU_EMUL_IDX_BITS-1:0]  emul_idx_w  = emul_idx_full[VPU_EMUL_IDX_BITS-1:0];
+    wire [VPU_FIELD_IDX_BITS-1:0] field_idx_w = field_idx_full[VPU_FIELD_IDX_BITS-1:0];
+
+    `UNUSED_VAR (group_idx_full)
+    `UNUSED_VAR (emul_idx_full)
+    `UNUSED_VAR (field_idx_full)
+
+    // VGPR offset: vd + field_idx * emul + emul_idx (matches SimX vd + f*emul)
+    wire [4:0] vgpr_off = 5'(field_idx_w) * 5'(eff_emul) + 5'(emul_idx_w);
+    wire [4:0] scalar_off = 5'(ctr);
+    wire [4:0] vreg_off = is_rvv_lsu ? vgpr_off : scalar_off;
+
+    // For RVV indexed loads/stores (mop=01/11), the index vector vs2 is read once
+    // per element regardless of nf/emul iteration. SimX reads getVregData(eew, vs2, i)
+    // where i is the element index — so vs2 should NOT be bumped by field_idx or emul_idx.
+    // It still advances with group_idx (each uop group covers a different element span).
+    wire is_rvv_indexed = is_rvv_lsu && ibuf_in.op_args.lsu.offset[5];
+    wire [4:0] rs2_vreg_off = is_rvv_indexed ? 5'(0) : vreg_off;
 
     ibuffer_t ibuf_r;
     always @(*) begin
         ibuf_r = ibuf_in;
         if (rd_type == REG_TYPE_V) begin
-            ibuf_r.rd[4:0] = ibuf_in.rd[4:0] + 5'(ctr);
+            ibuf_r.rd[4:0] = ibuf_in.rd[4:0] + vreg_off;
         end
         if (rs1_type == REG_TYPE_V) begin
-            ibuf_r.rs1[4:0] = ibuf_in.rs1[4:0] + 5'(ctr);
+            ibuf_r.rs1[4:0] = ibuf_in.rs1[4:0] + vreg_off;
         end
         if (rs2_type == REG_TYPE_V) begin
-            ibuf_r.rs2[4:0] = ibuf_in.rs2[4:0] + 5'(ctr);
+            ibuf_r.rs2[4:0] = ibuf_in.rs2[4:0] + rs2_vreg_off;
         end
-        // Stash uop index in lsu.offset[1:0] for dispatcher to compute stride.
+        if (rs3_type == REG_TYPE_V) begin
+            ibuf_r.rs3[4:0] = ibuf_in.rs3[4:0] + vreg_off;
+        end
         if (is_rvv_lsu) begin
-            ibuf_r.op_args.lsu.offset = {10'd0, uop_idx[1:0]};
+            ibuf_r.op_args.lsu.field_idx = field_idx_w;
+            ibuf_r.op_args.lsu.emul_idx  = emul_idx_w;
+            ibuf_r.op_args.lsu.group_idx = group_idx_w;
         end
     end
 

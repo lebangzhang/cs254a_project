@@ -46,7 +46,12 @@ module VX_lsu_slice import VX_gpu_pkg::*; #(
         .data_t (lsu_result_t)
     ) result_no_rsp_if();
 
+`ifdef EXT_V_ENABLE
+    wire is_rvv_store = execute_if.data.header.is_rvv && execute_if.data.op_args.lsu.is_store;
+`else
+    wire is_rvv_store = 1'b0;
     `UNUSED_VAR (execute_if.data.rs3_data)
+`endif
 
     // full address calculation
 
@@ -188,17 +193,19 @@ module VX_lsu_slice import VX_gpu_pkg::*; #(
 
     // store data formatting
     for (genvar i = 0; i < NUM_LANES; ++i) begin : g_mem_req_data
+        wire [`XLEN-1:0] store_src = is_rvv_store ? execute_if.data.rs3_data[i]
+                                                  : execute_if.data.rs2_data[i];
         always @(*) begin
-            mem_req_data[i] = execute_if.data.rs2_data[i];
+            mem_req_data[i] = store_src;
             case (req_align[i])
-                1: mem_req_data[i][`XLEN-1:8]  = execute_if.data.rs2_data[i][`XLEN-9:0];
-                2: mem_req_data[i][`XLEN-1:16] = execute_if.data.rs2_data[i][`XLEN-17:0];
-                3: mem_req_data[i][`XLEN-1:24] = execute_if.data.rs2_data[i][`XLEN-25:0];
+                1: mem_req_data[i][`XLEN-1:8]  = store_src[`XLEN-9:0];
+                2: mem_req_data[i][`XLEN-1:16] = store_src[`XLEN-17:0];
+                3: mem_req_data[i][`XLEN-1:24] = store_src[`XLEN-25:0];
             `ifdef XLEN_64
-                4: mem_req_data[i][`XLEN-1:32] = execute_if.data.rs2_data[i][`XLEN-33:0];
-                5: mem_req_data[i][`XLEN-1:40] = execute_if.data.rs2_data[i][`XLEN-41:0];
-                6: mem_req_data[i][`XLEN-1:48] = execute_if.data.rs2_data[i][`XLEN-49:0];
-                7: mem_req_data[i][`XLEN-1:56] = execute_if.data.rs2_data[i][`XLEN-57:0];
+                4: mem_req_data[i][`XLEN-1:32] = store_src[`XLEN-33:0];
+                5: mem_req_data[i][`XLEN-1:40] = store_src[`XLEN-41:0];
+                6: mem_req_data[i][`XLEN-1:48] = store_src[`XLEN-49:0];
+                7: mem_req_data[i][`XLEN-1:56] = store_src[`XLEN-57:0];
             `endif
                 default:;
             endcase

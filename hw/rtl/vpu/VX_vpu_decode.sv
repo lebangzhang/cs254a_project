@@ -29,6 +29,7 @@ module VX_vpu_decode_vl import VX_gpu_pkg::*, VX_vpu_pkg::*; (
     wire [6:0] opcode = instr_i[6:0];
 
     `UNUSED_VAR (opcode)
+    `UNUSED_VAR (mew)
 
     reg [INST_LSU_BITS-1:0] op;
     always @* begin
@@ -55,10 +56,14 @@ module VX_vpu_decode_vl import VX_gpu_pkg::*, VX_vpu_pkg::*; (
         d.ex_type = EX_LSU;
         d.op_type = op;
         d.op_args.lsu.is_store = 0;
-        d.op_args.lsu.offset = 12'({mew, umop, mop, nf});
+        // RVV offset layout: [11:7]=umop, [6:5]=mop, [4:2]=width, [1:0]=0
+        d.op_args.lsu.offset = {umop, mop, width, 2'b00};
         d.op_args.lsu.is_float = rd_is_float;
-        d.op_args.lsu.is_rvv = 1;
+        d.op_args.lsu.is_masked = ~vm;  // vm=0 means masked execution (v0 predicates)
         d.op_args.lsu.nf = nf;
+        d.op_args.lsu.field_idx = '0;
+        d.op_args.lsu.emul_idx  = '0;
+        d.op_args.lsu.group_idx = '0;
         `USED_REG (REG_TYPE_V, rd, 1);
         `USED_IREG (rs1);
         `USED_REG (rs2_is_vector ? REG_TYPE_V : REG_TYPE_I, rs2, rs2_enable);
@@ -86,6 +91,7 @@ module VX_vpu_decode_vs import VX_gpu_pkg::*, VX_vpu_pkg::*; (
     wire [6:0] opcode = instr_i[6:0];
 
     `UNUSED_VAR (opcode)
+    `UNUSED_VAR (mew)
 
     reg [INST_LSU_BITS-1:0] op;
     always @* begin
@@ -103,7 +109,9 @@ module VX_vpu_decode_vs import VX_gpu_pkg::*, VX_vpu_pkg::*; (
 
     wire rs3_is_float  = (width == 3'b001 || width == 3'b010 || width == 3'b011 || width == 3'b100);
     `UNUSED_VAR (rs3_is_float)
-    `UNUSED_VAR (rs2)
+
+    wire rs2_is_vector = (mop != 2'b10);
+    wire rs2_enable    = (mop != 2'b00);
 
     vpu_decode_t d;
     always @* begin
@@ -112,16 +120,22 @@ module VX_vpu_decode_vs import VX_gpu_pkg::*, VX_vpu_pkg::*; (
         d.ex_type = EX_LSU;
         d.op_type = op;
         d.op_args.lsu.is_store = 1;
-        d.op_args.lsu.offset = 12'({mew, umop, mop, nf});
+        // RVV offset layout: [11:7]=umop, [6:5]=mop, [4:2]=width, [1:0]=0
+        d.op_args.lsu.offset = {umop, mop, width, 2'b00};
         d.op_args.lsu.is_float = 0;
-        d.op_args.lsu.is_rvv = 1;
+        d.op_args.lsu.is_masked = ~vm;  // vm=0 means masked execution (v0 predicates)
         d.op_args.lsu.nf = nf;
-        // Re-slot vs3 (store data) into rs2 slot as a VGPR; rs1 is scalar base.
+        d.op_args.lsu.field_idx = '0;
+        d.op_args.lsu.emul_idx  = '0;
+        d.op_args.lsu.group_idx = '0;
+        // rs1 = scalar base; rs2 = stride (I) for strided / index (V) for indexed / unused for unit;
+        // rs3 = vs3 store data (V) — read by LSU for RVV stores.
         reg_ids = '0;
         use_regs = '0;
         `USED_IREG (rs1);
-        reg_ids[RV_RS2]  = make_reg_num(REG_TYPE_V, RV_REGS_BITS'(rs3));
-        use_regs[RV_RS2] = 1'b1;
+        `USED_REG (rs2_is_vector ? REG_TYPE_V : REG_TYPE_I, rs2, rs2_enable);
+        reg_ids[RV_RS3]  = make_reg_num(REG_TYPE_V, RV_REGS_BITS'(rs3));
+        use_regs[RV_RS3] = 1'b1;
         d.reg_ids = reg_ids;
         d.use_regs = use_regs;
     end
