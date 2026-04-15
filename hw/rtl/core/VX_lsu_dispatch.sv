@@ -234,6 +234,54 @@ module VX_lsu_dispatch import VX_gpu_pkg::*; #(
     `endif
     end
 
+    // Second pipeline stage: flop the computed bundle (eff_rs1_data,
+    // eff_op_args, lsu_eff_tmask) after the RVV/pack compute. This lets
+    // the 32×XLEN strided multiplier output latch into the DSP48 P-register
+    // instead of fanning out through the base adder + lsu_buffer input mux
+    // within the same cycle — splits the DSP-cascade and the post-mult
+    // base-add into two separate clock periods. Cost: +1 cycle LSU issue
+    // (added on top of the first opd_pipe stage).
+    wire [OUT_DATAW-1:0] cmp_bundle = {
+        opd_q.uuid,
+        opd_q.wis,
+        opd_q.sid,
+        lsu_eff_tmask,
+    `ifdef EXT_V_ENABLE
+        opd_q.sew,
+        opd_q.is_rvv,
+    `endif
+        opd_q.PC,
+        opd_q.wb,
+        opd_q.wr_xregs,
+        opd_q.rd,
+        opd_q.bytesel,
+        opd_q.op_type,
+        eff_op_args,
+        eff_rs1_data,
+        opd_q.rs2_data,
+        opd_q.rs3_data,
+        opd_q.sop,
+        opd_q.eop
+    };
+
+    wire [OUT_DATAW-1:0] cmp_bundle_q;
+    wire                 cmp_valid_q;
+    wire                 cmp_ready_q;
+
+    VX_pipe_buffer #(
+        .DATAW (OUT_DATAW),
+        .DEPTH (1)
+    ) cmp_pipe (
+        .clk       (clk),
+        .reset     (reset),
+        .valid_in  (valid_q),
+        .data_in   (cmp_bundle),
+        .ready_in  (ready_q),
+        .valid_out (cmp_valid_q),
+        .data_out  (cmp_bundle_q),
+        .ready_out (cmp_ready_q)
+    );
+
     VX_elastic_buffer #(
         .DATAW   (OUT_DATAW),
         .SIZE    (2),
@@ -241,30 +289,9 @@ module VX_lsu_dispatch import VX_gpu_pkg::*; #(
     ) lsu_buffer (
         .clk        (clk),
         .reset      (reset),
-        .valid_in   (valid_q),
-        .ready_in   (ready_q),
-        .data_in    ({
-            opd_q.uuid,
-            opd_q.wis,
-            opd_q.sid,
-            lsu_eff_tmask,
-        `ifdef EXT_V_ENABLE
-            opd_q.sew,
-            opd_q.is_rvv,
-        `endif
-            opd_q.PC,
-            opd_q.wb,
-            opd_q.wr_xregs,
-            opd_q.rd,
-            opd_q.bytesel,
-            opd_q.op_type,
-            eff_op_args,
-            eff_rs1_data,
-            opd_q.rs2_data,
-            opd_q.rs3_data,
-            opd_q.sop,
-            opd_q.eop
-        }),
+        .valid_in   (cmp_valid_q),
+        .ready_in   (cmp_ready_q),
+        .data_in    (cmp_bundle_q),
         .data_out   (dispatch_if_lsu.data),
         .valid_out  (dispatch_if_lsu.valid),
         .ready_out  (dispatch_if_lsu.ready)

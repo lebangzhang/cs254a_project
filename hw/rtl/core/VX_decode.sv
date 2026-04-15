@@ -613,7 +613,6 @@ module VX_decode import
                             3'h7: begin // WSYNC
                                 op_type = INST_OP_BITS'(INST_SFU_WSYNC);
                             end
-                            default:;
                         endcase
                     end
                     7'h01: begin // VOTE, SHFL
