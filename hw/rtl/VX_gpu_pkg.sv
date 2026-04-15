@@ -729,7 +729,9 @@ package VX_gpu_pkg;
 
 `ifdef EXT_V_ENABLE
     typedef struct packed {
-        logic [(INST_ARGS_BITS-1-1-5-12)-1:0] __padding;
+        logic [(INST_ARGS_BITS-1-1-1-1-5-12)-1:0] __padding;
+        logic        rd_zero;
+        logic        rs1_zero;
         logic        use_imm;
         logic        use_zimm;
         logic [4:0]  imm;

@@ -64,9 +64,18 @@ module VX_vpu_decode_vl import VX_gpu_pkg::*, VX_vpu_pkg::*; (
         d.op_args.lsu.field_idx = '0;
         d.op_args.lsu.emul_idx  = '0;
         d.op_args.lsu.group_idx = '0;
+        reg_ids = '0;
+        use_regs = '0;
         `USED_REG (REG_TYPE_V, rd, 1);
         `USED_IREG (rs1);
         `USED_REG (rs2_is_vector ? REG_TYPE_V : REG_TYPE_I, rs2, rs2_enable);
+        // Stage 4: masked RVV load overloads RS3 with v0 for mask predication.
+        // Loads don't otherwise use RS3, so this is a free read port.
+        // Stores already consume RS3 for vs3 store-data, so they remain stubbed.
+        if (~vm) begin
+            reg_ids[RV_RS3]  = make_reg_num(REG_TYPE_V, RV_REGS_BITS'(5'd0));
+            use_regs[RV_RS3] = 1'b1;
+        end
         d.reg_ids = reg_ids;
         d.use_regs = use_regs;
     end
@@ -297,6 +306,10 @@ module VX_vpu_decode_vop import VX_gpu_pkg::*, VX_vpu_pkg::*; (
             d.op_args.vset.use_imm = 0;
             d.op_args.vset.use_zimm = 0;
             d.op_args.vset.zimm = zimm;
+            d.op_args.vset.imm = '0;
+            d.op_args.vset.rd_zero  = (rd == 5'd0);
+            d.op_args.vset.rs1_zero = (rs1 == 5'd0);
+            d.op_args.vset.__padding = '0;
             `USED_IREG (rd);
             if (zimm[11:10] == 2'b10) begin
                 `USED_IREG (rs2);
@@ -306,6 +319,7 @@ module VX_vpu_decode_vop import VX_gpu_pkg::*, VX_vpu_pkg::*; (
                 if (zimm[10]) begin
                     d.op_args.vset.use_imm = 1;
                     d.op_args.vset.imm = rs1;
+                    // vsetivli: rs1 field is uimm, not a register; rs1_zero semantic N/A.
                 end else begin
                     `USED_IREG (rs1);
                 end

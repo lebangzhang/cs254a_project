@@ -28,7 +28,7 @@ module VX_uop_sequencer import
     input reset,
 
 `ifdef EXT_V_ENABLE
-    VX_vpu_seq_csr_if.master vpu_seq_csr_if,
+    VX_vpu_seq_csr_if.slave  vpu_seq_csr_if,
     VX_vpu_seq_opc_if.slave  vpu_seq_opc_if,
 `endif
 

@@ -20,7 +20,7 @@ module VX_vpu_uops import VX_vpu_pkg::*, VX_gpu_pkg::*; (
     input clk,
     input reset,
 
-    VX_vpu_seq_csr_if.master vpu_seq_csr_if,
+    VX_vpu_seq_csr_if.slave  vpu_seq_csr_if,
     VX_vpu_seq_opc_if.slave  vpu_seq_opc_if,
 
     input  ibuffer_t ibuf_in,
@@ -41,16 +41,15 @@ module VX_vpu_uops import VX_vpu_pkg::*, VX_gpu_pkg::*; (
     // VLENB = VLEN/8. simd_groups = max(1, VLENB / (SIMD_WIDTH << vsew)).
     localparam SG_LOG2_MAX_W   = `CLOG2(VPU_GROUP_IDX_BITS + 1); // width to hold sg_log2
 
+    // vpu_csrs are maintained by VX_csr_unit (VSET handler) and broadcast
+    // per-warp via vpu_seq_csr_if. Here we just source combinationally.
+    `UNUSED_VAR (vpu_seq_opc_if.valid)
+    `UNUSED_VAR (vpu_seq_opc_if.data)
+    `UNUSED_VAR (clk)
+    `UNUSED_VAR (reset)
     vpu_csrs_t vpu_csrs;
-
-    always @(posedge clk) begin
-        if (reset) begin
-            vpu_csrs <= '0;
-        end else if (vpu_seq_opc_if.valid) begin
-            vpu_csrs.vtype <= vpu_seq_opc_if.data.vtype;
-            vpu_csrs.vl    <= vpu_seq_opc_if.data.vl;
-        end
-    end
+    assign vpu_csrs = vpu_seq_csr_if.data;
+    `UNUSED_VAR (vpu_csrs)
 
     wire csr_has_lmul = (vpu_csrs.vtype.vlmul != 0);
 
@@ -61,6 +60,7 @@ module VX_vpu_uops import VX_vpu_pkg::*, VX_gpu_pkg::*; (
     wire is_rvv_lsu = (ibuf_in.ex_type == EX_LSU) && ibuf_in.is_rvv;
     wire [4:0] rvv_umop = ibuf_in.op_args.lsu.offset[11:7];
     wire is_whole_reg  = (rvv_umop == 5'b01000);
+    wire is_mask_ls    = (rvv_umop == 5'b01011);
     wire [VPU_NF_BITS-1:0] nf_v = ibuf_in.op_args.lsu.nf;
 
     // emul from vlmul: 000->1, 001->2, 010->4, 011->8, frac (1xx)->1
@@ -77,16 +77,42 @@ module VX_vpu_uops import VX_vpu_pkg::*, VX_gpu_pkg::*; (
     end
 
     wire [EMUL_W-1:0] nfields     = EMUL_W'(nf_v) + EMUL_W'(1);
-    wire [EMUL_W-1:0] eff_nfields = is_whole_reg ? EMUL_W'(1) : nfields;
-    wire [EMUL_W-1:0] eff_emul    = is_whole_reg ? nfields : emul_v;
+    wire [EMUL_W-1:0] eff_nfields = (is_whole_reg || is_mask_ls) ? EMUL_W'(1) : nfields;
+    wire [EMUL_W-1:0] eff_emul    = is_whole_reg ? nfields : (is_mask_ls ? EMUL_W'(1) : emul_v);
 
     // Compute simd_groups based on current SEW.
     // simd_groups = max(1, VLENB >> (vsew + SIMD_W_LOG2))
     // Equivalently elements_per_vreg = VLENB >> vsew, then >> SIMD_W_LOG2.
     localparam SG_W = VPU_GROUP_IDX_BITS + 1; // wide enough for VPU_MAX_SIMD_GROUPS
     wire [2:0] vsew = vpu_csrs.vtype.vsew;
-    wire [SG_W-1:0] sg_raw = SG_W'(VPU_MAX_SIMD_GROUPS) >> vsew;
-    wire [SG_W-1:0] simd_groups = (sg_raw == SG_W'(0)) ? SG_W'(1) : sg_raw;
+    // For whole-register L/S, element width comes from the instruction's `width`
+    // field (op_args.lsu.offset[4:2]) rather than vtype.vsew, per RVV spec.
+    wire [2:0] lsu_width = ibuf_in.op_args.lsu.offset[4:2];
+    wire [2:0] eff_sew   = (is_rvv_lsu && is_whole_reg) ? lsu_width : vsew;
+    wire [SG_W-1:0] sg_raw = SG_W'(VPU_MAX_SIMD_GROUPS) >> eff_sew;
+    wire [SG_W-1:0] sg_generic = (sg_raw == SG_W'(0)) ? SG_W'(1) : sg_raw;
+
+    // vlm.v/vsm.v (umop==01011): uop count derived from vl bytes, not vsew/vlmul.
+    // vl_bytes = ceil(vl/8). simd_groups_mask = ceil_pow2(ceil(vl_bytes/SIMD_WIDTH)).
+    localparam VLB_W = VL_MAX_W + 1; // room for vl+7
+    wire [VLB_W-1:0] vl_ext    = VLB_W'(vpu_csrs.vl);
+    wire [VLB_W-1:0] vl_bytes  = (vl_ext + VLB_W'(7)) >> 3;
+    // ceil(vl_bytes / SIMD_WIDTH) via shift; since SIMD_WIDTH is pow2.
+    localparam SIMD_W_LOG2 = `CLOG2(`SIMD_WIDTH);
+    wire [VLB_W-1:0] groups_raw = (vl_bytes + VLB_W'(`SIMD_WIDTH - 1)) >> SIMD_W_LOG2;
+    // Round up to next power of two so sg_log2 works.
+    // Find highest bit position of (groups_raw - 1); result = 1 << (hb+1), else 1.
+    wire [VLB_W-1:0] gr_m1 = groups_raw - VLB_W'(1);
+    reg [SG_W-1:0] mask_simd_groups;
+    always @(*) begin
+        mask_simd_groups = SG_W'(1);
+        if (groups_raw > VLB_W'(1)) begin
+            for (int k = 0; k < VLB_W; k++) begin
+                if (gr_m1[k]) mask_simd_groups = SG_W'(1) << (k + 1);
+            end
+        end
+    end
+    wire [SG_W-1:0] simd_groups = is_mask_ls ? mask_simd_groups : sg_generic;
 
     // Total uops = nfields * emul * simd_groups (all powers of two).
     wire [UOP_CTR_W-1:0] lsu_uop_count =
@@ -175,7 +201,6 @@ module VX_vpu_uops import VX_vpu_pkg::*, VX_gpu_pkg::*; (
     end
 
     assign ibuf_out = ibuf_r;
-    assign vpu_seq_csr_if.data = vpu_csrs;
 
     if (UOP_CTR_W > 3) begin : g_unused_upper
         `UNUSED_VAR (uop_idx[UOP_CTR_W-1:3])

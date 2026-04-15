@@ -132,6 +132,8 @@ module VX_dispatcher import VX_gpu_pkg::*; #(
     wire rvv_is_indexed = 1'b0;
     wire [3:0] eew_bytes = 4'd0;
     wire [3:0] sew_bytes = 4'd0;
+    wire [2:0] rvv_width = 3'b010;
+    `UNUSED_VAR (rvv_width)
     `UNUSED_VAR (rvv_is_indexed)
     `UNUSED_VAR (sew_bytes)
     wire [3:0] eff_nfields_d = 4'd1;
@@ -166,7 +168,19 @@ module VX_dispatcher import VX_gpu_pkg::*; #(
                                          + `XLEN'(eff_field_idx_d) * `XLEN'(eew_bytes);
         // Indexed: addr = base + vs2[lane] (per-lane offset) + field_idx * SEW_bytes.
         // vs2 is REG_TYPE_V tagged by decoder for mop=01/11 so rs2_data[lane] is per-lane.
-        wire [`XLEN-1:0] rvv_indexed_off = operands_if.data.rs2_data[j]
+        // Per spec, index element width is EEW (from instruction width field); for EEW<XLEN
+        // the index must be zero-extended from the low EEW bits — mask high bits here.
+        reg [`XLEN-1:0] rvv_idx;
+        always_comb begin
+            case (rvv_width)
+                3'b000:  rvv_idx = `XLEN'(operands_if.data.rs2_data[j][7:0]);
+                3'b001:  rvv_idx = `XLEN'(operands_if.data.rs2_data[j][15:0]);
+                3'b010:  rvv_idx = `XLEN'(operands_if.data.rs2_data[j][31:0]);
+                3'b011:  rvv_idx = operands_if.data.rs2_data[j];
+                default: rvv_idx = operands_if.data.rs2_data[j];
+            endcase
+        end
+        wire [`XLEN-1:0] rvv_indexed_off = rvv_idx
                                          + `XLEN'(eff_field_idx_d) * `XLEN'(sew_bytes);
         wire [`XLEN-1:0] rvv_sel_off = rvv_is_indexed ? rvv_indexed_off
                                      : (rvv_is_strided ? rvv_strided_off : rvv_off);
@@ -186,17 +200,40 @@ module VX_dispatcher import VX_gpu_pkg::*; #(
 
     // RVV v0 mask predication for loads/stores.
     // When is_rvv_lsu && is_masked (vm=0), each element i is active iff v0[i] == 1.
-    // Full implementation would add a 4th VGPR read port for v0 and slice
-    // `start_bit = (emul_idx * simd_groups + group_idx) * SIMD_WIDTH` of v0.
-    // Synthesis-area stub: derive per-lane active bit from rs2_data[lane][0] when
-    // available (REG_TYPE_V on indexed L/S), else from rs2_data[0][lane idx] bits.
-    // This produces the AND-gate fan-in into tmask without an extra read port.
-    // Functional correctness for arbitrary v0 contents is not claimed.
+    // Stage 4: masked LOADS overload RS3 = v0 via the decoder; loads don't use
+    // rs3 otherwise. The per-lane v0 read arrives in rs3_data after the vopc
+    // unpacker. For masked STORES, rs3 is already vs3 store-data; overloading
+    // would require a 4th VGPR read port (bump of NUM_SRC_OPDS to 4 — 15+ file
+    // change). Stores therefore retain the rs2-based stub until a 4th slot is
+    // added. Note: the SEW-parametric unpacker places v0 byte `lane` into
+    // rs3_data[lane], so bit 0 captures one mask bit per byte of v0; exact
+    // bit-packed semantics (v0 bit `start_bit+lane`) require a dedicated
+    // non-unpacked mask read path (future work).
+    //
+    // TODO(rvv-gap-1): masked RVV STORES real v0 read. Requires bumping
+    //   NUM_SRC_OPDS from 3 to 4 and threading a 4th source operand
+    //   through decode → scoreboard → operands → opc/vopc/sopc → gpr_file
+    //   → dispatcher → execute header. Current store path uses
+    //   rs2_data[lane][0] as a stub — represents the AND-gate fan-in for
+    //   synthesis area but is NOT functionally correct for arbitrary v0.
+    // TODO(rvv-gap-2): strict bit-packed v0 extraction. v0 holds vl mask
+    //   bits bit-packed; element i's mask lives at v0-bit-index i. Today
+    //   the SEW-parametric vopc unpacker places one v0 byte per lane in
+    //   rs3_data[lane], so we consume bit[0] of that byte. This matches
+    //   spec only when the SEW unpacker byte-offset aligns with the
+    //   element's bit offset (dense SEW=8 mask use). For SEW>8 or
+    //   partially-populated groups, fix by adding a non-unpacked mask
+    //   read path that returns the SIMD_WIDTH bits at
+    //   `(emul_idx*simd_groups + group_idx) * SIMD_WIDTH` within v0.
     for (genvar j = 0; j < `SIMD_WIDTH; ++j) begin : g_lsu_mask
     `ifdef EXT_V_ENABLE
-        wire mask_bit_stub = operands_if.data.rs2_data[j][0];
+        // Loads: RS3 = v0 (real read port). Stores: fall back to rs2 stub.
+        wire is_rvv_store   = operands_if.data.op_args.lsu.is_store;
+        wire mask_bit_load  = operands_if.data.rs3_data[j][0];
+        wire mask_bit_store = operands_if.data.rs2_data[j][0];
+        wire mask_bit = is_rvv_store ? mask_bit_store : mask_bit_load;
         wire active = ~(is_rvv_lsu & operands_if.data.op_args.lsu.is_masked)
-                    | mask_bit_stub;
+                    | mask_bit;
         assign lsu_eff_tmask[j] = operands_if.data.tmask[j] & active;
     `else
         assign lsu_eff_tmask[j] = operands_if.data.tmask[j];
