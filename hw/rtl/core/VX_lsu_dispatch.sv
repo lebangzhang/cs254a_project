@@ -31,9 +31,36 @@ module VX_lsu_dispatch import VX_gpu_pkg::*; #(
     VX_dispatch_if.master   dispatch_if_lsu
 );
     `UNUSED_SPARAM (INSTANCE_ID)
-    `UNUSED_VAR (operand_data.ex_type)
 
     localparam OUT_DATAW = $bits(dispatch_t);
+    localparam OPD_DATAW = $bits(operands_t);
+
+    // Pipeline stage: register the full operand bundle one cycle before
+    // the RVV/pack address compute. The vopc_unit's operand flop sits
+    // far from the DSP in the placed netlist (~0.35 ns routing before the
+    // DSP B-port), and the compute includes a 32×XLEN cascaded multiply
+    // on the strided path. Flopping locally inside lsu_dispatch lets the
+    // mult start from a nearby register and leaves a full cycle for
+    // mult + add + lsu_buffer write, closing the 300 MHz budget at cost
+    // of one extra cycle of LSU-issue latency (all LSU ops pay equally).
+    operands_t opd_q;
+    wire       valid_q;
+    wire       ready_q;
+
+    VX_pipe_buffer #(
+        .DATAW (OPD_DATAW),
+        .DEPTH (1)
+    ) opd_pipe (
+        .clk       (clk),
+        .reset     (reset),
+        .valid_in  (valid_in),
+        .data_in   (operand_data),
+        .ready_in  (ready_in),
+        .valid_out (valid_q),
+        .data_out  (opd_q),
+        .ready_out (ready_q)
+    );
+    `UNUSED_VAR (opd_q.ex_type)
 
     logic [`SIMD_WIDTH-1:0][`XLEN-1:0] eff_rs1_data;
     op_args_t eff_op_args;
@@ -42,14 +69,14 @@ module VX_lsu_dispatch import VX_gpu_pkg::*; #(
     // Pack-load: compute eff_rs1[lane] = rs1[lane] + rs2[lane] * uop_idx
     // uop_idx is in op_args.lsu.offset[1:0]; stride lives in rs2_data.
     // Multiply via shift-and-add on the 2-bit index — no multiplier needed.
-    wire is_pack_lsu = (operand_data.op_args.lsu.pack != 2'b00);
-    wire [1:0] pld_uop_idx = operand_data.op_args.lsu.offset[1:0];
+    wire is_pack_lsu = (opd_q.op_args.lsu.pack != 2'b00);
+    wire [1:0] pld_uop_idx = opd_q.op_args.lsu.offset[1:0];
 `ifdef EXT_V_ENABLE
-    wire is_rvv_lsu = operand_data.is_rvv;
+    wire is_rvv_lsu = opd_q.is_rvv;
     // EEW bytes from RVV-overloaded offset[4:2] = width: 0->1, 1->2, 2->4, 3->8
-    wire [2:0] rvv_width = operand_data.op_args.lsu.offset[4:2];
+    wire [2:0] rvv_width = opd_q.op_args.lsu.offset[4:2];
     // mop[6:5]: 00=unit-stride, 10=strided, 01/11=indexed (unhandled)
-    wire [1:0] rvv_mop = operand_data.op_args.lsu.offset[6:5];
+    wire [1:0] rvv_mop = opd_q.op_args.lsu.offset[6:5];
     wire rvv_is_strided = (rvv_mop == 2'b10);
     wire rvv_is_indexed = (rvv_mop[0] == 1'b1);
     // SEW/EEW byte widths are always powers of 2 (1,2,4,8), so all
@@ -58,15 +85,15 @@ module VX_lsu_dispatch import VX_gpu_pkg::*; #(
     //   - eew: rvv_width[1:0] already encodes log2(EEW bytes)
     //   - sew: vtype.vsew already encodes log2(SEW bytes)
     wire [1:0] log2_eew = rvv_width[1:0];
-    wire [SEW_TYPE_W-1:0] log2_sew = operand_data.sew.etype;
+    wire [SEW_TYPE_W-1:0] log2_sew = opd_q.sew.etype;
     // Segment: address contribution = (linear_elem * nfields + field_idx) * EEW
     // where linear_elem = (emul_idx * simd_groups + group_idx) * SIMD_WIDTH + lane.
-    wire [3:0] rvv_nfields   = 4'(operand_data.op_args.lsu.nf) + 4'd1;
-    wire [VPU_FIELD_IDX_BITS-1:0] rvv_field_idx = operand_data.op_args.lsu.field_idx;
-    wire [VPU_EMUL_IDX_BITS-1:0]  rvv_emul_idx  = operand_data.op_args.lsu.emul_idx;
-    wire [VPU_GROUP_IDX_BITS-1:0] rvv_group_idx = operand_data.op_args.lsu.group_idx;
+    wire [3:0] rvv_nfields   = 4'(opd_q.op_args.lsu.nf) + 4'd1;
+    wire [VPU_FIELD_IDX_BITS-1:0] rvv_field_idx = opd_q.op_args.lsu.field_idx;
+    wire [VPU_EMUL_IDX_BITS-1:0]  rvv_emul_idx  = opd_q.op_args.lsu.emul_idx;
+    wire [VPU_GROUP_IDX_BITS-1:0] rvv_group_idx = opd_q.op_args.lsu.group_idx;
     // Whole-register form (umop=01000) collapses to nfields=1, field offset 0.
-    wire rvv_whole_reg = (operand_data.op_args.lsu.offset[11:7] == 5'b01000);
+    wire rvv_whole_reg = (opd_q.op_args.lsu.offset[11:7] == 5'b01000);
     wire [3:0] eff_nfields_d  = rvv_whole_reg ? 4'd1 : rvv_nfields;
     wire [VPU_FIELD_IDX_BITS-1:0] eff_field_idx_d = rvv_whole_reg
                                                         ? VPU_FIELD_IDX_BITS'(0)
@@ -112,8 +139,8 @@ module VX_lsu_dispatch import VX_gpu_pkg::*; #(
 
     for (genvar j = 0; j < `SIMD_WIDTH; ++j) begin : g_eff_rs1
         wire [`XLEN-1:0] stride_off =
-            ({`XLEN{pld_uop_idx[0]}} & (operand_data.rs2_data[j] << 0))
-          + ({`XLEN{pld_uop_idx[1]}} & (operand_data.rs2_data[j] << 1));
+            ({`XLEN{pld_uop_idx[0]}} & (opd_q.rs2_data[j] << 0))
+          + ({`XLEN{pld_uop_idx[1]}} & (opd_q.rs2_data[j] << 1));
         // RVV unit-stride segment: addr = base + (linear_elem * nfields + field_idx) * EEW
         // linear_elem = (emul_idx * simd_groups + group_idx) * SIMD_WIDTH + lane.
         // All byte-size / SIMD / simd_groups multiplies collapse to shifts
@@ -131,7 +158,7 @@ module VX_lsu_dispatch import VX_gpu_pkg::*; #(
         // Strided: addr = base + linear_elem * stride + field_idx * EEW
         // stride is the scalar from rs2 (REG_TYPE_I, broadcast to lane 0).
         wire [`XLEN-1:0] rvv_field_eew   = `XLEN'(eff_field_idx_d) << log2_eew;
-        wire [`XLEN-1:0] rvv_strided_off = linear_elem * operand_data.rs2_data[0]
+        wire [`XLEN-1:0] rvv_strided_off = linear_elem * opd_q.rs2_data[0]
                                          + rvv_field_eew;
         // Indexed: addr = base + vs2[lane] (per-lane offset) + field_idx * SEW_bytes.
         // vs2 is REG_TYPE_V tagged by decoder for mop=01/11 so rs2_data[lane] is per-lane.
@@ -140,11 +167,11 @@ module VX_lsu_dispatch import VX_gpu_pkg::*; #(
         reg [`XLEN-1:0] rvv_idx;
         always_comb begin
             case (rvv_width)
-                3'b000:  rvv_idx = `XLEN'(operand_data.rs2_data[j][7:0]);
-                3'b001:  rvv_idx = `XLEN'(operand_data.rs2_data[j][15:0]);
-                3'b010:  rvv_idx = `XLEN'(operand_data.rs2_data[j][31:0]);
-                3'b011:  rvv_idx = operand_data.rs2_data[j];
-                default: rvv_idx = operand_data.rs2_data[j];
+                3'b000:  rvv_idx = `XLEN'(opd_q.rs2_data[j][7:0]);
+                3'b001:  rvv_idx = `XLEN'(opd_q.rs2_data[j][15:0]);
+                3'b010:  rvv_idx = `XLEN'(opd_q.rs2_data[j][31:0]);
+                3'b011:  rvv_idx = opd_q.rs2_data[j];
+                default: rvv_idx = opd_q.rs2_data[j];
             endcase
         end
         wire [`XLEN-1:0] rvv_indexed_off = rvv_idx
@@ -152,14 +179,14 @@ module VX_lsu_dispatch import VX_gpu_pkg::*; #(
         wire [`XLEN-1:0] rvv_sel_off = rvv_is_indexed ? rvv_indexed_off
                                      : (rvv_is_strided ? rvv_strided_off : rvv_off);
         assign eff_rs1_data[j] = is_rvv_lsu
-            ? (operand_data.rs1_data[0] + rvv_sel_off)
+            ? (opd_q.rs1_data[0] + rvv_sel_off)
             : (is_pack_lsu
-                ? (operand_data.rs1_data[j] + stride_off)
-                :  operand_data.rs1_data[j]);
+                ? (opd_q.rs1_data[j] + stride_off)
+                :  opd_q.rs1_data[j]);
     end
 
     always_comb begin
-        eff_op_args = operand_data.op_args;
+        eff_op_args = opd_q.op_args;
         if (is_pack_lsu || is_rvv_lsu) begin
             eff_op_args.lsu.offset = '0;
         end
@@ -195,15 +222,15 @@ module VX_lsu_dispatch import VX_gpu_pkg::*; #(
     for (genvar j = 0; j < `SIMD_WIDTH; ++j) begin : g_lsu_mask
     `ifdef EXT_V_ENABLE
         // Loads: RS3 = v0 (real read port). Stores: fall back to rs2 stub.
-        wire is_rvv_store   = operand_data.op_args.lsu.is_store;
-        wire mask_bit_load  = operand_data.rs3_data[j][0];
-        wire mask_bit_store = operand_data.rs2_data[j][0];
+        wire is_rvv_store   = opd_q.op_args.lsu.is_store;
+        wire mask_bit_load  = opd_q.rs3_data[j][0];
+        wire mask_bit_store = opd_q.rs2_data[j][0];
         wire mask_bit = is_rvv_store ? mask_bit_store : mask_bit_load;
-        wire active = ~(is_rvv_lsu & operand_data.op_args.lsu.is_masked)
+        wire active = ~(is_rvv_lsu & opd_q.op_args.lsu.is_masked)
                     | mask_bit;
-        assign lsu_eff_tmask[j] = operand_data.tmask[j] & active;
+        assign lsu_eff_tmask[j] = opd_q.tmask[j] & active;
     `else
-        assign lsu_eff_tmask[j] = operand_data.tmask[j];
+        assign lsu_eff_tmask[j] = opd_q.tmask[j];
     `endif
     end
 
@@ -214,29 +241,29 @@ module VX_lsu_dispatch import VX_gpu_pkg::*; #(
     ) lsu_buffer (
         .clk        (clk),
         .reset      (reset),
-        .valid_in   (valid_in),
-        .ready_in   (ready_in),
+        .valid_in   (valid_q),
+        .ready_in   (ready_q),
         .data_in    ({
-            operand_data.uuid,
-            operand_data.wis,
-            operand_data.sid,
+            opd_q.uuid,
+            opd_q.wis,
+            opd_q.sid,
             lsu_eff_tmask,
         `ifdef EXT_V_ENABLE
-            operand_data.sew,
-            operand_data.is_rvv,
+            opd_q.sew,
+            opd_q.is_rvv,
         `endif
-            operand_data.PC,
-            operand_data.wb,
-            operand_data.wr_xregs,
-            operand_data.rd,
-            operand_data.bytesel,
-            operand_data.op_type,
+            opd_q.PC,
+            opd_q.wb,
+            opd_q.wr_xregs,
+            opd_q.rd,
+            opd_q.bytesel,
+            opd_q.op_type,
             eff_op_args,
             eff_rs1_data,
-            operand_data.rs2_data,
-            operand_data.rs3_data,
-            operand_data.sop,
-            operand_data.eop
+            opd_q.rs2_data,
+            opd_q.rs3_data,
+            opd_q.sop,
+            opd_q.eop
         }),
         .data_out   (dispatch_if_lsu.data),
         .valid_out  (dispatch_if_lsu.valid),

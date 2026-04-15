@@ -206,7 +206,6 @@
 `define PRESERVE_NET    (* syn_keep = "true" *)
 `define BLACKBOX_CELL   (* syn_black_box *)
 `define STRING
-`define FPU_TYPE_FPNEW
 `else
 `define MAX_FANOUT      8
 `define LATENCY_IMUL    3
