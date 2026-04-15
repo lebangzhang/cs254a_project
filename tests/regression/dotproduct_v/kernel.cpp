@@ -1,76 +1,73 @@
-#include <vx_print.h>
-#include <vx_spawn.h>
+#include <vx_spawn2.h>
 #include "common.h"
 
-void kernel_body(kernel_arg_t *__UNIFORM__ arg) {
-  auto src0_ptr = reinterpret_cast<TYPE *>(arg->src0_addr);
-  auto src1_ptr = reinterpret_cast<TYPE *>(arg->src1_addr);
-  auto dst_ptr = reinterpret_cast<TYPE *>(arg->dst_addr);
-  auto num_points = arg->num_points;
-  auto vec_len_per_thread = arg->vec_len_per_thread;
+extern "C" void kernel_main(kernel_arg_t* __UNIFORM__ arg) {
+    auto src0_ptr = reinterpret_cast<TYPE*>(arg->src0_addr);
+    auto src1_ptr = reinterpret_cast<TYPE*>(arg->src1_addr);
+    auto dst_ptr  = reinterpret_cast<TYPE*>(arg->dst_addr);
+    auto num_points         = arg->num_points;
+    auto vec_len_per_thread = arg->vec_len_per_thread;
 
-  uint32_t tid = threadIdx.x + blockIdx.x * blockDim.x;
-  uint32_t cacheIndex = threadIdx.x;
+    int tid        = threadIdx.x;
+    int gid        = blockIdx.x * blockDim.x + tid;
+    uint32_t stride = blockDim.x * gridDim.x;
 
-  auto cache = reinterpret_cast<TYPE *>(__local_mem(blockDim.x * sizeof(TYPE)));
+    auto tbuf = reinterpret_cast<TYPE*>(__local_mem());
 
-  uint32_t start_idx = tid * vec_len_per_thread;
+    // Each thread accumulates a partial sum over its RVV chunk(s)
+    float temp = 0.0f;
+    uint32_t vl;
 
-  // Partial sum
-  float temp = 0;
-  uint32_t vl;
-  uint32_t index = start_idx;
-  for (uint32_t avl = vec_len_per_thread; avl > 0; avl -= (vl)) {
+    for (uint32_t i = gid; i < num_points / vec_len_per_thread; i += stride) {
+        uint32_t index = i * vec_len_per_thread;
 
-    // 1. Query next vl
-    __asm__ __volatile__("vsetvli %[vl], %[avl], e32, m1, ta, ma" : [vl] "=r"(vl) : [avl] "r"(avl));
+        for (uint32_t avl = vec_len_per_thread; avl > 0; avl -= vl) {
 
-    // 2. Load src0_ptr
-    auto curr = &(src0_ptr[index]);
-    __asm__ __volatile__("vle32.v v8, (%[i])" ::[i] "r"(curr));
+            // 1. Query next vl
+            __asm__ __volatile__("vsetvli %[vl], %[avl], e32, m1, ta, ma"
+                            : [vl] "=r"(vl)
+                            : [avl] "r"(avl));
 
-    // 3. Load src1_ptr
-    curr = &(src1_ptr[index]);
-    __asm__ __volatile__("vle32.v v16, (%[i])" ::[i] "r"(curr));
+            // 2. Load src0 into v8
+            auto a = &(src0_ptr[index]);
+            __asm__ __volatile__("vle32.v v8, (%[i])" : : [i] "r"(a) : "memory");
 
-    // 4. Multiply
-    __asm__ __volatile__("vfmul.vv v16, v16, v8");
+            // 3. Load src1 into v16
+            auto b = &(src1_ptr[index]);
+            __asm__ __volatile__("vle32.v v16, (%[i])" : : [i] "r"(b) : "memory");
 
-    // 5. Reduction
-    float zero_val = 0.0f;
-    __asm__ __volatile__("vfmv.v.f v8, %[z]" ::[z] "f"(zero_val));
-    __asm__ __volatile__("vfredsum.vs v8, v16, v8");
+            // 4. Element-wise multiply: v16 = v8 * v16
+            __asm__ __volatile__("vfmul.vv v16, v16, v8");
 
-    // 6. Increment the sum
-    TYPE temp_sum;
-    __asm__ __volatile__("vmv.x.s %[o], v8" : [o] "=r"(temp_sum));
-    temp += temp_sum;
+            // 5. Reduce into scalar: v8[0] = sum(v16)
+            float zero_val = 0.0f;
+            __asm__ __volatile__("vfmv.v.f v8, %[z]" : : [z] "f"(zero_val));
+            __asm__ __volatile__("vfredsum.vs v8, v16, v8");
 
-    // 7. Next index
-    index += vl;
-  }
+            // 6. Extract scalar and accumulate (use integer register, reinterpret bits)
+            uint32_t temp_bits;
+            __asm__ __volatile__("vmv.x.s %[o], v8" : [o] "=r"(temp_bits));
+            TYPE temp_sum;
+            __builtin_memcpy(&temp_sum, &temp_bits, sizeof(TYPE));
+            temp += temp_sum;
 
-  // Store partial sum in shared memory
-  cache[cacheIndex] = temp;
-  __syncthreads();
-
-  // Block-level reduction
-  int i = blockDim.x / 2;
-  while (i != 0) {
-    if (cacheIndex < i) {
-      cache[cacheIndex] += cache[cacheIndex + i];
+            index += vl;
+        }
     }
-    __syncthreads();
-    i /= 2;
-  }
 
-  // First thread in block writes the block's sum
-  if (cacheIndex == 0) {
-    dst_ptr[blockIdx.x] = cache[0];
-  }
-}
+    // Store partial sum in shared (local) memory
+    tbuf[tid] = temp;
 
-int main() {
-  kernel_arg_t *arg = (kernel_arg_t *)csr_read(VX_CSR_MSCRATCH);
-  return vx_spawn_threads(1, arg->grid_dim, arg->block_dim, (vx_kernel_func_cb)kernel_body, arg);
+    // Block-level tree reduction
+    for (int d = blockDim.x / 2; d > 0; d /= 2) {
+        __syncthreads();
+        if (tid < d) {
+            tbuf[tid] += tbuf[tid + d];
+        }
+    }
+
+    // First thread in block writes block result
+    if (tid == 0) {
+        dst_ptr[blockIdx.x] = tbuf[0];
+    }
 }

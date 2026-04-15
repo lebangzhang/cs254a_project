@@ -6,15 +6,11 @@
 #endif
 
 typedef struct {
-  uint32_t grid_dim[1];
-  uint32_t block_dim[1];
-  
   uint32_t num_points;
   uint32_t vec_len_per_thread;
-
   uint64_t src0_addr;
   uint64_t src1_addr;
-  uint64_t dst_addr;  
+  uint64_t dst_addr;
 } kernel_arg_t;
 
 #endif

@@ -1,104 +1,50 @@
-#include <vx_spawn.h>
+#include <vx_spawn2.h>
 #include "common.h"
-#include "vx_print.h"
 
-static void kernel_body(kernel_arg_t *__UNIFORM__ arg) {
-  auto *__restrict nodes = reinterpret_cast<Node *>(arg->nodes_addr);
-  auto *__restrict edges = reinterpret_cast<int32_t *>(arg->edges_addr);
-  auto *__restrict visit = reinterpret_cast<uint8_t *>(arg->visit_addr);
-  auto *__restrict nextmask = reinterpret_cast<uint8_t *>(arg->nextmask_addr);
-  auto *__restrict frontier = reinterpret_cast<uint32_t *>(arg->frontier_addr);
-  auto *__restrict cost = reinterpret_cast<int32_t *>(arg->cost_addr);
+extern "C" void kernel_main(kernel_arg_t* __UNIFORM__ arg) {
+    uint32_t tid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (tid >= arg->frontier_size)
+        return;
 
-  uint32_t tid = blockIdx.x;
-  uint32_t v = frontier[tid];
-  uint32_t start = nodes[v].starting;
-  uint32_t deg = nodes[v].no_of_edges;
-  uint32_t end = start + deg;
+    auto *__restrict nodes    = reinterpret_cast<Node *>(arg->nodes_addr);
+    auto *__restrict edges    = reinterpret_cast<int32_t *>(arg->edges_addr);
+    auto *__restrict visit    = reinterpret_cast<uint8_t *>(arg->visit_addr);
+    auto *__restrict nextmask = reinterpret_cast<uint8_t *>(arg->nextmask_addr);
+    auto *__restrict frontier = reinterpret_cast<uint32_t *>(arg->frontier_addr);
+    auto *__restrict cost     = reinterpret_cast<int32_t *>(arg->cost_addr);
 
-  int32_t cv = cost[v] + 1;
+    uint32_t v     = frontier[tid];
+    uint32_t start = nodes[v].starting;
+    uint32_t end   = start + nodes[v].no_of_edges;
+    int32_t  cv    = cost[v] + 1;
 
-  uint32_t i = start;
-  while (i < end) {
-    uint32_t remaining = end - i;
-    uint32_t vl;
+    uint32_t i = start;
+    while (i < end) {
+        uint32_t remaining = end - i;
+        uint32_t vl;
 
-    // Set vector length based on remaining elements
-    asm volatile ("vsetvli %0, %1, e32, m4, ta, ma" : "=r"(vl) : "r"(remaining));
+        // 1. Set vector length
+        __asm__ __volatile__("vsetvli %[vl], %[rem], e32, m4, ta, ma"
+                        : [vl] "=r"(vl) : [rem] "r"(remaining));
 
-    if (vl > 0) {
-      // Load edge indices
-      asm volatile ("vle32.v v4, (%0)" : : "r"(edges + i));
+        // 2. Load edge indices into v4
+        auto ep = &edges[i];
+        __asm__ __volatile__("vle32.v v4, (%[i])" : : [i] "r"(ep) : "memory");
 
-      // Gather visit status for neighbors
-      asm volatile ("vluxei32.v v8, (%0), v4" : : "r"(visit));
+        // 3. Gather visit status: v8[j] = visit[edges[i+j]]
+        __asm__ __volatile__("vluxei32.v v8, (%[b]), v4" : : [b] "r"(visit) : "memory");
 
-      // Create mask for unvisited neighbors
-      asm volatile ("vmseq.vi v0, v8, 0");
+        // 4. Mask: v0 = (v8 == 0) — unvisited neighbours
+        __asm__ __volatile__("vmseq.vi v0, v8, 0");
 
-      // Update next_mask for unvisited neighbors
-      asm volatile ("vmsif.m v1, v0");  // Generate mask for stores
-      asm volatile ("vmv.v.i v12, 1");
-      asm volatile ("vsuxei32.v v12, (%0), v4, v0.t" : : "r"(nextmask));
+        // 5. Scatter nextmask[nid] = 1 for unvisited
+        __asm__ __volatile__("vmv.v.i v12, 1");
+        __asm__ __volatile__("vsuxei32.v v12, (%[b]), v4, v0.t" : : [b] "r"(nextmask) : "memory");
 
-      // Update cost for unvisited neighbors
-      asm volatile ("vmv.v.x v16, %0" : : "r"(cv));
-      asm volatile ("vsuxei32.v v16, (%0), v4, v0.t" : : "r"(cost));
+        // 6. Scatter cost[nid] = cv for unvisited
+        __asm__ __volatile__("vmv.v.x v16, %[cv]" : : [cv] "r"(cv));
+        __asm__ __volatile__("vsuxei32.v v16, (%[b]), v4, v0.t" : : [b] "r"(cost) : "memory");
 
-      i += vl;
+        i += vl;
     }
-  }
-}
-
-inline uint32_t build_initial_frontier_from_mask(uint8_t *__restrict mask,
-                                                 uint8_t *__restrict visit,
-                                                 uint32_t *__restrict frontier,
-                                                 uint32_t __UNIFORM__ num_nodes) {
-  uint32_t out = 0;
-  for (uint32_t v = 0; v < num_nodes; ++v) {
-    if (!mask[v])
-      continue;
-    frontier[out++] = v;
-    visit[v] = 1;
-    mask[v] = 0;
-  }
-  return out;
-}
-
-inline uint32_t compact_next_frontier(uint8_t *__restrict next_mask,
-                                      uint8_t *__restrict visit,
-                                      uint32_t *__restrict frontier_out,
-                                      uint32_t __UNIFORM__ num_nodes) {
-  uint32_t out = 0;
-  for (uint32_t v = 0; v < num_nodes; ++v) {
-    if (next_mask[v] && !visit[v]) {
-      visit[v] = 1;
-      frontier_out[out++] = v;
-    }
-    next_mask[v] = 0;
-  }
-  return out;
-}
-
-int main() {
-  auto *__UNIFORM__ arg = (kernel_arg_t *)csr_read(VX_CSR_MSCRATCH);
-
-  auto *__restrict mask = reinterpret_cast<uint8_t *>(arg->mask_addr);
-  auto *__restrict next_mask = reinterpret_cast<uint8_t *>(arg->nextmask_addr);
-  auto *__restrict visit = reinterpret_cast<uint8_t *>(arg->visit_addr);
-  auto *__restrict frontier = reinterpret_cast<uint32_t *>(arg->frontier_addr);
-
-  const uint32_t N = arg->num_nodes;
-
-  for (uint32_t i = 0; i < N; ++i) {
-    next_mask[i] = 0;
-  }
-
-  uint32_t frontier_size = build_initial_frontier_from_mask(mask, visit, frontier, N);
-  while (frontier_size > 0) {
-    uint32_t grid_dim[1] = {frontier_size};
-    uint32_t block_dim[1] = {1};
-    vx_spawn_threads(1, grid_dim, block_dim, (vx_kernel_func_cb)kernel_body, arg);
-    frontier_size = compact_next_frontier(next_mask, visit, frontier, N);
-  }
 }
