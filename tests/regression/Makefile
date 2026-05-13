@@ -34,6 +34,7 @@ all:
 	$(MAKE) -C sgemm2_tcu
 	$(MAKE) -C sgemm_tcu_sp
 	$(MAKE) -C sgemm_tcu_mx
+	$(MAKE) -C wmma_vv
 	$(MAKE) -C sgemm2_dxa
 	$(MAKE) -C async_barrier
 	$(MAKE) -C async_gbarrier
@@ -70,6 +71,7 @@ run-simx:
 	$(MAKE) -C jacobi run-simx
 	$(MAKE) -C pathfinder run-simx
 	$(MAKE) -C softmax run-simx
+	$(MAKE) -C wmma_vv run-simx
 	$(MAKE) -C async_barrier run-simx
 	$(MAKE) -C packld run-simx
 	$(MAKE) -C wgather run-simx
@@ -130,6 +132,7 @@ clean:
 	$(MAKE) -C sgemm2_tcu clean
 	$(MAKE) -C sgemm_tcu_sp clean
 	$(MAKE) -C sgemm_tcu_mx clean
+	$(MAKE) -C wmma_vv clean
 	$(MAKE) -C conv3 clean
 	$(MAKE) -C relu clean
 	$(MAKE) -C sgemv clean

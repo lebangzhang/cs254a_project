@@ -1,0 +1,113 @@
+Project Proposal 
+RVV Tensor Core
+Boning Cai, Lebang Zhang
+
+Motivation 
+Matrix multiplication is a core kernel in machine learning workloads, including GEMM, convolution, and transformer layers.
+
+Modern tensor cores accelerate these operations, but many designs require dedicated tensor fragment registers or special tensor memory. This increases hardware area, power, and integration complexity.
+
+Vortex already has RVV vector register storage and an existing Tensor Core Unit. Our project explores whether tensor tiles can live in the RVV vector register file and be consumed by the existing TCU through a new frontend interface.
+
+Objection 
+The main objective is to add a frontend path for tensor matrix multiply on RVV-resident tiles.
+We plan to:
+Define a matrix-multiply ISA extension using RVV-style vector registers
+Design a tile layout inside the vector register file
+Implement the functional model in SimX first
+Later map the same frontend behavior into RTL
+
+
+Baseline Infrastructure
+We use the open-source Vortex GPGPU infrastructure.
+Current relevant components:
+RVV vector register file exists in SimX vector unit
+Vector decode and execution infrastructure already supports RVV instructions
+Existing TCU extension supports WMMA-style matrix multiply
+Existing TCU tests include sgemm_tcu and sgemm_tcu_mx
+Existing TCU backend supports SimX and RTL paths
+Current Vortex TCU uses floating-point register fragments, not RVV vector registers. In kernel/include/vx_tensor.h, mma_sync binds fragments to fixed FP registers such as f0-f7, f10-f17, and f24/f28-f31.
+So our project is not “build a new tensor core.” It is “build an RVV/VRF frontend for the existing tensor core.”
+
+High-level System
+Proposed flow
+  -> RVV vector loads
+  -> VRF-resident A/B/C tiles
+  -> wmma.vv frontend instruction
+  -> VRF-to-TCU operand packing
+  -> existing TCU compute datapath
+  -> TCU result
+  -> write back to VRF
+  -> RVV vector stores
+Original flow
+  -> load_matrix_sync()
+  -> FP register fragments
+  -> mma_sync()
+  -> TCU custom instruction
+  -> TensorUnit / RTL TCU
+  -> FP register result fragments
+  -> store_matrix_sync()
+  -> Memory
+
+ISA and VRF Tile Layout  
+The key idea is to treat consecutive RVV vector registers as matrix tiles.
+wmma.vv vd, vs1, vs2 means C_tile = A_tile × B_tile where:
+A_tile starts at vs1
+B_tile starts at vs2
+C_tile starts at vd 
+Row-major mapping
+A tile starts at v0:
+v0 = [a00, a01, a02, a03, ...]
+v1 = [a10, a11, a12, a13, ...]
+v2 = [a20, a21, a22, a23, ...]
+v3 = [a30, a31, a32, a33, ...]
+Example instruction: 
+wmma.vv v8, v0, v4 means C(v8-v11) = A(v0-v3) × B(v4-v7)
+v0 is not treated as a single register only; it is the base register of a tile group
+
+Microarchitecture Plan
+Component
+Planned Modification
+Decode
+Add RVV-style tensor instruction decode
+Scoreboard
+Track dependencies for grouped VRF registers used as tensor tiles
+Operand Collector
+Fetch multiple vector registers as one A/B/C tile
+Tensor-VRF Adapter
+Pack VRF tile data into existing TCU operand format; unpack TCU result
+TCU Interface Wrapper
+Reuse existing TCU dispatch/commit path; no changes to tensor compute datapath
+Writeback
+Write TCU output tile back to destination VRF register group
+
+Implement Plan 
+Phase 1: SimX Implementation
+Add decode support for the new wmma.vv instruction
+Read source tiles from the RVV vector register file
+Convert VRF tile data into the existing TensorUnit::wmma operand format
+Call the existing SimX tensor unit compute function
+Write the resulting tile back to the destination RVV registers
+Add small matrix tests and compare against CPU reference output
+Phase 2: RTL Implementation 
+Extend decode for the new vector-tensor instruction
+Add frontend control logic to identify VRF tile operands
+Extend or reuse operand collection so TCU can receive operands from VRF
+Pack VRF tile data into the existing TCU execute packet format
+Reuse the existing TCU datapath unchanged
+Add writeback path from TCU result to RVV vector registers
+Development order:
+
+Evaluation Plan 
+Correctness
+Compare wmma.vv output against a CPU golden model
+Test small matrix sizes based on supported tile dimensions
+Test multiple data layouts if implemented
+Test dependency cases where destination overlaps with source registers
+Compare SimX behavior with RTL behavior after RTL implementation
+
+Performance
+Compare against scalar or RVV vectorized matrix multiplication
+Compare instruction count
+Compare cycle count in SimX/RTL simulation
+Measure reduced data movement compared with explicit fragment movement

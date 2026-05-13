@@ -13,9 +13,15 @@
 
 #include "vec_unit.h"
 #include "core.h"
+#include "tensor_cfg.h"
 #include "vec_ops.h"
+#include <array>
 
 using namespace vortex;
+
+namespace {
+constexpr uint32_t kWmmaVvFunct6 = 63;
+}
 
 // Simulate clock cycles depending on instruction type and element width and #lanes
 // VSET = 1 cycle
@@ -84,6 +90,9 @@ public:
       case VpuOpType::FNCP:
       case VpuOpType::FNCP_R:
         delay = 2;
+        break;
+      case VpuOpType::TENSOR:
+        delay = LATENCY_FMA;
         break;
       case VpuOpType::FMA:
       case VpuOpType::FMA_R:
@@ -677,6 +686,113 @@ public:
     trace_data->vpu_op = VpuOpType::VSET;
   }
 
+  void wmma_vv(uint32_t wid, uint32_t tid, uint32_t rdest, uint32_t rsrc0, uint32_t rsrc1) {
+    namespace vt = vortex::tensor;
+    using cfg = vt::wmma_config_t<NUM_THREADS>;
+
+    auto &states = vpu_states_.at(wid);
+    auto &vreg_file = states.vreg_file.at(tid);
+    constexpr uint32_t kElemsPerReg = VLENB / sizeof(uint32_t);
+
+    if (states.vtype.vsew != 2) {
+      std::cout << "wmma.vv requires SEW=32 (fp32 tiles)" << std::endl;
+      std::abort();
+    }
+    if (cfg::tileK > kElemsPerReg || cfg::tileN > kElemsPerReg) {
+      std::cout << "wmma.vv row-major tile row does not fit in one vector register" << std::endl;
+      std::abort();
+    }
+    if ((rsrc0 + cfg::tileM) > MAX_NUM_REGS ||
+        (rsrc1 + cfg::tileK) > MAX_NUM_REGS ||
+        (rdest + cfg::tileM) > MAX_NUM_REGS) {
+      std::cout << "wmma.vv tile register group exceeds vector register file" << std::endl;
+      std::abort();
+    }
+
+    std::array<std::array<uint32_t, NUM_THREADS>, cfg::NRC> c_regs{};
+
+    auto read_a = [&](uint32_t row, uint32_t col) {
+      return getVregData<uint32_t>(vreg_file.at(rsrc0 + row), col);
+    };
+    auto read_b = [&](uint32_t row, uint32_t col) {
+      return getVregData<uint32_t>(vreg_file.at(rsrc1 + row), col);
+    };
+
+    auto pack_a = [&](uint32_t reg_idx, std::vector<reg_data_t>& out) {
+      uint32_t block_m = reg_idx / cfg::k_steps;
+      uint32_t block_k = reg_idx % cfg::k_steps;
+      uint32_t m_stride = cfg::a_sub_blocks * cfg::tcM;
+      uint32_t k_stride = cfg::tcK;
+      for (uint32_t lane = 0; lane < NUM_THREADS; ++lane) {
+        uint32_t block_idx = (cfg::a_block_size == NUM_THREADS) ? 0 : (lane / cfg::a_block_size);
+        uint32_t lane_in_blk = (cfg::a_block_size == NUM_THREADS) ? lane : (lane % cfg::a_block_size);
+        uint32_t row = (lane_in_blk / cfg::tcK) + (block_idx * cfg::tcM) + block_m * m_stride;
+        uint32_t col = (lane_in_blk % cfg::tcK) + block_k * k_stride;
+        out.at(lane).u32 = read_a(row, col);
+      }
+    };
+
+    auto pack_b = [&](uint32_t reg_idx, std::vector<reg_data_t>& out) {
+      uint32_t block_k = reg_idx / cfg::b_sub_steps;
+      uint32_t block_n = reg_idx % cfg::b_sub_steps;
+      uint32_t n_stride = cfg::b_sub_blocks * cfg::tcN;
+      uint32_t k_stride = cfg::tcK;
+      for (uint32_t lane = 0; lane < NUM_THREADS; ++lane) {
+        uint32_t block_idx = (cfg::b_block_size == NUM_THREADS) ? 0 : (lane / cfg::b_block_size);
+        uint32_t lane_in_blk = (cfg::b_block_size == NUM_THREADS) ? lane : (lane % cfg::b_block_size);
+        uint32_t col = (lane_in_blk / cfg::tcK) + (block_idx * cfg::tcN) + block_n * n_stride;
+        uint32_t row = (lane_in_blk % cfg::tcK) + block_k * k_stride;
+        out.at(lane).u32 = read_b(row, col);
+      }
+    };
+
+    auto unpack_c = [&](uint32_t reg_idx) {
+      uint32_t block_m = reg_idx / cfg::n_steps;
+      uint32_t block_n = reg_idx % cfg::n_steps;
+      for (uint32_t lane = 0; lane < NUM_THREADS; ++lane) {
+        uint32_t row = (lane / cfg::tcN) + block_m * cfg::tcM;
+        uint32_t col = (lane % cfg::tcN) + block_n * cfg::tcN;
+        setVregData<uint32_t>(vreg_file.at(rdest + row), col, c_regs.at(reg_idx).at(lane));
+      }
+    };
+
+    std::vector<reg_data_t> rs1_vec(NUM_THREADS);
+    std::vector<reg_data_t> rs2_vec(NUM_THREADS);
+    std::vector<reg_data_t> rs3_vec(NUM_THREADS);
+    std::vector<reg_data_t> rd_vec(NUM_THREADS);
+    std::vector<reg_data_t> empty_mx(NUM_THREADS);
+
+    for (uint32_t k = 0; k < cfg::k_steps; ++k) {
+      for (uint32_t m = 0; m < cfg::m_steps; ++m) {
+        for (uint32_t n = 0; n < cfg::n_steps; ++n) {
+          uint32_t reg_a = (m / cfg::a_sub_blocks) * cfg::k_steps + k;
+          uint32_t reg_b = (k * cfg::n_steps + n) / cfg::b_sub_blocks;
+          uint32_t reg_c = m * cfg::n_steps + n;
+
+          pack_a(reg_a, rs1_vec);
+          pack_b(reg_b, rs2_vec);
+          for (uint32_t lane = 0; lane < NUM_THREADS; ++lane) {
+            rs3_vec.at(lane).u32 = c_regs.at(reg_c).at(lane);
+          }
+
+          core_->tensor_unit()->wmma(wid, vt::fp32::id, vt::fp32::id,
+                                     m, n, k,
+                                     rs1_vec, rs2_vec, rs3_vec,
+                                     empty_mx, empty_mx, empty_mx, empty_mx,
+                                     rd_vec, nullptr, false);
+
+          for (uint32_t lane = 0; lane < NUM_THREADS; ++lane) {
+            c_regs.at(reg_c).at(lane) = rd_vec.at(lane).u32;
+          }
+        }
+      }
+    }
+
+    for (uint32_t r = 0; r < cfg::NRC; ++r) {
+      unpack_c(r);
+    }
+  }
+
   void execute(const Instr &instr, uint32_t wid, uint32_t tid,
                const std::vector<reg_data_t> &rs1_data,
                std::vector<reg_data_t> &rd_data,
@@ -703,6 +819,10 @@ public:
     switch (vop_type) {
     case VopType::OPIVV: { // vector-vector
       switch (funct6) {
+      case kWmmaVvFunct6: { // wmma.vv (SimX prototype)
+        vpu_op = VpuOpType::TENSOR;
+        this->wmma_vv(wid, tid, rdest, rsrc0, rsrc1);
+      } break;
       case 0: { // vadd.vv
         vector_op_vv<Add, int8_t, int16_t, int32_t, int64_t>(vreg_file, rsrc0, rsrc1, rdest, states.vtype.vsew, states.vl, is_masked);
       } break;

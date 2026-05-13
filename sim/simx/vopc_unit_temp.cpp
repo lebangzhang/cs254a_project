@@ -335,6 +335,7 @@ void VOpcUnit::translate(instr_trace_t* trace) {
     break;
   case VpuOpType::FMA:
   case VpuOpType::FMA_R:
+  case VpuOpType::TENSOR:
     trace->fu_type = FUType::FPU;
     trace->op_type = FpuType::FMADD;
     break;
@@ -417,5 +418,4 @@ void VOpcUnit::writeback(instr_trace_t* trace) {
   // Overall, optimally, it optimizes for 4 VRF req batches
   // Hence, need to consider 3 different caess, (Only 1 VRF req batch, Only 2 VRF req batch, Only 4)
   // Note, the total number of batches is assumed to be a power of 2
-
 

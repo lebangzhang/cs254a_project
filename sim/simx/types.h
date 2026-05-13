@@ -686,7 +686,9 @@ enum class VpuOpType {
   // reduction
   ARITH_R = 9,
   FMA_R   = 10,
-  FNCP_R  = 11
+  FNCP_R  = 11,
+
+  TENSOR  = 12
 };
 
 inline std::ostream &operator<<(std::ostream &os, const VpuOpType& type) {
@@ -703,6 +705,7 @@ inline std::ostream &operator<<(std::ostream &os, const VpuOpType& type) {
   case VpuOpType::ARITH_R: os << "ARITH_R"; break;
   case VpuOpType::FMA_R:   os << "FMA_R"; break;
   case VpuOpType::FNCP_R:  os << "FNCP_R"; break;
+  case VpuOpType::TENSOR:  os << "TENSOR"; break;
   default:
     assert(false);
   }

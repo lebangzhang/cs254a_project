@@ -366,6 +366,7 @@ void Ara_VOpc_Unit::decode(instr_trace_t* trace) {
       break;
     case VpuOpType::FMA:
     case VpuOpType::FMA_R:
+    case VpuOpType::TENSOR:
       trace->fu_type = FUType::FPU;
       trace->op_type = FpuType::FMADD;
       break;
