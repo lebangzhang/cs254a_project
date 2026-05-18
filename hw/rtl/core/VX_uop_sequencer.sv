@@ -52,6 +52,7 @@ module VX_uop_sequencer import
     reg [UOP_SEL_W-1:0] sel_idx_r;
     reg [UOP_CTR_W-1:0] last_ctr_r;
     ibuffer_t           uop_data;
+    ibuffer_t           uop_base_r;
 
     logic [UOP_SEL_W-1:0] sel_idx_n;
     wire is_uop_input;
@@ -66,10 +67,12 @@ module VX_uop_sequencer import
     );
 
     // prepare the input data for the uop expanders
+    ibuffer_t uop_base_data;
     ibuffer_t uop_in_data;
     always_comb begin
-        uop_in_data = input_if.data;
-        uop_in_data.uuid = get_uop_uuid(input_if.data.uuid, uop_ctr);
+        uop_base_data = uop_active ? uop_base_r : input_if.data;
+        uop_in_data   = uop_base_data;
+        uop_in_data.uuid = get_uop_uuid(uop_base_data.uuid, uop_ctr);
     end
 
     // uop_start fires for exactly one cycle at the beginning of a new burst.
@@ -86,6 +89,7 @@ module VX_uop_sequencer import
             last_ctr_r <= '0;
             uop_active <= 1'b0;
             uop_done   <= 1'b0;
+            uop_base_r <= '0;
         end else begin
             if (uop_start) begin
                 uop_active <= 1'b1;
@@ -93,6 +97,7 @@ module VX_uop_sequencer import
                 sel_idx_r  <= sel_idx_n;
                 last_ctr_r <= uop_out_count[sel_idx_n] - UOP_CTR_W'(1);
                 uop_data   <= uop_out_data[sel_idx_n];
+                uop_base_r <= input_if.data;
                 uop_done   <= (uop_out_count[sel_idx_n] == UOP_CTR_W'(1));
             end else if (uop_next) begin
                 uop_active <= ~uop_done;
@@ -155,7 +160,10 @@ module VX_uop_sequencer import
     // ------------------------------------------------------------------
     // VPU uop expander
     // ------------------------------------------------------------------
-    assign uop_in_valid[UOP_VPU] = uop_in_data.is_rvv;
+    wire is_rvv_vset = uop_in_data.is_rvv
+                    && (uop_in_data.ex_type == EX_SFU)
+                    && (INST_SFU_BITS'(uop_in_data.op_type) == INST_SFU_VSET);
+    assign uop_in_valid[UOP_VPU] = uop_in_data.is_rvv && ~is_rvv_vset;
     VX_vpu_uops vpu_uops (
         .clk            (clk),
         .reset          (reset),
@@ -182,7 +190,11 @@ module VX_uop_sequencer import
             `TRACE(1, ("%t: %s decode: wid=%0d, PC=0x%0h, ex=", $time, INSTANCE_ID, WARP_ID, to_fullPC(output_if.data.PC)))
             VX_trace_pkg::trace_ex_type(1, output_if.data.ex_type);
             `TRACE(1, (", op="))
+        `ifdef EXT_V_ENABLE
+            VX_trace_pkg::trace_ex_op_ext(1, output_if.data.is_rvv, output_if.data.is_masked, output_if.data.ex_type, output_if.data.op_type, output_if.data.op_args);
+        `else
             VX_trace_pkg::trace_ex_op(1, output_if.data.ex_type, output_if.data.op_type, output_if.data.op_args);
+        `endif
             `TRACE(1, (", tmask=%b, wb=%b, rd_xregs=%b, wr_xregs=%b, used_rs=%b, rd=", output_if.data.tmask, output_if.data.wb, output_if.data.rd_xregs, output_if.data.wr_xregs, output_if.data.used_rs))
             VX_trace_pkg::trace_reg_idx(1, output_if.data.rd);
             `TRACE(1, (", rs1="))
@@ -191,7 +203,11 @@ module VX_uop_sequencer import
             VX_trace_pkg::trace_reg_idx(1, output_if.data.rs2);
             `TRACE(1, (", rs3="))
             VX_trace_pkg::trace_reg_idx(1, output_if.data.rs3);
+        `ifdef EXT_V_ENABLE
+            VX_trace_pkg::trace_op_args_ext(1, output_if.data.is_rvv, output_if.data.is_masked, output_if.data.ex_type, output_if.data.op_type, output_if.data.op_args);
+        `else
             VX_trace_pkg::trace_op_args(1, output_if.data.ex_type, output_if.data.op_type, output_if.data.op_args);
+        `endif
             `TRACE(1, (", parent=#%0d", input_if.data.uuid))
             `TRACE(1, (" (#%0d)\n", output_if.data.uuid))
         end

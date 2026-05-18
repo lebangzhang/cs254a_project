@@ -25,6 +25,7 @@ module VX_voperands import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
 `endif
 
 `ifdef EXT_V_ENABLE
+    VX_vpu_seq_csr_if.slave vpu_seq_csr_if [PER_ISSUE_WARPS],
     VX_vpu_seq_opc_if.master vpu_seq_opc_if [`NUM_OPCS],
 `endif
 
@@ -43,6 +44,11 @@ module VX_voperands import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
 `ifdef PERF_ENABLE
     wire [`NUM_OPCS-1:0][PERF_CTR_BITS-1:0] per_opc_perf_stalls;
 `endif
+
+    vpu_csrs_t [PER_ISSUE_WARPS-1:0] vpu_seq_csr_data;
+    for (genvar w = 0; w < PER_ISSUE_WARPS; ++w) begin : g_vpu_seq_csr_data
+        assign vpu_seq_csr_data[w] = vpu_seq_csr_if[w].data;
+    end
 
     VX_operands_if per_opc_operands_if[`NUM_OPCS]();
 
@@ -75,6 +81,9 @@ module VX_voperands import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
         wire [NUM_SRC_OPDS-1:0][NUM_REGS_BITS-1:0] src_regs;
         wire [NUM_SRC_OPDS-1:0] used_rs;
         wire is_rvv;
+        vpu_csrs_t vpu_csrs;
+
+        assign vpu_csrs = vpu_seq_csr_data[sopc_operands_if.data.wis];
 
         VX_sopc_unit #(
             .INSTANCE_ID  (`SFORMATF(("%s-sopc%0d", INSTANCE_ID, i))),
@@ -96,7 +105,12 @@ module VX_voperands import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
         VX_operands_if sopc_operands2_if();
         VX_operands_if vopc_operands_if();
 
-        assign sopc_operands2_if.valid = sopc_operands_if.valid && is_rvv;
+        wire is_vset = is_rvv
+                    && (sopc_operands_if.data.ex_type == EX_SFU)
+                    && (INST_SFU_BITS'(sopc_operands_if.data.op_type) == INST_SFU_VSET);
+        wire needs_vopc = is_rvv && ~is_vset;
+
+        assign sopc_operands2_if.valid = sopc_operands_if.valid && needs_vopc;
         assign sopc_operands2_if.data  = sopc_operands_if.data;
 
         VX_vopc_unit #(
@@ -111,6 +125,7 @@ module VX_voperands import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
         `ifdef EXT_V_ENABLE
             .vpu_seq_opc_if(vpu_seq_opc_if[i]),
         `endif
+            .vpu_csrs_i   (vpu_csrs),
             .writeback_if (opc_writeback_if),
             .src_regs_i   (src_regs),
             .used_rs_i    (used_rs),
@@ -118,11 +133,12 @@ module VX_voperands import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
             .voperands_if (vopc_operands_if)
         );
 
-        // enable scalar bypass only if vopc is not busy
-        assign per_opc_operands_if[i].valid = (sopc_operands_if.valid && ~is_rvv && sopc_operands2_if.ready)
-                                           || vopc_operands_if.valid;
-        assign per_opc_operands_if[i].data = sopc_operands2_if.ready ? sopc_operands_if.data : vopc_operands_if.data;
-        assign sopc_operands_if.ready = per_opc_operands_if[i].ready && sopc_operands2_if.ready;
+        wire scalar_bypass_valid = sopc_operands_if.valid && ~needs_vopc && sopc_operands2_if.ready;
+
+        assign per_opc_operands_if[i].valid = vopc_operands_if.valid || scalar_bypass_valid;
+        assign per_opc_operands_if[i].data = vopc_operands_if.valid ? vopc_operands_if.data : sopc_operands_if.data;
+        assign sopc_operands_if.ready = needs_vopc ? sopc_operands2_if.ready
+                                                   : (per_opc_operands_if[i].ready && sopc_operands2_if.ready && ~vopc_operands_if.valid);
         assign vopc_operands_if.ready = per_opc_operands_if[i].ready;
 
     end

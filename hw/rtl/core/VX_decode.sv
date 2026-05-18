@@ -352,7 +352,7 @@ module VX_decode import
             end
         `ifdef EXT_V_ENABLE
             INST_FL: begin
-                if (funct3[2] == 1 || funct3 == 0) begin
+                if (funct3 inside {3'b001, 3'b010, 3'b011, 3'b100}) begin
                     ex_type = EX_LSU;
                     op_type = INST_OP_BITS'({1'b0, funct3});
                     op_args.lsu.is_store = 0;
@@ -389,7 +389,7 @@ module VX_decode import
             end
         `ifdef EXT_V_ENABLE
             INST_FS: begin
-                if (funct3[2] == 1 || funct3 == 0) begin
+                if (funct3 inside {3'b001, 3'b010, 3'b011, 3'b100}) begin
                     ex_type = EX_LSU;
                     op_type = INST_OP_BITS'({1'b1, funct3});
                     op_args.lsu.is_store = 1;
@@ -712,6 +712,13 @@ module VX_decode import
             end
             default:;
         endcase
+
+    `ifdef EXT_V_ENABLE
+        if (is_rvv) begin
+            rd_xregs[XREG_VCSR] = 1'b1;
+            wr_xregs[XREG_VCSR] = 1'b1;
+        end
+    `endif
     end
 
     // disable writes to x0
@@ -754,7 +761,11 @@ module VX_decode import
             `TRACE(1, ("%t: %s decode: wid=%0d, PC=0x%0h, ex=", $time, INSTANCE_ID, decode_if.data.wid, to_fullPC(decode_if.data.PC)))
             VX_trace_pkg::trace_ex_type(1, decode_if.data.ex_type);
             `TRACE(1, (", op="))
+        `ifdef EXT_V_ENABLE
+            VX_trace_pkg::trace_ex_op_ext(1, decode_if.data.is_rvv, decode_if.data.is_masked, decode_if.data.ex_type, decode_if.data.op_type, decode_if.data.op_args);
+        `else
             VX_trace_pkg::trace_ex_op(1, decode_if.data.ex_type, decode_if.data.op_type, decode_if.data.op_args);
+        `endif
             `TRACE(1, (", tmask=%b, wb=%b, rd_xregs=%b, wr_xregs=%b, used_rs=%b, rd=", decode_if.data.tmask, decode_if.data.wb, decode_if.data.rd_xregs, decode_if.data.wr_xregs, decode_if.data.used_rs))
             VX_trace_pkg::trace_reg_idx(1, decode_if.data.rd);
             `TRACE(1, (", rs1="))
@@ -763,7 +774,11 @@ module VX_decode import
             VX_trace_pkg::trace_reg_idx(1, decode_if.data.rs2);
             `TRACE(1, (", rs3="))
             VX_trace_pkg::trace_reg_idx(1, decode_if.data.rs3);
+        `ifdef EXT_V_ENABLE
+            VX_trace_pkg::trace_op_args_ext(1, decode_if.data.is_rvv, decode_if.data.is_masked, decode_if.data.ex_type, decode_if.data.op_type, decode_if.data.op_args);
+        `else
             VX_trace_pkg::trace_op_args(1, decode_if.data.ex_type, decode_if.data.op_type, decode_if.data.op_args);
+        `endif
             `TRACE(1, (" (#%0d)\n", decode_if.data.uuid))
         end
     end

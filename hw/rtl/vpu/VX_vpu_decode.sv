@@ -35,9 +35,9 @@ module VX_vpu_decode_vl import VX_gpu_pkg::*, VX_vpu_pkg::*; (
     always @* begin
         case (width)
         3'b000: op  = INST_LSU_LB; // 8-bit
-        3'b001: op  = INST_LSU_LH; // 16-bit
-        3'b010: op  = INST_LSU_LW; // 32-bit
-        3'b011: op  = INST_LSU_LD; // 64-bit
+        3'b101: op  = INST_LSU_LH; // 16-bit
+        3'b110: op  = INST_LSU_LW; // 32-bit
+        3'b111: op  = INST_LSU_LD; // 64-bit
         default: op = 'x;
         endcase
     end
@@ -45,7 +45,6 @@ module VX_vpu_decode_vl import VX_gpu_pkg::*, VX_vpu_pkg::*; (
     reg [NUM_SRC_OPDS:0][NUM_REGS_BITS-1:0] reg_ids;
     reg [NUM_SRC_OPDS:0] use_regs;
 
-    wire rd_is_float   = (width == 3'b001 || width == 3'b010 || width == 3'b011 || width == 3'b100);
     wire rs2_is_vector = (mop != 2'b10);
     wire rs2_enable    = (mop != 2'b00);
 
@@ -58,7 +57,7 @@ module VX_vpu_decode_vl import VX_gpu_pkg::*, VX_vpu_pkg::*; (
         d.op_args.lsu.is_store = 0;
         // RVV offset layout: [11:7]=umop, [6:5]=mop, [4:2]=width, [1:0]=0
         d.op_args.lsu.offset = {umop, mop, width, 2'b00};
-        d.op_args.lsu.is_float = rd_is_float;
+        d.op_args.lsu.is_float = 0;
         d.op_args.lsu.is_masked = ~vm;  // vm=0 means masked execution (v0 predicates)
         d.op_args.lsu.nf = nf;
         d.op_args.lsu.field_idx = '0;
@@ -106,18 +105,15 @@ module VX_vpu_decode_vs import VX_gpu_pkg::*, VX_vpu_pkg::*; (
     always @* begin
         case (width)
         3'b000: op  = INST_LSU_SB; // 8-bit
-        3'b001: op  = INST_LSU_SH; // 16-bit
-        3'b010: op  = INST_LSU_SW; // 32-bit
-        3'b011: op  = INST_LSU_SD; // 64-bit
+        3'b101: op  = INST_LSU_SH; // 16-bit
+        3'b110: op  = INST_LSU_SW; // 32-bit
+        3'b111: op  = INST_LSU_SD; // 64-bit
         default: op = 'x;
         endcase
     end
 
     reg [NUM_SRC_OPDS:0][NUM_REGS_BITS-1:0] reg_ids;
     reg [NUM_SRC_OPDS:0] use_regs;
-
-    wire rs3_is_float  = (width == 3'b001 || width == 3'b010 || width == 3'b011 || width == 3'b100);
-    `UNUSED_VAR (rs3_is_float)
 
     wire rs2_is_vector = (mop != 2'b10);
     wire rs2_enable    = (mop != 2'b00);

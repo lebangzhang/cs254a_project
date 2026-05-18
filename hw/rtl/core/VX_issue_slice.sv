@@ -87,6 +87,7 @@ module VX_issue_slice import VX_gpu_pkg::*; #(
         .perf_stalls    (issue_perf.opd_stalls),
      `endif
     `ifdef EXT_V_ENABLE
+        .vpu_seq_csr_if (vpu_seq_csr_if),
         .vpu_seq_opc_if (vpu_seq_opc_if),
     `endif
         .writeback_if   (writeback_if),

@@ -133,7 +133,8 @@ package VX_gpu_pkg;
 
     localparam XREG_FFLAGS = 0;
     localparam XREG_FRM    = 1;
-    localparam NUM_XREGS   = 2;
+    localparam XREG_VCSR   = 2;
+    localparam NUM_XREGS   = 3;
 
     localparam NUM_SREGS = REG_STYPES * RV_REGS;
     localparam NUM_SREGS_BITS = `CLOG2(NUM_SREGS);
