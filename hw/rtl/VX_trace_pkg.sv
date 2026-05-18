@@ -434,6 +434,151 @@ package VX_trace_pkg;
         endcase
     endtask
 
+`ifdef EXT_V_ENABLE
+    task trace_rvv_lsu_width(input int level, input logic [2:0] width);
+        case (width)
+            3'b000:  `TRACE(level, ("8"))
+            3'b101:  `TRACE(level, ("16"))
+            3'b110:  `TRACE(level, ("32"))
+            3'b111:  `TRACE(level, ("64"))
+            default: `TRACE(level, ("?"))
+        endcase
+    endtask
+
+    task trace_rvv_lsu_width_from_op(input int level,
+                                     input [INST_OP_BITS-1:0] op_type,
+                                     input logic [2:0] width);
+        case (INST_LSU_BITS'(op_type))
+            INST_LSU_LB,
+            INST_LSU_SB: `TRACE(level, ("8"))
+            INST_LSU_LH,
+            INST_LSU_SH: `TRACE(level, ("16"))
+            INST_LSU_LW,
+            INST_LSU_SW: `TRACE(level, ("32"))
+        `ifdef XLEN_64
+            INST_LSU_LD,
+            INST_LSU_SD: `TRACE(level, ("64"))
+        `endif
+            default: trace_rvv_lsu_width(level, width);
+        endcase
+    endtask
+
+    task trace_rvv_ex_op(input int level,
+                         input [EX_BITS-1:0] ex_type,
+                         input [INST_OP_BITS-1:0] op_type,
+                         input op_args_t op_args
+    );
+        case (ex_type)
+        EX_ALU: begin
+            case (op_args.alu.xtype)
+                ALU_TYPE_ARITH: begin
+                    case (INST_ALU_BITS'(op_type))
+                        INST_ALU_ADD:  `TRACE(level, ("VADD/VMV/VADC"))
+                        INST_ALU_SUB:  `TRACE(level, ("VSUB/VSBC"))
+                        INST_ALU_SLTU: `TRACE(level, ("VMSLTU/VMSLEU"))
+                        INST_ALU_SLT:  `TRACE(level, ("VMSLT/VMSLE"))
+                        INST_ALU_AND:  `TRACE(level, ("VAND"))
+                        INST_ALU_OR:   `TRACE(level, ("VOR"))
+                        INST_ALU_XOR:  `TRACE(level, ("VXOR"))
+                        default:       `TRACE(level, ("VOP.ALU.?"))
+                    endcase
+                end
+                ALU_TYPE_MULDIV: begin
+                    case (INST_M_BITS'(op_type))
+                        INST_M_MUL:    `TRACE(level, ("VMUL"))
+                        INST_M_MULH:   `TRACE(level, ("VMULH"))
+                        INST_M_MULHSU: `TRACE(level, ("VMULHSU"))
+                        INST_M_MULHU:  `TRACE(level, ("VMULHU"))
+                        INST_M_DIV:    `TRACE(level, ("VDIV"))
+                        INST_M_DIVU:   `TRACE(level, ("VDIVU"))
+                        INST_M_REM:    `TRACE(level, ("VREM"))
+                        INST_M_REMU:   `TRACE(level, ("VREMU"))
+                        default:       `TRACE(level, ("VOP.MULDIV.?"))
+                    endcase
+                end
+                default: `TRACE(level, ("VOP.ALU.?"))
+            endcase
+        end
+        EX_LSU: begin
+            if (op_args.lsu.is_store) begin
+                case (op_args.lsu.offset[6:5])
+                    2'b00:  `TRACE(level, ("VSE"))
+                    2'b10:  `TRACE(level, ("VSSE"))
+                    2'b01,
+                    2'b11:  `TRACE(level, ("VSXE"))
+                    default:`TRACE(level, ("VS?E"))
+                endcase
+            end else begin
+                case (op_args.lsu.offset[6:5])
+                    2'b00:  `TRACE(level, ("VLE"))
+                    2'b10:  `TRACE(level, ("VLSE"))
+                    2'b01,
+                    2'b11:  `TRACE(level, ("VLXE"))
+                    default:`TRACE(level, ("VL?E"))
+                endcase
+            end
+            trace_rvv_lsu_width_from_op(level, op_type, op_args.lsu.offset[4:2]);
+        end
+        EX_SFU: begin
+            case (INST_SFU_BITS'(op_type))
+                INST_SFU_VSET: begin
+                    if (op_args.vset.use_zimm) begin
+                        if (op_args.vset.use_imm) begin
+                            `TRACE(level, ("VSETIVLI"))
+                        end else begin
+                            `TRACE(level, ("VSETVLI"))
+                        end
+                    end else begin
+                        `TRACE(level, ("VSETVL"))
+                    end
+                end
+                default: trace_ex_op(level, ex_type, op_type, op_args);
+            endcase
+        end
+    `ifdef EXT_F_ENABLE
+        EX_FPU: begin
+            case (INST_FPU_BITS'(op_type))
+                INST_FPU_ADD: begin
+                    if (op_args.fpu.fmt[1]) begin
+                        `TRACE(level, ("VFSUB"))
+                    end else begin
+                        `TRACE(level, ("VFADD"))
+                    end
+                end
+                INST_FPU_MADD: `TRACE(level, ("VFMACC/VFMADD"))
+                INST_FPU_DIV:  `TRACE(level, ("VFDIV"))
+                INST_FPU_SQRT: `TRACE(level, ("VFSQRT"))
+                INST_FPU_CMP:  `TRACE(level, ("VMF?"))
+                INST_FPU_F2F,
+                INST_FPU_F2I,
+                INST_FPU_F2U,
+                INST_FPU_I2F,
+                INST_FPU_U2F:  `TRACE(level, ("VFCVT"))
+                INST_FPU_MISC: `TRACE(level, ("VFMISC/VFMV"))
+                default:       `TRACE(level, ("VFOP.?"))
+            endcase
+        end
+    `endif
+        default: trace_ex_op(level, ex_type, op_type, op_args);
+        endcase
+    endtask
+
+    task trace_ex_op_ext(input int level,
+                         input logic is_rvv,
+                         input logic is_masked,
+                         input [EX_BITS-1:0] ex_type,
+                         input [INST_OP_BITS-1:0] op_type,
+                         input op_args_t op_args
+    );
+        if (is_rvv) begin
+            trace_rvv_ex_op(level, ex_type, op_type, op_args);
+            `TRACE(level, ("%s", is_masked ? ".M" : ""))
+        end else begin
+            trace_ex_op(level, ex_type, op_type, op_args);
+        end
+    endtask
+`endif
+
     task trace_op_args(input int level,
                        input [EX_BITS-1:0] ex_type,
                        input [INST_OP_BITS-1:0] op_type,
@@ -459,6 +604,66 @@ package VX_trace_pkg;
         default:;
         endcase
     endtask
+
+`ifdef EXT_V_ENABLE
+    task trace_rvv_op_args(input int level,
+                           input logic is_masked,
+                           input [EX_BITS-1:0] ex_type,
+                           input [INST_OP_BITS-1:0] op_type,
+                           input op_args_t op_args
+    );
+        `TRACE(level, (", rvv=1, vm=%b", is_masked))
+        case (ex_type)
+        EX_LSU: begin
+            `TRACE(level, (", nf=%0d, umop=0x%0h, mop=0x%0h, width=0x%0h, field=%0d, emul=%0d, group=%0d, masked=%b",
+                op_args.lsu.nf,
+                op_args.lsu.offset[11:7],
+                op_args.lsu.offset[6:5],
+                op_args.lsu.offset[4:2],
+                op_args.lsu.field_idx,
+                op_args.lsu.emul_idx,
+                op_args.lsu.group_idx,
+                op_args.lsu.is_masked))
+        end
+        EX_SFU: begin
+            if (INST_SFU_BITS'(op_type) == INST_SFU_VSET) begin
+                `TRACE(level, (", zimm=0x%0h, imm=0x%0h, use_zimm=%b, use_imm=%b, rd_zero=%b, rs1_zero=%b",
+                    op_args.vset.zimm,
+                    op_args.vset.imm,
+                    op_args.vset.use_zimm,
+                    op_args.vset.use_imm,
+                    op_args.vset.rd_zero,
+                    op_args.vset.rs1_zero))
+            end else begin
+                trace_op_args(level, ex_type, op_type, op_args);
+            end
+        end
+    `ifdef EXT_F_ENABLE
+        EX_FPU: begin
+            `TRACE(level, (", fmt=0x%0h, frm=0x%0h", op_args.fpu.fmt, op_args.fpu.frm))
+        end
+    `endif
+        EX_ALU: begin
+            `TRACE(level, (", use_PC=%b, use_imm=%b, imm=0x%0h", op_args.alu.use_PC, op_args.alu.use_imm, op_args.alu.imm20))
+        end
+        default: trace_op_args(level, ex_type, op_type, op_args);
+        endcase
+    endtask
+
+    task trace_op_args_ext(input int level,
+                           input logic is_rvv,
+                           input logic is_masked,
+                           input [EX_BITS-1:0] ex_type,
+                           input [INST_OP_BITS-1:0] op_type,
+                           input op_args_t op_args
+    );
+        if (is_rvv) begin
+            trace_rvv_op_args(level, is_masked, ex_type, op_type, op_args);
+        end else begin
+            trace_op_args(level, ex_type, op_type, op_args);
+        end
+    endtask
+`endif
 
     task trace_base_dcr(input int level, input [VX_DCR_ADDR_WIDTH-1:0] addr);
         case (addr)

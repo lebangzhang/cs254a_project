@@ -122,14 +122,22 @@ module VX_dispatcher import VX_gpu_pkg::*; #(
                 `TRACE(1, ("%t: %s dispatch: wid=%0d, sid=%0d, PC=0x%0h, ex=", $time, INSTANCE_ID, wis_to_wid(dispatch_if[ex].data.wis, ISSUE_ID), dispatch_if[ex].data.sid, to_fullPC(dispatch_if[ex].data.PC)))
                 VX_trace_pkg::trace_ex_type(1, ex);
                 `TRACE(1, (", op="))
+            `ifdef EXT_V_ENABLE
+                VX_trace_pkg::trace_ex_op_ext(1, dispatch_if[ex].data.is_rvv, 1'b0, ex, dispatch_if[ex].data.op_type, dispatch_if[ex].data.op_args);
+            `else
                 VX_trace_pkg::trace_ex_op(1, ex, dispatch_if[ex].data.op_type, dispatch_if[ex].data.op_args);
+            `endif
                 `TRACE(1, (", tmask=%b, wb=%b, wr_xregs=%b, rd=%0d, rs1_data=", dispatch_if[ex].data.tmask, dispatch_if[ex].data.wb, dispatch_if[ex].data.wr_xregs, dispatch_if[ex].data.rd))
                 `TRACE_ARRAY1D(1, "0x%0h", dispatch_if[ex].data.rs1_data, `SIMD_WIDTH)
                 `TRACE(1, (", rs2_data="))
                 `TRACE_ARRAY1D(1, "0x%0h", dispatch_if[ex].data.rs2_data, `SIMD_WIDTH)
                 `TRACE(1, (", rs3_data="))
                 `TRACE_ARRAY1D(1, "0x%0h", dispatch_if[ex].data.rs3_data, `SIMD_WIDTH)
-            VX_trace_pkg::trace_op_args(1, ex, dispatch_if[ex].data.op_type, dispatch_if[ex].data.op_args);
+            `ifdef EXT_V_ENABLE
+                VX_trace_pkg::trace_op_args_ext(1, dispatch_if[ex].data.is_rvv, 1'b0, ex, dispatch_if[ex].data.op_type, dispatch_if[ex].data.op_args);
+            `else
+                VX_trace_pkg::trace_op_args(1, ex, dispatch_if[ex].data.op_type, dispatch_if[ex].data.op_args);
+            `endif
                 `TRACE(1, (", sop=%b, eop=%b (#%0d)\n", dispatch_if[ex].data.sop, dispatch_if[ex].data.eop, dispatch_if[ex].data.uuid))
             end
         end
