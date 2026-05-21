@@ -85,13 +85,10 @@ module VX_vpu_uops import VX_vpu_pkg::*, VX_gpu_pkg::*; (
     // Equivalently elements_per_vreg = VLENB >> vsew, then >> SIMD_W_LOG2.
     localparam SG_W = VPU_GROUP_IDX_BITS + 1; // wide enough for VPU_MAX_SIMD_GROUPS
     wire [2:0] vsew = vpu_csrs.vtype.vsew;
-    // For vector L/S, memory element width comes from the instruction's `width`
-    // field. RVV uses encodings 000/101/110/111 for 8/16/32/64-bit memory
-    // elements, whose low two bits are log2(EEW bytes).
+    // For whole-register L/S, element width comes from the instruction's `width`
+    // field (op_args.lsu.offset[4:2]) rather than vtype.vsew, per RVV spec.
     wire [2:0] lsu_width = ibuf_in.op_args.lsu.offset[4:2];
-    `UNUSED_VAR (lsu_width[2])
-    wire [2:0] lsu_eew   = 3'(lsu_width[1:0]);
-    wire [2:0] eff_sew   = is_rvv_lsu ? lsu_eew : vsew;
+    wire [2:0] eff_sew   = (is_rvv_lsu && is_whole_reg) ? lsu_width : vsew;
     wire [SG_W-1:0] sg_raw = SG_W'(VPU_MAX_SIMD_GROUPS) >> eff_sew;
     wire [SG_W-1:0] sg_generic = (sg_raw == SG_W'(0)) ? SG_W'(1) : sg_raw;
 

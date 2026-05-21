@@ -277,8 +277,8 @@ module VX_lsu_slice import VX_gpu_pkg::*; #(
         `UNUSED_VAR (mem_rsp_sop)
     end else begin : g_no_pid
         assign pkt_waddr = 0;
-        assign mem_rsp_sop_pkt = mem_rsp_sop && rsp_hdr.sop;
-        assign mem_rsp_eop_pkt = mem_rsp_eop && rsp_hdr.eop;
+        assign mem_rsp_sop_pkt = mem_rsp_sop;
+        assign mem_rsp_eop_pkt = mem_rsp_eop;
         `UNUSED_VAR (pkt_raddr)
     end
 
@@ -519,8 +519,8 @@ module VX_lsu_slice import VX_gpu_pkg::*; #(
             end
         end
         if (mem_rsp_fire) begin
-                `TRACE(2, ("%t: %s Rsp: wid=%0d, PC=0x%0h, tmask=%b, rd=%0d, pid=%0d, sop=%b, eop=%b, raw_sop=%b, raw_eop=%b, hdr_sop=%b, hdr_eop=%b, data=",
-                $time, INSTANCE_ID, rsp_hdr.wid, to_fullPC(rsp_hdr.PC), mem_rsp_mask, rsp_hdr.rd, rsp_hdr.pid, mem_rsp_sop_pkt, mem_rsp_eop_pkt, mem_rsp_sop, mem_rsp_eop, rsp_hdr.sop, rsp_hdr.eop))
+            `TRACE(2, ("%t: %s Rsp: wid=%0d, PC=0x%0h, tmask=%b, rd=%0d, pid=%0d, sop=%b, eop=%b, data=",
+                $time, INSTANCE_ID, rsp_hdr.wid, to_fullPC(rsp_hdr.PC), mem_rsp_mask, rsp_hdr.rd, rsp_hdr.pid, mem_rsp_sop_pkt, mem_rsp_eop_pkt))
             `TRACE_ARRAY1D(2, "0x%0h", mem_rsp_data, NUM_LANES)
             `TRACE(2, (", tag=0x%0h (#%0d)\n", mem_rsp_tag, rsp_hdr.uuid))
         end

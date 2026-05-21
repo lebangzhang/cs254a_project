@@ -74,8 +74,6 @@ module VX_scoreboard import VX_gpu_pkg::*; #(
     for (genvar w = 0; w < PER_ISSUE_WARPS; ++w) begin : g_scoreboard
         reg [NUM_REGS-1:0] inuse_regs, inuse_regs_n;
         reg [NUM_XREGS-1:0] inuse_xregs, inuse_xregs_n;
-        reg delayed_vreg_release;
-        reg [NUM_REGS_BITS-1:0] delayed_vreg_rd;
         wire [NUM_OPDS-1:0] operands_busy;
 
         wire ibuffer_fire = ibuffer_if[w].valid && ibuffer_if[w].ready;
@@ -84,9 +82,6 @@ module VX_scoreboard import VX_gpu_pkg::*; #(
         wire writeback_fire = writeback_if.valid
                            && (writeback_if.data.wis == ISSUE_WIS_W'(w))
                            && writeback_if.data.eop;
-        wire writeback_vreg_fire = writeback_fire
-                                 && writeback_if.data.wb
-                                 && (get_reg_type(writeback_if.data.rd) == REG_TYPE_V);
 
         wire [NUM_OPDS-1:0] [NUM_REGS_BITS-1:0] ibf_opds, stg_opds;
         assign ibf_opds = {ibuffer_if[w].data.rs3, ibuffer_if[w].data.rs2, ibuffer_if[w].data.rs1, ibuffer_if[w].data.rd};
@@ -111,11 +106,8 @@ module VX_scoreboard import VX_gpu_pkg::*; #(
         always @(*) begin
             inuse_regs_n  = inuse_regs;
             inuse_xregs_n = inuse_xregs;
-            if (delayed_vreg_release) begin
-                inuse_regs_n[delayed_vreg_rd] = 0; // release vector rd after VGPR write is visible
-            end
             if (writeback_fire) begin
-                if (writeback_if.data.wb && ~writeback_vreg_fire) begin
+                if (writeback_if.data.wb) begin
                     inuse_regs_n[writeback_if.data.rd] = 0; // release rd
                 end
                 inuse_xregs_n &= ~writeback_if.data.wr_xregs; // release special regs
@@ -156,13 +148,9 @@ module VX_scoreboard import VX_gpu_pkg::*; #(
             if (reset) begin
                 inuse_regs  <= '0;
                 inuse_xregs <= '0;
-                delayed_vreg_release <= 1'b0;
-                delayed_vreg_rd <= '0;
             end else begin
                 inuse_regs <= inuse_regs_n;
                 inuse_xregs <= inuse_xregs_n;
-                delayed_vreg_release <= writeback_vreg_fire;
-                delayed_vreg_rd <= writeback_if.data.rd;
             end
             operands_ready_r <= (regs_busy == 0) && (xregs_busy == 0);
         end
