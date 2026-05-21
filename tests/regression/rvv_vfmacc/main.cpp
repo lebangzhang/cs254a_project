@@ -1,0 +1,137 @@
+#include <chrono>
+#include <cmath>
+#include <cstdint>
+#include <cstdlib>
+#include <iostream>
+#include <unistd.h>
+#include <vector>
+#include <vortex.h>
+#include "common.h"
+
+#define FLOAT_ULP 6
+
+#define RT_CHECK(_expr)                                        \
+  do {                                                         \
+    int _ret = _expr;                                          \
+    if (0 == _ret)                                             \
+      break;                                                   \
+    printf("Error: '%s' returned %d!\n", #_expr, (int)_ret);  \
+    cleanup();                                                 \
+    exit(-1);                                                  \
+  } while (false)
+
+static bool nearly_equal(float a, float b) {
+  union fi_t { float f; int32_t i; };
+  fi_t fa, fb;
+  fa.f = a;
+  fb.f = b;
+  return std::abs(fa.i - fb.i) <= FLOAT_ULP;
+}
+
+const char* kernel_file = "kernel.vxbin";
+uint32_t vlen = VLEN / 32;
+uint32_t size = 32;
+
+vx_device_h device = nullptr;
+vx_buffer_h acc_buffer = nullptr;
+vx_buffer_h lhs_buffer = nullptr;
+vx_buffer_h rhs_buffer = nullptr;
+vx_buffer_h dst_buffer = nullptr;
+vx_buffer_h krnl_buffer = nullptr;
+vx_buffer_h args_buffer = nullptr;
+kernel_arg_t kernel_arg = {};
+
+void cleanup() {
+  if (device) {
+    vx_mem_free(acc_buffer);
+    vx_mem_free(lhs_buffer);
+    vx_mem_free(rhs_buffer);
+    vx_mem_free(dst_buffer);
+    vx_mem_free(krnl_buffer);
+    vx_mem_free(args_buffer);
+    vx_dev_close(device);
+  }
+}
+
+static void show_usage() {
+  std::cout << "Vortex RVV vfmacc.vv Test." << std::endl;
+  std::cout << "Usage: [-k kernel] [-n elements] [-v vlen] [-h help]" << std::endl;
+}
+
+static void parse_args(int argc, char** argv) {
+  int c;
+  while ((c = getopt(argc, argv, "n:v:k:h")) != -1) {
+    switch (c) {
+    case 'n': size = atoi(optarg); break;
+    case 'v': vlen = atoi(optarg); break;
+    case 'k': kernel_file = optarg; break;
+    case 'h': show_usage(); exit(0);
+    default: show_usage(); exit(-1);
+    }
+  }
+}
+
+int main(int argc, char* argv[]) {
+  parse_args(argc, argv);
+
+  uint32_t buf_size = size * sizeof(float);
+  uint32_t chunks = (size + vlen - 1) / vlen;
+
+  kernel_arg.size = size;
+  kernel_arg.vlen = vlen;
+
+  RT_CHECK(vx_dev_open(&device));
+  RT_CHECK(vx_mem_alloc(device, buf_size, VX_MEM_READ, &acc_buffer));
+  RT_CHECK(vx_mem_address(acc_buffer, &kernel_arg.acc_addr));
+  RT_CHECK(vx_mem_alloc(device, buf_size, VX_MEM_READ, &lhs_buffer));
+  RT_CHECK(vx_mem_address(lhs_buffer, &kernel_arg.lhs_addr));
+  RT_CHECK(vx_mem_alloc(device, buf_size, VX_MEM_READ, &rhs_buffer));
+  RT_CHECK(vx_mem_address(rhs_buffer, &kernel_arg.rhs_addr));
+  RT_CHECK(vx_mem_alloc(device, buf_size, VX_MEM_WRITE, &dst_buffer));
+  RT_CHECK(vx_mem_address(dst_buffer, &kernel_arg.dst_addr));
+
+  std::vector<float> h_acc(size), h_lhs(size), h_rhs(size), h_dst(size, -123.0f), h_ref(size);
+  for (uint32_t i = 0; i < size; ++i) {
+    h_acc[i] = 0.5f + 0.125f * float(i);
+    h_lhs[i] = 1.25f + 0.0625f * float(i);
+    h_rhs[i] = 2.0f + 0.25f * float(i);
+    h_ref[i] = h_acc[i] + h_lhs[i] * h_rhs[i];
+  }
+
+  RT_CHECK(vx_copy_to_dev(acc_buffer, h_acc.data(), 0, buf_size));
+  RT_CHECK(vx_copy_to_dev(lhs_buffer, h_lhs.data(), 0, buf_size));
+  RT_CHECK(vx_copy_to_dev(rhs_buffer, h_rhs.data(), 0, buf_size));
+  RT_CHECK(vx_copy_to_dev(dst_buffer, h_dst.data(), 0, buf_size));
+  RT_CHECK(vx_upload_kernel_file(device, kernel_file, &krnl_buffer));
+  RT_CHECK(vx_upload_bytes(device, &kernel_arg, sizeof(kernel_arg_t), &args_buffer));
+
+  uint32_t global_dim[2] = {chunks, 1};
+  uint32_t grid_dim[2], block_dim[2];
+  RT_CHECK(vx_max_occupancy_grid(device, 2, global_dim, grid_dim, block_dim));
+
+  auto time_start = std::chrono::high_resolution_clock::now();
+  RT_CHECK(vx_start_g(device, krnl_buffer, args_buffer, 2, grid_dim, block_dim, 0));
+  RT_CHECK(vx_ready_wait(device, VX_MAX_TIMEOUT));
+  auto time_end = std::chrono::high_resolution_clock::now();
+  printf("Elapsed time: %lg ms\n",
+    (double)std::chrono::duration_cast<std::chrono::milliseconds>(time_end-time_start).count());
+
+  RT_CHECK(vx_copy_from_dev(h_dst.data(), dst_buffer, 0, buf_size));
+
+  int errors = 0;
+  for (uint32_t i = 0; i < size; ++i) {
+    if (!nearly_equal(h_dst[i], h_ref[i])) {
+      if (errors < 100)
+        printf("*** error: [%u] expected=%f, actual=%f\n", i, h_ref[i], h_dst[i]);
+      ++errors;
+    }
+  }
+
+  cleanup();
+  if (errors != 0) {
+    std::cout << "FAILED!" << std::endl;
+    return errors;
+  }
+  std::cout << "PASSED!" << std::endl;
+  return 0;
+}
