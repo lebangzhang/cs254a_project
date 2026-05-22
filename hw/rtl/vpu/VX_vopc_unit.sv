@@ -57,7 +57,7 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
     logic [VSIMD_IDX_W-1:0] simd_ctr, simd_ctr_n;
     logic [SEW_IDX_W-1:0] sew_ctr, sew_ctr_n;
 
-    wire gpr_req_valid, gpr_rsp_valid;
+    wire gpr_req_valid, gpr_req_ready, gpr_rsp_valid;
     wire [NUM_SRC_OPDS-1:0] gpr_req_inused;
     wire [NUM_SRC_OPDS-1:0][NUM_VREGS_BITS-1:0] gpr_req_rid;
     wire [VGPR_ADDR_WIDTH-1:0] gpr_req_addr;
@@ -141,7 +141,9 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
         end
     end
 
-    assign gpr_req_valid = (state == STATE_FETCH);
+    logic gpr_req_sent, gpr_req_sent_n;
+
+    assign gpr_req_valid = (state == STATE_FETCH) && ~gpr_req_sent;
 
     wire [VT_COUNT-1:0][VL_COUNT-1:0][`XLEN-1:0] gpr_wb_data_m;
     wire [VT_COUNT-1:0][VL_COUNT-1:0][XLENB-1:0] gpr_wb_byteen_m;
@@ -173,7 +175,8 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
         .NUM_REQS  (NUM_SRC_OPDS),
         .NUM_BANKS (`NUM_VGPR_BANKS),
         .DATA_SIZE (VGPR_DATA_SIZE),
-        .TAG_WIDTH (1)
+        .TAG_WIDTH (1),
+        .RDW_MODE  ("W")
     ) vgpr_file (
         .clk          (clk),
         .reset        (reset),
@@ -185,7 +188,7 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
         .req_rd_rid   (gpr_req_rid),
         .req_rd_addr  (gpr_req_addr),
         .req_rd_tag   (1'b0),
-        `UNUSED_PIN (req_rd_ready),
+        .req_rd_ready (gpr_req_ready),
         .rsp_rd_valid (gpr_rsp_valid),
         .rsp_rd_data  (gpr_rsp_data),
         `UNUSED_PIN(rsp_rd_tag),
@@ -215,6 +218,35 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
         .raddr (gpr_req_addr),
         .rdata (vmask)
     );
+
+`ifdef DBG_TRACE_PIPELINE
+    always @(posedge clk) begin
+        if (gpr_wb_valid) begin
+            `TRACE(1, ("%t: %s-vgpr-wr: PC=0x%0h, wis=%0d, sid=%0d, addr=%0d, rd=%0d, sew=%0d/%0d, tmask=%b, byteen=",
+                $time, INSTANCE_ID, to_fullPC(writeback_if.data.PC), writeback_if.data.wis, writeback_if.data.sid,
+                gpr_wb_addr, gpr_wb_rid, writeback_if.data.sew.etype, writeback_if.data.sew.idx, writeback_if.data.tmask))
+            `TRACE_ARRAY1D(1, "0x%0h", gpr_wb_byteen[0], VL_COUNT)
+            `TRACE(1, (", data="))
+            `TRACE_ARRAY1D(1, "0x%0h", gpr_wb_data[0], VL_COUNT)
+            `TRACE(1, (" (#%0d)\n", writeback_if.data.uuid))
+        end
+        if (gpr_req_valid) begin
+            `TRACE(1, ("%t: %s-vgpr-rd-req: PC=0x%0h, wis=%0d, sid=%0d, addr=%0d, used=%b, rids={%0d,%0d,%0d}\n",
+                $time, INSTANCE_ID, to_fullPC(dispatch_PC), dispatch_wis, simd_ctr, gpr_req_addr,
+                gpr_req_inused, gpr_req_rid[2], gpr_req_rid[1], gpr_req_rid[0]))
+        end
+        if (gpr_rsp_valid) begin
+            `TRACE(1, ("%t: %s-vgpr-rd-rsp: PC=0x%0h, wis=%0d, sid=%0d, addr=%0d, rs1=",
+                $time, INSTANCE_ID, to_fullPC(dispatch_PC), dispatch_wis, simd_ctr, gpr_req_addr))
+            `TRACE_ARRAY1D(1, "0x%0h", gpr_rsp_data[0][0], VL_COUNT)
+            `TRACE(1, (", rs2="))
+            `TRACE_ARRAY1D(1, "0x%0h", gpr_rsp_data[1][0], VL_COUNT)
+            `TRACE(1, (", rs3="))
+            `TRACE_ARRAY1D(1, "0x%0h", gpr_rsp_data[2][0], VL_COUNT)
+            `TRACE(1, ("\n"))
+        end
+    end
+`endif
 
     wire [NUM_SRC_OPDS-1:0][VT_COUNT-1:0][VL_COUNT-1:0][`XLEN-1:0] unpacked_data;
     wire [VT_COUNT-1:0][VL_COUNT-1:0] unpacked_vmask;
@@ -255,6 +287,7 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
     logic [UUID_WIDTH-1:0] dispatch_uuid, dispatch_uuid_n;
     logic [ISSUE_WIS_W-1:0] dispatch_wis, dispatch_wis_n;
     logic [PC_BITS-1:0] dispatch_PC, dispatch_PC_n;
+    logic dispatch_is_masked, dispatch_is_masked_n;
     logic dispatch_wb, dispatch_wb_n;
     logic [NUM_XREGS-1:0] dispatch_wr_xregs, dispatch_wr_xregs_n;
     logic [NUM_REGS_BITS-1:0] dispatch_rd, dispatch_rd_n;
@@ -268,20 +301,28 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
 
     wire soperands_is_rvv_lsu = (soperands_if.data.ex_type == EX_LSU);
     wire dispatch_is_rvv_lsu = (dispatch_ex_type == EX_LSU);
+    wire dispatch_is_vset = (dispatch_ex_type == EX_SFU)
+                         && (dispatch_op_type == INST_OP_BITS'(INST_SFU_VSET));
 
-    wire dispatch_use_vmask = (dispatch_ex_type != EX_LSU)
-                            || dispatch_op_args.lsu.is_masked;
+    wire dispatch_use_vmask = dispatch_is_masked && (dispatch_ex_type != EX_LSU);
 
     localparam RVV_LSU_SUBIDX_BITS_W = `CLOG2(SEW_IDX_W + 1);
 
-    wire [RVV_LSU_SUBIDX_BITS_W-1:0] rvv_lsu_subidx_bits =
+    wire [RVV_LSU_SUBIDX_BITS_W-1:0] rvv_subidx_bits =
         (RVV_LSU_SUBIDX_BITS_W'(SEW_IDX_W) > RVV_LSU_SUBIDX_BITS_W'(csr_sew_type))
             ? (RVV_LSU_SUBIDX_BITS_W'(SEW_IDX_W) - RVV_LSU_SUBIDX_BITS_W'(csr_sew_type))
             : RVV_LSU_SUBIDX_BITS_W'(0);
 
+    wire [SEW_IDX_W:0] rvv_subidx_count = (SEW_IDX_W+1)'(1) << rvv_subidx_bits;
+    wire [SEW_IDX_W-1:0] rvv_subidx_last = SEW_IDX_W'(rvv_subidx_count - (SEW_IDX_W+1)'(1));
+
+    wire [RVV_LSU_SUBIDX_BITS_W-1:0] rvv_lsu_subidx_bits = rvv_subidx_bits;
+
     wire [VPU_GROUP_IDX_BITS-1:0] rvv_lsu_group_idx = soperands_if.data.op_args.lsu.group_idx;
     wire [VSIMD_IDX_W-1:0] rvv_lsu_simd_idx = VSIMD_IDX_W'(rvv_lsu_group_idx >> rvv_lsu_subidx_bits);
     wire [SEW_IDX_W-1:0] rvv_lsu_sew_idx = SEW_IDX_W'(rvv_lsu_group_idx);
+    wire [VL_MAX_W-1:0] dispatch_elem_base =
+        (VL_MAX_W'(simd_ctr) * VL_MAX_W'(rvv_subidx_count) + VL_MAX_W'(sew_ctr)) * VL_MAX_W'(VL_COUNT);
 
     logic [STATE_WIDTH-1:0] state, state_n;
 
@@ -296,6 +337,7 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
         dispatch_uuid_n = dispatch_uuid;
         dispatch_wis_n = dispatch_wis;
         dispatch_PC_n = dispatch_PC;
+        dispatch_is_masked_n = dispatch_is_masked;
         dispatch_wb_n = dispatch_wb;
         dispatch_wr_xregs_n = dispatch_wr_xregs;
         dispatch_rd_n = dispatch_rd;
@@ -306,21 +348,26 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
         dispatch_rs_data_n = dispatch_rs_data;
         dispatch_sop_n = dispatch_sop;
         dispatch_eop_n = dispatch_eop;
+        gpr_req_sent_n = gpr_req_sent;
 
         case (state)
         STATE_IDLE: begin
             if (soperands_fire) begin
                 state_n = soperands_is_vset ? STATE_DISPATCH : STATE_FETCH;
+                gpr_req_sent_n = 1'b0;
                 simd_ctr_n = soperands_is_vset ? VSIMD_IDX_W'(0) :
                              soperands_is_rvv_lsu ? rvv_lsu_simd_idx :
                              VSIMD_IDX_W'(VSIMD_COUNT - 1);
-                sew_ctr_n  = soperands_is_rvv_lsu ? rvv_lsu_sew_idx : SEW_IDX_W'(0);
+                sew_ctr_n  = soperands_is_vset ? SEW_IDX_W'(0) :
+                             soperands_is_rvv_lsu ? rvv_lsu_sew_idx :
+                             rvv_subidx_last;
                 dispatch_ex_type_n = soperands_if.data.ex_type;
                 dispatch_op_type_n = soperands_if.data.op_type;
                 dispatch_op_args_n = soperands_if.data.op_args;
                 dispatch_uuid_n    = soperands_if.data.uuid;
                 dispatch_wis_n     = soperands_if.data.wis;
                 dispatch_PC_n      = soperands_if.data.PC;
+                dispatch_is_masked_n = soperands_if.data.is_masked;
                 dispatch_wb_n      = soperands_if.data.wb;
                 dispatch_wr_xregs_n= soperands_if.data.wr_xregs;
                 dispatch_rd_n      = soperands_if.data.rd;
@@ -339,13 +386,17 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
             end
         end
         STATE_FETCH: begin
-            if (gpr_rsp_valid) begin
+            if (gpr_req_valid && gpr_req_ready) begin
+                gpr_req_sent_n = 1'b1;
+            end
+            if (gpr_req_sent && gpr_rsp_valid) begin
                 state_n = STATE_DISPATCH;
             end
             // convert to scalar micro-op
             for (int t = 0; t < VT_COUNT; ++t) begin
                 for (int l = 0; l < VL_COUNT; ++l) begin
                     dispatch_tmask_n[t * VL_COUNT + l] = dispatch_vt_tmask[t]
+                                                       && ((dispatch_elem_base + VL_MAX_W'(l)) < csr_vstate.vl)
                                                        && (~dispatch_use_vmask || unpacked_vmask[t][l]);
                 end
             end
@@ -356,23 +407,32 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
                             dispatch_rs_data_n[i][t * VL_COUNT + l] = unpacked_data[i][t][l];
                         end
                     end
+                end else if (dispatch_used_rs[i]) begin
+                    for (int t = 0; t < VT_COUNT; ++t) begin
+                        for (int l = 0; l < VL_COUNT; ++l) begin
+                            dispatch_rs_data_n[i][t * VL_COUNT + l] = dispatch_rs_data[i][t];
+                        end
+                    end
                 end
             end
         end
         STATE_DISPATCH: begin
             if (dispatch_ready) begin
-                if (dispatch_is_rvv_lsu || (sew_ctr == 0 && simd_ctr == 0)) begin
+                if (dispatch_is_vset || dispatch_is_rvv_lsu || (sew_ctr == 0 && simd_ctr == 0)) begin
                     state_n = STATE_IDLE;
                 end else begin
-                    if (simd_ctr != 0) begin
-                        simd_ctr_n = simd_ctr - 1;
-                    end
                     if (sew_ctr != 0) begin
                         sew_ctr_n = sew_ctr - 1;
+                    end else begin
+                        sew_ctr_n = rvv_subidx_last;
+                        if (simd_ctr != 0) begin
+                            simd_ctr_n = simd_ctr - 1;
+                        end
                     end
                     dispatch_sop_n = 1'b0;
                     dispatch_eop_n = (simd_ctr_n == 0) && (sew_ctr_n == 0);
                     state_n = STATE_FETCH;
+                    gpr_req_sent_n = 1'b0;
                 end
             end
         end
@@ -384,6 +444,7 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
             state <= STATE_IDLE;
             simd_ctr <= 0;
             sew_ctr <= 0;
+            gpr_req_sent <= 0;
         end else begin
             state <= state_n;
             dispatch_tmask <= dispatch_tmask_n;
@@ -393,6 +454,7 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
             dispatch_uuid <= dispatch_uuid_n;
             dispatch_wis <= dispatch_wis_n;
             dispatch_PC <= dispatch_PC_n;
+            dispatch_is_masked <= dispatch_is_masked_n;
             dispatch_wb <= dispatch_wb_n;
             dispatch_wr_xregs <= dispatch_wr_xregs_n;
             dispatch_rd <= dispatch_rd_n;
@@ -405,6 +467,7 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
             dispatch_eop <= dispatch_eop_n;
             simd_ctr <= simd_ctr_n;
             sew_ctr <= sew_ctr_n;
+            gpr_req_sent <= gpr_req_sent_n;
         end
     end
 
@@ -444,6 +507,7 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
             sew_ctr,
             sew_masked,
             1'b1,
+            dispatch_is_masked,
             dispatch_PC,
             dispatch_wb && dispatch_eop,
             dispatch_wr_xregs,
@@ -465,6 +529,7 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
             voperands_if.data.sew.idx,
             voperands_if.data.sew.masked,
             voperands_if.data.is_rvv,
+            voperands_if.data.is_masked,
             voperands_if.data.PC,
             voperands_if.data.wb,
             voperands_if.data.wr_xregs,

@@ -52,7 +52,7 @@ module VX_vpu_decode_vl import VX_gpu_pkg::*, VX_vpu_pkg::*; (
     vpu_decode_t d;
     always @* begin
         d = 'x;
-        d.is_masked = vm;
+        d.is_masked = ~vm;
         d.ex_type = EX_LSU;
         d.op_type = op;
         d.op_args.lsu.is_store = 0;
@@ -127,7 +127,7 @@ module VX_vpu_decode_vs import VX_gpu_pkg::*, VX_vpu_pkg::*; (
     vpu_decode_t d;
     always @* begin
         d = 'x;
-        d.is_masked = vm;
+        d.is_masked = ~vm;
         d.ex_type = EX_LSU;
         d.op_type = op;
         d.op_args.lsu.is_store = 1;
@@ -223,7 +223,7 @@ module VX_vpu_decode_vop import VX_gpu_pkg::*, VX_vpu_pkg::*; (
      vpu_decode_t d;
     always @* begin
         d = 'x;
-        d.is_masked = vm;
+        d.is_masked = ~vm;
         reg_ids = '0;
         use_regs = '0;
 
@@ -340,6 +340,7 @@ module VX_vpu_decode_vop import VX_gpu_pkg::*, VX_vpu_pkg::*; (
 
         // vfmv.v.f / vfmv.s.f (OPFVF): rs1=FREG, rd=VGPR, vs2 unused
         if (funct3 == 3'b101 && (funct6 == 6'b010111 || funct6 == 6'b010000)) begin
+            d.op_args.fpu.frm = 3'd5;
             reg_ids[RV_RS1]  = make_reg_num(REG_TYPE_F, RV_REGS_BITS'(rs1));
             use_regs[RV_RS1] = 1'b1;
             reg_ids[RV_RS2]  = '0;
@@ -348,12 +349,14 @@ module VX_vpu_decode_vop import VX_gpu_pkg::*, VX_vpu_pkg::*; (
             use_regs[RV_RD]  = 1'b1;
         end
 
-        // vfmv.f.s (OPFVV): rd=FREG, vs2=VGPR, rs1 unused
+        // vfmv.f.s (OPFVV): rd=FREG, vs2=VGPR. Map vs2 onto rs1_data
+        // because the FPU FMV path moves operand A.
         if (funct3 == 3'b001 && funct6 == 6'b010000) begin
-            reg_ids[RV_RS1]  = '0;
-            use_regs[RV_RS1] = 1'b0;
-            reg_ids[RV_RS2]  = make_reg_num(REG_TYPE_V, RV_REGS_BITS'(rs2));
-            use_regs[RV_RS2] = 1'b1;
+            d.op_args.fpu.frm = 3'd5;
+            reg_ids[RV_RS1]  = make_reg_num(REG_TYPE_V, RV_REGS_BITS'(rs2));
+            use_regs[RV_RS1] = 1'b1;
+            reg_ids[RV_RS2]  = '0;
+            use_regs[RV_RS2] = 1'b0;
             reg_ids[RV_RD]   = make_reg_num(REG_TYPE_F, RV_REGS_BITS'(rd));
             use_regs[RV_RD]  = 1'b1;
         end

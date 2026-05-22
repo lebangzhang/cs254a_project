@@ -4,22 +4,71 @@
 
 extern "C" void kernel_main(kernel_arg_t* __UNIFORM__ arg) {
   auto scalar = reinterpret_cast<float* __restrict>(arg->scalar_addr);
+  auto src = reinterpret_cast<float* __restrict>(arg->src_addr);
   auto dst = reinterpret_cast<float* __restrict>(arg->dst_addr);
 
-  int tile = blockIdx.x * blockDim.x + threadIdx.x;
-  int start = tile * (int)arg->vlen;
-  if (start >= (int)arg->size)
+  if (blockIdx.x != 0 || threadIdx.x != 0)
     return;
 
-  uint32_t remaining = arg->size - start;
-  uint32_t vl = (remaining < arg->vlen) ? remaining : arg->vlen;
   float value = scalar[0];
+  const uint32_t vl1 = 1;
+  const uint32_t vl4 = 4;
+  const uint32_t vl8 = 8;
+  const uint32_t vl16 = 16;
+
+  float out0;
+  __asm__ __volatile__(
+      "vsetvli zero, %[vl], e32, m1, ta, ma\n\t"
+      "vle32.v v8, (%[src])\n\t"
+      "vfmv.f.s %[out], v8\n\t"
+      : [out] "=f"(out0)
+      : [vl] "r"(vl1), [src] "r"(src + 0)
+      : "v8", "memory");
+  dst[0] = out0;
+
+  float out1;
+  __asm__ __volatile__(
+      "vsetvli zero, %[vl], e32, m1, ta, ma\n\t"
+      "vle32.v v8, (%[src])\n\t"
+      "vfmv.f.s %[out], v8\n\t"
+      : [out] "=f"(out1)
+      : [vl] "r"(vl8), [src] "r"(src + 8)
+      : "v8", "memory");
+  dst[1] = out1;
+
+  float out2;
+  __asm__ __volatile__(
+      "vsetvli zero, %[vl], e32, m2, ta, ma\n\t"
+      "vle32.v v8, (%[src])\n\t"
+      "vfmv.f.s %[out], v8\n\t"
+      : [out] "=f"(out2)
+      : [vl] "r"(vl16), [src] "r"(src + 16)
+      : "v8", "v9", "memory");
+  dst[2] = out2;
+
+  float out3;
+  __asm__ __volatile__(
+      "vsetvli zero, %[vl], e32, m4, ta, ma\n\t"
+      "vle32.v v8, (%[src])\n\t"
+      "vfmv.f.s %[out], v8\n\t"
+      : [out] "=f"(out3)
+      : [vl] "r"(vl16), [src] "r"(src + 32)
+      : "v8", "v9", "v10", "v11", "memory");
+  dst[3] = out3;
 
   __asm__ __volatile__(
       "vsetvli zero, %[vl], e32, m1, ta, ma\n\t"
       "vfmv.v.f v8, %[value]\n\t"
       "vse32.v v8, (%[dst])\n\t"
       :
-      : [vl] "r"(vl), [value] "f"(value), [dst] "r"(dst + start)
+      : [vl] "r"(vl4), [value] "f"(value), [dst] "r"(dst + 8)
       : "v8", "memory");
+
+  __asm__ __volatile__(
+      "vsetvli zero, %[vl], e32, m2, ta, ma\n\t"
+      "vfmv.v.f v8, %[value]\n\t"
+      "vse32.v v8, (%[dst])\n\t"
+      :
+      : [vl] "r"(vl8), [value] "f"(value), [dst] "r"(dst + 16)
+      : "v8", "v9", "memory");
 }

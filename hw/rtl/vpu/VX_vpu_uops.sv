@@ -69,6 +69,22 @@ module VX_vpu_uops import VX_vpu_pkg::*, VX_gpu_pkg::*; (
     // fractional LMUL collapses to emul=1).
     wire is_vset    = (ibuf_in.ex_type == EX_SFU) && (ibuf_in.op_type == INST_OP_BITS'(INST_SFU_VSET));
     wire is_rvv_lsu = (ibuf_in.ex_type == EX_LSU) && ibuf_in.is_rvv;
+    wire [REG_TYPE_BITS-1:0] rd_type  = get_reg_type(ibuf_in.rd);
+    wire [REG_TYPE_BITS-1:0] rs1_type = get_reg_type(ibuf_in.rs1);
+    wire [REG_TYPE_BITS-1:0] rs2_type = get_reg_type(ibuf_in.rs2);
+    wire [REG_TYPE_BITS-1:0] rs3_type = get_reg_type(ibuf_in.rs3);
+    wire is_vfmv_f_s = ibuf_in.is_rvv
+                    && (ibuf_in.ex_type == EX_FPU)
+                    && (ibuf_in.op_type == INST_OP_BITS'(INST_FPU_MISC))
+                    && (ibuf_in.op_args.fpu.frm == 3'd5)
+                    && (rd_type == REG_TYPE_F)
+                    && (rs1_type == REG_TYPE_V);
+    wire is_vfmv_v_f = ibuf_in.is_rvv
+                    && (ibuf_in.ex_type == EX_FPU)
+                    && (ibuf_in.op_type == INST_OP_BITS'(INST_FPU_MISC))
+                    && (ibuf_in.op_args.fpu.frm == 3'd5)
+                    && (rd_type == REG_TYPE_V)
+                    && (rs1_type == REG_TYPE_F);
     wire [4:0] rvv_umop = ibuf_in.op_args.lsu.offset[11:7];
     wire is_whole_reg  = (rvv_umop == 5'b01000);
     wire is_mask_ls    = (rvv_umop == 5'b01011);
@@ -137,14 +153,9 @@ module VX_vpu_uops import VX_vpu_pkg::*, VX_gpu_pkg::*; (
     wire [UOP_CTR_W-1:0] lsu_uop_count =
         (is_whole_reg || is_mask_ls) ? lsu_full_uop_count : lsu_vl_uop_count;
 
-    assign uop_count = is_vset ? UOP_CTR_W'(1)
+    assign uop_count = is_vset || is_vfmv_f_s || is_vfmv_v_f ? UOP_CTR_W'(1)
                      : is_rvv_lsu ? lsu_uop_count
                      : (csr_has_lmul ? UOP_CTR_W'(8) : UOP_CTR_W'(1));
-
-    wire [REG_TYPE_BITS-1:0] rd_type  = get_reg_type(ibuf_in.rd);
-    wire [REG_TYPE_BITS-1:0] rs1_type = get_reg_type(ibuf_in.rs1);
-    wire [REG_TYPE_BITS-1:0] rs2_type = get_reg_type(ibuf_in.rs2);
-    wire [REG_TYPE_BITS-1:0] rs3_type = get_reg_type(ibuf_in.rs3);
 
     wire [2:0] ctr = uop_idx[2:0];
 
