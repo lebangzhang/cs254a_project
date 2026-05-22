@@ -3,17 +3,21 @@
 #include "common.h"
 
 extern "C" void kernel_main(kernel_arg_t* __UNIFORM__ arg) {
-  auto f32_acc = reinterpret_cast<float* __restrict>(arg->f32_acc_addr);
-  auto f32_lhs = reinterpret_cast<float* __restrict>(arg->f32_lhs_addr);
-  auto f32_rhs = reinterpret_cast<float* __restrict>(arg->f32_rhs_addr);
-  auto f32_dst = reinterpret_cast<float* __restrict>(arg->f32_dst_addr);
-  auto f64_acc = reinterpret_cast<double* __restrict>(arg->f64_acc_addr);
-  auto f64_lhs = reinterpret_cast<double* __restrict>(arg->f64_lhs_addr);
-  auto f64_rhs = reinterpret_cast<double* __restrict>(arg->f64_rhs_addr);
-  auto f64_dst = reinterpret_cast<double* __restrict>(arg->f64_dst_addr);
+  const uint32_t tid = threadIdx.x;
 
-  if (blockIdx.x != 0 || threadIdx.x != 0)
+  if (blockIdx.x != 0 || tid >= 4)
     return;
+
+  const uint32_t f32_thread_span = 128;
+  const uint32_t f64_thread_span = 64;
+  auto f32_acc = reinterpret_cast<float* __restrict>(arg->f32_acc_addr) + tid * f32_thread_span;
+  auto f32_lhs = reinterpret_cast<float* __restrict>(arg->f32_lhs_addr) + tid * f32_thread_span;
+  auto f32_rhs = reinterpret_cast<float* __restrict>(arg->f32_rhs_addr) + tid * f32_thread_span;
+  auto f32_dst = reinterpret_cast<float* __restrict>(arg->f32_dst_addr) + tid * f32_thread_span;
+  auto f64_acc = reinterpret_cast<double* __restrict>(arg->f64_acc_addr) + tid * f64_thread_span;
+  auto f64_lhs = reinterpret_cast<double* __restrict>(arg->f64_lhs_addr) + tid * f64_thread_span;
+  auto f64_rhs = reinterpret_cast<double* __restrict>(arg->f64_rhs_addr) + tid * f64_thread_span;
+  auto f64_dst = reinterpret_cast<double* __restrict>(arg->f64_dst_addr) + tid * f64_thread_span;
 
   const uint32_t vl2 = 2;
   const uint32_t vl4 = 4;

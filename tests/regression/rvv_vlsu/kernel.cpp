@@ -3,11 +3,13 @@
 #include "common.h"
 
 extern "C" void kernel_main(kernel_arg_t* __UNIFORM__ arg) {
-  if (blockIdx.x != 0 || threadIdx.x != 0)
+  const uint32_t tid = threadIdx.x;
+  if (blockIdx.x != 0 || tid >= 4)
     return;
 
-  auto src = reinterpret_cast<uint8_t* __restrict>(arg->src_addr);
-  auto dst = reinterpret_cast<uint8_t* __restrict>(arg->dst_addr);
+  const uint32_t thread_span = 768;
+  auto src = reinterpret_cast<uint8_t* __restrict>(arg->src_addr) + tid * thread_span;
+  auto dst = reinterpret_cast<uint8_t* __restrict>(arg->dst_addr) + tid * thread_span;
   auto idx = reinterpret_cast<uint32_t* __restrict>(arg->idx_addr);
 
   const uint32_t vl8 = 16;

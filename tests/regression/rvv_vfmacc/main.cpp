@@ -47,8 +47,11 @@ static bool nearly_equal(double a, double b) {
 }
 
 const char* kernel_file = "kernel.vxbin";
-static constexpr uint32_t F32_SIZE = 128;
-static constexpr uint32_t F64_SIZE = 64;
+static constexpr uint32_t NUM_TEST_THREADS = 4;
+static constexpr uint32_t F32_THREAD_SIZE = 128;
+static constexpr uint32_t F64_THREAD_SIZE = 64;
+static constexpr uint32_t F32_SIZE = F32_THREAD_SIZE * NUM_TEST_THREADS;
+static constexpr uint32_t F64_SIZE = F64_THREAD_SIZE * NUM_TEST_THREADS;
 static constexpr float F32_SENTINEL = -123.0f;
 static constexpr double F64_SENTINEL = -123.0;
 
@@ -160,7 +163,8 @@ int main(int argc, char* argv[]) {
     h_f32_lhs[i] = 1.25f + 0.015625f * float(i);
     h_f32_rhs[i] = 2.0f + 0.0625f * float(i);
   }
-  h_f32_lhs[120] = 1.5f;
+  for (uint32_t t = 0; t < NUM_TEST_THREADS; ++t)
+    h_f32_lhs[t * F32_THREAD_SIZE + 120] = 1.5f + 0.25f * float(t);
 
   std::vector<double> h_f64_acc(F64_SIZE), h_f64_lhs(F64_SIZE), h_f64_rhs(F64_SIZE);
   std::vector<double> h_f64_dst(F64_SIZE, F64_SENTINEL);
@@ -170,21 +174,26 @@ int main(int argc, char* argv[]) {
     h_f64_lhs[i] = 1.125 + 0.0078125 * double(i);
     h_f64_rhs[i] = 1.75 + 0.03125 * double(i);
   }
-  h_f64_lhs[60] = 1.25;
+  for (uint32_t t = 0; t < NUM_TEST_THREADS; ++t)
+    h_f64_lhs[t * F64_THREAD_SIZE + 60] = 1.25 + 0.125 * double(t);
 
-  set_ref_range(h_f32_ref, h_f32_acc, h_f32_lhs, h_f32_rhs, 0, 4);
-  set_ref_range(h_f32_ref, h_f32_acc, h_f32_lhs, h_f32_rhs, 16, 8);
-  set_ref_range(h_f32_ref, h_f32_acc, h_f32_lhs, h_f32_rhs, 32, 16);
-  set_ref_range_scalar(h_f32_ref, h_f32_acc, h_f32_lhs[120], h_f32_rhs, 64, 4);
-  set_ref_range_scalar(h_f32_ref, h_f32_acc, h_f32_lhs[120], h_f32_rhs, 80, 8);
-  set_ref_range_scalar(h_f32_ref, h_f32_acc, h_f32_lhs[120], h_f32_rhs, 96, 16);
+  for (uint32_t t = 0; t < NUM_TEST_THREADS; ++t) {
+    uint32_t f32_base = t * F32_THREAD_SIZE;
+    set_ref_range(h_f32_ref, h_f32_acc, h_f32_lhs, h_f32_rhs, f32_base + 0, 4);
+    set_ref_range(h_f32_ref, h_f32_acc, h_f32_lhs, h_f32_rhs, f32_base + 16, 8);
+    set_ref_range(h_f32_ref, h_f32_acc, h_f32_lhs, h_f32_rhs, f32_base + 32, 16);
+    set_ref_range_scalar(h_f32_ref, h_f32_acc, h_f32_lhs[f32_base + 120], h_f32_rhs, f32_base + 64, 4);
+    set_ref_range_scalar(h_f32_ref, h_f32_acc, h_f32_lhs[f32_base + 120], h_f32_rhs, f32_base + 80, 8);
+    set_ref_range_scalar(h_f32_ref, h_f32_acc, h_f32_lhs[f32_base + 120], h_f32_rhs, f32_base + 96, 16);
 
-  set_ref_range(h_f64_ref, h_f64_acc, h_f64_lhs, h_f64_rhs, 0, 2);
-  set_ref_range(h_f64_ref, h_f64_acc, h_f64_lhs, h_f64_rhs, 8, 4);
-  set_ref_range(h_f64_ref, h_f64_acc, h_f64_lhs, h_f64_rhs, 16, 8);
-  set_ref_range_scalar(h_f64_ref, h_f64_acc, h_f64_lhs[60], h_f64_rhs, 32, 2);
-  set_ref_range_scalar(h_f64_ref, h_f64_acc, h_f64_lhs[60], h_f64_rhs, 40, 4);
-  set_ref_range_scalar(h_f64_ref, h_f64_acc, h_f64_lhs[60], h_f64_rhs, 48, 8);
+    uint32_t f64_base = t * F64_THREAD_SIZE;
+    set_ref_range(h_f64_ref, h_f64_acc, h_f64_lhs, h_f64_rhs, f64_base + 0, 2);
+    set_ref_range(h_f64_ref, h_f64_acc, h_f64_lhs, h_f64_rhs, f64_base + 8, 4);
+    set_ref_range(h_f64_ref, h_f64_acc, h_f64_lhs, h_f64_rhs, f64_base + 16, 8);
+    set_ref_range_scalar(h_f64_ref, h_f64_acc, h_f64_lhs[f64_base + 60], h_f64_rhs, f64_base + 32, 2);
+    set_ref_range_scalar(h_f64_ref, h_f64_acc, h_f64_lhs[f64_base + 60], h_f64_rhs, f64_base + 40, 4);
+    set_ref_range_scalar(h_f64_ref, h_f64_acc, h_f64_lhs[f64_base + 60], h_f64_rhs, f64_base + 48, 8);
+  }
 
   RT_CHECK(vx_copy_to_dev(f32_acc_buffer, h_f32_acc.data(), 0, f32_bytes));
   RT_CHECK(vx_copy_to_dev(f32_lhs_buffer, h_f32_lhs.data(), 0, f32_bytes));
@@ -198,7 +207,7 @@ int main(int argc, char* argv[]) {
   RT_CHECK(vx_upload_bytes(device, &kernel_arg, sizeof(kernel_arg_t), &args_buffer));
 
   uint32_t grid_dim[2] = {1, 1};
-  uint32_t block_dim[2] = {1, 1};
+  uint32_t block_dim[2] = {NUM_TEST_THREADS, 1};
 
   auto time_start = std::chrono::high_resolution_clock::now();
   RT_CHECK(vx_start_g(device, krnl_buffer, args_buffer, 2, grid_dim, block_dim, 0));

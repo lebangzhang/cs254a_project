@@ -4,13 +4,16 @@
 
 extern "C" void kernel_main(kernel_arg_t* __UNIFORM__ arg) {
   auto scalar = reinterpret_cast<float* __restrict>(arg->scalar_addr);
-  auto src = reinterpret_cast<float* __restrict>(arg->src_addr);
-  auto dst = reinterpret_cast<float* __restrict>(arg->dst_addr);
+  const uint32_t tid = threadIdx.x;
 
-  if (blockIdx.x != 0 || threadIdx.x != 0)
+  if (blockIdx.x != 0 || tid >= 4)
     return;
 
-  float value = scalar[0];
+  const uint32_t thread_span = 48;
+  auto src = reinterpret_cast<float* __restrict>(arg->src_addr) + tid * thread_span;
+  auto dst = reinterpret_cast<float* __restrict>(arg->dst_addr) + tid * thread_span;
+
+  float value = scalar[tid];
   const uint32_t vl1 = 1;
   const uint32_t vl4 = 4;
   const uint32_t vl8 = 8;

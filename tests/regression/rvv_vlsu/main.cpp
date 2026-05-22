@@ -17,7 +17,9 @@
     exit(-1);                                                  \
   } while (false)
 
-static constexpr uint32_t DATA_SIZE = 768;
+static constexpr uint32_t NUM_TEST_THREADS = 4;
+static constexpr uint32_t THREAD_DATA_SIZE = 768;
+static constexpr uint32_t DATA_SIZE = THREAD_DATA_SIZE * NUM_TEST_THREADS;
 static constexpr uint32_t INDEX_COUNT = 8;
 static constexpr uint8_t SENTINEL = 0xa5;
 
@@ -82,19 +84,22 @@ int main(int argc, char* argv[]) {
   for (uint32_t i = 0; i < INDEX_COUNT; ++i)
     h_idx[i] = (INDEX_COUNT - 1 - i) * sizeof(uint32_t);
 
-  copy_range(h_expected, h_src, 0, 0, 16);       // e8, m1
-  copy_range(h_expected, h_src, 64, 64, 32);     // e16, m1
-  copy_range(h_expected, h_src, 128, 128, 32);   // e32, m1
-  copy_range(h_expected, h_src, 192, 192, 32);   // e64, m1
-  copy_range(h_expected, h_src, 256, 256, 64);   // e32, m2
+  for (uint32_t t = 0; t < NUM_TEST_THREADS; ++t) {
+    uint32_t base = t * THREAD_DATA_SIZE;
+    copy_range(h_expected, h_src, base + 0, base + 0, 16);       // e8, m1
+    copy_range(h_expected, h_src, base + 64, base + 64, 32);     // e16, m1
+    copy_range(h_expected, h_src, base + 128, base + 128, 32);   // e32, m1
+    copy_range(h_expected, h_src, base + 192, base + 192, 32);   // e64, m1
+    copy_range(h_expected, h_src, base + 256, base + 256, 64);   // e32, m2
 
-  for (uint32_t i = 0; i < INDEX_COUNT; ++i) {
-    copy_range(h_expected, h_src, 384 + i * sizeof(uint32_t),
-               384 + i * 8, sizeof(uint32_t));
-    copy_range(h_expected, h_src, 512 + i * sizeof(uint32_t),
-               512 + h_idx[i], sizeof(uint32_t));
+    for (uint32_t i = 0; i < INDEX_COUNT; ++i) {
+      copy_range(h_expected, h_src, base + 384 + i * sizeof(uint32_t),
+                 base + 384 + i * 8, sizeof(uint32_t));
+      copy_range(h_expected, h_src, base + 512 + i * sizeof(uint32_t),
+                 base + 512 + h_idx[i], sizeof(uint32_t));
+    }
+    copy_range(h_expected, h_src, base + 640, base + 640, 64);   // vlseg2e32/vsseg2e32
   }
-  copy_range(h_expected, h_src, 640, 640, 64);   // vlseg2e32/vsseg2e32
 
   kernel_arg.data_size = DATA_SIZE;
   kernel_arg.index_count = INDEX_COUNT;
@@ -114,7 +119,7 @@ int main(int argc, char* argv[]) {
   RT_CHECK(vx_upload_bytes(device, &kernel_arg, sizeof(kernel_arg_t), &args_buffer));
 
   uint32_t grid_dim[2] = {1, 1};
-  uint32_t block_dim[2] = {1, 1};
+  uint32_t block_dim[2] = {NUM_TEST_THREADS, 1};
 
   auto time_start = std::chrono::high_resolution_clock::now();
   RT_CHECK(vx_start_g(device, krnl_buffer, args_buffer, 2, grid_dim, block_dim, 0));

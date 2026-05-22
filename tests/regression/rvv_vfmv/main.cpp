@@ -18,7 +18,9 @@
   } while (false)
 
 const char* kernel_file = "kernel.vxbin";
-static constexpr uint32_t DATA_SIZE = 48;
+static constexpr uint32_t NUM_TEST_THREADS = 4;
+static constexpr uint32_t THREAD_DATA_SIZE = 48;
+static constexpr uint32_t DATA_SIZE = THREAD_DATA_SIZE * NUM_TEST_THREADS;
 static constexpr float SENTINEL = -123.0f;
 
 vx_device_h device = nullptr;
@@ -65,38 +67,44 @@ int main(int argc, char* argv[]) {
   kernel_arg.data_size = DATA_SIZE;
 
   RT_CHECK(vx_dev_open(&device));
-  RT_CHECK(vx_mem_alloc(device, sizeof(float), VX_MEM_READ, &scalar_buffer));
+  RT_CHECK(vx_mem_alloc(device, NUM_TEST_THREADS * sizeof(float), VX_MEM_READ, &scalar_buffer));
   RT_CHECK(vx_mem_address(scalar_buffer, &kernel_arg.scalar_addr));
   RT_CHECK(vx_mem_alloc(device, data_bytes, VX_MEM_READ, &src_buffer));
   RT_CHECK(vx_mem_address(src_buffer, &kernel_arg.src_addr));
   RT_CHECK(vx_mem_alloc(device, data_bytes, VX_MEM_WRITE, &dst_buffer));
   RT_CHECK(vx_mem_address(dst_buffer, &kernel_arg.dst_addr));
 
-  float scalar = 1.5f;
+  std::vector<float> h_scalar(NUM_TEST_THREADS);
   std::vector<float> h_src(DATA_SIZE);
   std::vector<float> h_dst(DATA_SIZE, SENTINEL);
   std::vector<float> h_expected(DATA_SIZE, SENTINEL);
 
+  for (uint32_t t = 0; t < NUM_TEST_THREADS; ++t)
+    h_scalar[t] = 1.5f + 0.25f * float(t);
+
   for (uint32_t i = 0; i < DATA_SIZE; ++i)
     h_src[i] = 0.25f * float(i + 1);
 
-  h_expected[0] = h_src[0];
-  h_expected[1] = h_src[8];
-  h_expected[2] = h_src[16];
-  h_expected[3] = h_src[32];
-  for (uint32_t i = 0; i < 4; ++i)
-    h_expected[8 + i] = scalar;
-  for (uint32_t i = 0; i < 8; ++i)
-    h_expected[16 + i] = scalar;
+  for (uint32_t t = 0; t < NUM_TEST_THREADS; ++t) {
+    uint32_t base = t * THREAD_DATA_SIZE;
+    h_expected[base + 0] = h_src[base + 0];
+    h_expected[base + 1] = h_src[base + 8];
+    h_expected[base + 2] = h_src[base + 16];
+    h_expected[base + 3] = h_src[base + 32];
+    for (uint32_t i = 0; i < 4; ++i)
+      h_expected[base + 8 + i] = h_scalar[t];
+    for (uint32_t i = 0; i < 8; ++i)
+      h_expected[base + 16 + i] = h_scalar[t];
+  }
 
-  RT_CHECK(vx_copy_to_dev(scalar_buffer, &scalar, 0, sizeof(float)));
+  RT_CHECK(vx_copy_to_dev(scalar_buffer, h_scalar.data(), 0, NUM_TEST_THREADS * sizeof(float)));
   RT_CHECK(vx_copy_to_dev(src_buffer, h_src.data(), 0, data_bytes));
   RT_CHECK(vx_copy_to_dev(dst_buffer, h_dst.data(), 0, data_bytes));
   RT_CHECK(vx_upload_kernel_file(device, kernel_file, &krnl_buffer));
   RT_CHECK(vx_upload_bytes(device, &kernel_arg, sizeof(kernel_arg_t), &args_buffer));
 
   uint32_t grid_dim[2] = {1, 1};
-  uint32_t block_dim[2] = {1, 1};
+  uint32_t block_dim[2] = {NUM_TEST_THREADS, 1};
 
   auto time_start = std::chrono::high_resolution_clock::now();
   RT_CHECK(vx_start_g(device, krnl_buffer, args_buffer, 2, grid_dim, block_dim, 0));

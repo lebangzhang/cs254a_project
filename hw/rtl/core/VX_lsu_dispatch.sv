@@ -179,7 +179,7 @@ module VX_lsu_dispatch import VX_gpu_pkg::*; #(
         wire [`XLEN-1:0] rvv_sel_off = rvv_is_indexed ? rvv_indexed_off
                                      : (rvv_is_strided ? rvv_strided_off : rvv_off);
         assign eff_rs1_data[j] = is_rvv_lsu
-            ? (opd_q.rs1_data[0] + rvv_sel_off)
+            ? (opd_q.rs1_data[j] + rvv_sel_off)
             : (is_pack_lsu
                 ? (opd_q.rs1_data[j] + stride_off)
                 :  opd_q.rs1_data[j]);
