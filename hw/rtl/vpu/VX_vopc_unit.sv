@@ -87,7 +87,10 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
 
     assign gpr_wb_valid = writeback_if.valid && (get_reg_type(writeback_if.data.rd) == REG_TYPE_V);
 
-    assign gpr_req_valid = soperands_if.valid;
+    wire soperands_is_vset = (soperands_if.data.ex_type == EX_SFU)
+                          && (soperands_if.data.op_type == INST_OP_BITS'(INST_SFU_VSET));
+
+    assign gpr_req_valid = soperands_if.valid && ~soperands_is_vset;
 
     wire [VT_COUNT-1:0][VL_COUNT-1:0][`XLEN-1:0] gpr_wb_data_m;
     wire [VT_COUNT-1:0][VL_COUNT-1:0][XLENB-1:0] gpr_wb_byteen_m;
@@ -198,8 +201,13 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
     logic [EX_BITS-1:0] dispatch_ex_type, dispatch_ex_type_n;
     logic [INST_OP_BITS-1:0] dispatch_op_type, dispatch_op_type_n;
     op_args_t dispatch_op_args, dispatch_op_args_n;
+    logic [UUID_WIDTH-1:0] dispatch_uuid, dispatch_uuid_n;
+    logic [ISSUE_WIS_W-1:0] dispatch_wis, dispatch_wis_n;
+    logic [PC_BITS-1:0] dispatch_PC, dispatch_PC_n;
     logic dispatch_wb, dispatch_wb_n;
+    logic [NUM_XREGS-1:0] dispatch_wr_xregs, dispatch_wr_xregs_n;
     logic [NUM_REGS_BITS-1:0] dispatch_rd, dispatch_rd_n;
+    logic [BYTESEL_BITS-1:0] dispatch_bytesel, dispatch_bytesel_n;
     logic [NUM_SRC_OPDS-1:0][`SIMD_WIDTH-1:0][`XLEN-1:0] dispatch_rs_data, dispatch_rs_data_n;
     logic dispatch_sop, dispatch_sop_n;
     logic dispatch_eop, dispatch_eop_n;
@@ -214,8 +222,13 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
         dispatch_ex_type_n = dispatch_ex_type;
         dispatch_op_type_n = dispatch_op_type;
         dispatch_op_args_n = dispatch_op_args;
+        dispatch_uuid_n = dispatch_uuid;
+        dispatch_wis_n = dispatch_wis;
+        dispatch_PC_n = dispatch_PC;
         dispatch_wb_n = dispatch_wb;
+        dispatch_wr_xregs_n = dispatch_wr_xregs;
         dispatch_rd_n = dispatch_rd;
+        dispatch_bytesel_n = dispatch_bytesel;
         dispatch_rs_data_n = dispatch_rs_data;
         dispatch_sop_n = dispatch_sop;
         dispatch_eop_n = dispatch_eop;
@@ -223,16 +236,27 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
         case (state)
         STATE_IDLE: begin
             if (soperands_fire) begin
-                state_n = STATE_FETCH;
-                simd_ctr_n = VSIMD_IDX_W'(VSIMD_COUNT - 1);
+                state_n = soperands_is_vset ? STATE_DISPATCH : STATE_FETCH;
+                simd_ctr_n = soperands_is_vset ? VSIMD_IDX_W'(0) : VSIMD_IDX_W'(VSIMD_COUNT - 1);
                 sew_ctr_n  = SEW_IDX_W'(0);
                 dispatch_ex_type_n = soperands_if.data.ex_type;
                 dispatch_op_type_n = soperands_if.data.op_type;
                 dispatch_op_args_n = soperands_if.data.op_args;
+                dispatch_uuid_n    = soperands_if.data.uuid;
+                dispatch_wis_n     = soperands_if.data.wis;
+                dispatch_PC_n      = soperands_if.data.PC;
                 dispatch_wb_n      = soperands_if.data.wb;
+                dispatch_wr_xregs_n= soperands_if.data.wr_xregs;
                 dispatch_rd_n      = soperands_if.data.rd;
+                dispatch_bytesel_n = soperands_if.data.bytesel;
+                dispatch_tmask_n   = soperands_if.data.tmask;
+                dispatch_rs_data_n = {
+                    soperands_if.data.rs3_data,
+                    soperands_if.data.rs2_data,
+                    soperands_if.data.rs1_data
+                };
                 dispatch_sop_n     = 1'b1;
-                dispatch_eop_n     = (VSIMD_COUNT == 1);
+                dispatch_eop_n     = soperands_is_vset || (VSIMD_COUNT == 1);
             end
         end
         STATE_FETCH: begin
@@ -278,8 +302,13 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
             dispatch_ex_type <= dispatch_ex_type_n;
             dispatch_op_type <= dispatch_op_type_n;
             dispatch_op_args <= dispatch_op_args_n;
+            dispatch_uuid <= dispatch_uuid_n;
+            dispatch_wis <= dispatch_wis_n;
+            dispatch_PC <= dispatch_PC_n;
             dispatch_wb <= dispatch_wb_n;
+            dispatch_wr_xregs <= dispatch_wr_xregs_n;
             dispatch_rd <= dispatch_rd_n;
+            dispatch_bytesel <= dispatch_bytesel_n;
             dispatch_rs_data <= dispatch_rs_data_n;
             dispatch_sop <= dispatch_sop_n;
             dispatch_eop <= dispatch_eop_n;
@@ -292,6 +321,12 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
     always @(posedge clk) begin
         if (reset) begin
             csr_sew_type <= '0;
+        end else if (soperands_fire && soperands_is_vset) begin
+            if (soperands_if.data.op_args.vset.use_zimm) begin
+                csr_sew_type <= soperands_if.data.op_args.vset.zimm[3 +: SEW_TYPE_W];
+            end else begin
+                csr_sew_type <= soperands_if.data.rs2_data[0][3 +: SEW_TYPE_W];
+            end
         end
     end
 
@@ -308,22 +343,22 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
         .valid_in (dispatch_valid),
         .ready_in (dispatch_ready),
         .data_in  ({
-            soperands_if.data.uuid,
-            soperands_if.data.wis,
+            dispatch_uuid,
+            dispatch_wis,
             simd_ctr,
             dispatch_tmask,
             csr_sew_type,
             sew_ctr,
             sew_masked,
             1'b1,
-            soperands_if.data.PC,
+            dispatch_PC,
             dispatch_wb,
-            soperands_if.data.wr_xregs,
+            dispatch_wr_xregs,
             dispatch_ex_type,
             dispatch_op_type,
             dispatch_op_args,
             dispatch_rd,
-            soperands_if.data.bytesel,
+            dispatch_bytesel,
             dispatch_rs_data,
             dispatch_sop,
             dispatch_eop
@@ -355,10 +390,9 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
         .ready_out(voperands_if.ready)
     );
 
-    // TODO:
-    assign vpu_seq_opc_if.valid = 'x;
-    assign vpu_seq_opc_if.wis   = 'x;
-    assign vpu_seq_opc_if.data  = 'x;
+    assign vpu_seq_opc_if.valid = 1'b0;
+    assign vpu_seq_opc_if.wis   = '0;
+    assign vpu_seq_opc_if.data  = '0;
 
     assign soperands_if.ready = (state == STATE_IDLE);
 

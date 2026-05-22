@@ -57,6 +57,7 @@ module VX_vpu_uops import VX_vpu_pkg::*, VX_gpu_pkg::*; (
     // Whole-register form (umop==01000): nfields=1, emul=nf+1.
     // Otherwise: nfields=nf+1, emul derived from vtype.vlmul (LMUL>=1 only here;
     // fractional LMUL collapses to emul=1).
+    wire is_vset    = (ibuf_in.ex_type == EX_SFU) && (ibuf_in.op_type == INST_OP_BITS'(INST_SFU_VSET));
     wire is_rvv_lsu = (ibuf_in.ex_type == EX_LSU) && ibuf_in.is_rvv;
     wire [4:0] rvv_umop = ibuf_in.op_args.lsu.offset[11:7];
     wire is_whole_reg  = (rvv_umop == 5'b01000);
@@ -118,8 +119,9 @@ module VX_vpu_uops import VX_vpu_pkg::*, VX_gpu_pkg::*; (
     wire [UOP_CTR_W-1:0] lsu_uop_count =
         UOP_CTR_W'(eff_nfields) * UOP_CTR_W'(eff_emul) * UOP_CTR_W'(simd_groups);
 
-    assign uop_count = is_rvv_lsu ? lsu_uop_count
-                                  : (csr_has_lmul ? UOP_CTR_W'(8) : UOP_CTR_W'(1));
+    assign uop_count = is_vset ? UOP_CTR_W'(1)
+                     : is_rvv_lsu ? lsu_uop_count
+                     : (csr_has_lmul ? UOP_CTR_W'(8) : UOP_CTR_W'(1));
 
     wire [REG_TYPE_BITS-1:0] rd_type  = get_reg_type(ibuf_in.rd);
     wire [REG_TYPE_BITS-1:0] rs1_type = get_reg_type(ibuf_in.rs1);

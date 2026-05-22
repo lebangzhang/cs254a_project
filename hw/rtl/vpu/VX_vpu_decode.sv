@@ -221,6 +221,8 @@ module VX_vpu_decode_vop import VX_gpu_pkg::*, VX_vpu_pkg::*; (
     always @* begin
         d = 'x;
         d.is_masked = vm;
+        reg_ids = '0;
+        use_regs = '0;
 
         case (funct3)
         3'b000: begin // OPIVV

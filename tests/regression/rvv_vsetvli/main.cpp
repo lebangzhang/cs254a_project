@@ -20,6 +20,8 @@
 
 const char* kernel_file = "kernel.vxbin";
 uint32_t avl = VLEN / 32;
+static constexpr uint32_t VSETIVLI_AVL = 5;
+static constexpr uint32_t VTYPE_E32_M1_TA_MA = 0xd0;
 
 vx_device_h device = nullptr;
 vx_buffer_h out_buffer = nullptr;
@@ -57,12 +59,15 @@ int main(int argc, char* argv[]) {
   parse_args(argc, argv);
 
   kernel_arg.avl = avl;
-  kernel_arg.expected_vl = std::min<uint32_t>(avl, VLEN / 32);
+  kernel_arg.vtype = VTYPE_E32_M1_TA_MA;
+  kernel_arg.expected_vsetvli = std::min<uint32_t>(avl, VLEN / 32);
+  kernel_arg.expected_vsetivli = std::min<uint32_t>(VSETIVLI_AVL, VLEN / 32);
+  kernel_arg.expected_vsetvl = std::min<uint32_t>(avl, VLEN / 32);
 
   std::cout << "open device connection" << std::endl;
   RT_CHECK(vx_dev_open(&device));
 
-  std::vector<uint32_t> h_out(2, 0);
+  std::vector<uint32_t> h_out(6, 0);
   RT_CHECK(vx_mem_alloc(device, h_out.size() * sizeof(uint32_t), VX_MEM_WRITE, &out_buffer));
   RT_CHECK(vx_mem_address(out_buffer, &kernel_arg.out_addr));
   RT_CHECK(vx_copy_to_dev(out_buffer, h_out.data(), 0, h_out.size() * sizeof(uint32_t)));
@@ -83,13 +88,14 @@ int main(int argc, char* argv[]) {
   RT_CHECK(vx_copy_from_dev(h_out.data(), out_buffer, 0, h_out.size() * sizeof(uint32_t)));
 
   int errors = 0;
-  if (h_out[0] != kernel_arg.expected_vl) {
-    printf("*** error: expected vl=%u, actual vl=%u\n", kernel_arg.expected_vl, h_out[0]);
-    ++errors;
-  }
-  if (h_out[1] != kernel_arg.expected_vl) {
-    printf("*** error: expected mirror=%u, actual mirror=%u\n", kernel_arg.expected_vl, h_out[1]);
-    ++errors;
+  const char* names[] = {"vsetvli", "vsetivli", "vsetvl"};
+  for (int i = 0; i < 3; ++i) {
+    uint32_t actual = h_out[2 * i];
+    uint32_t expected = h_out[2 * i + 1];
+    if (actual != expected) {
+      printf("*** error: %s expected vl=%u, actual vl=%u\n", names[i], expected, actual);
+      ++errors;
+    }
   }
 
   cleanup();
