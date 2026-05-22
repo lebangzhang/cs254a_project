@@ -306,6 +306,31 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
 
     wire dispatch_use_vmask = dispatch_is_masked && (dispatch_ex_type != EX_LSU);
 
+    function automatic [`XLEN-1:0] format_voperand_data(
+        input [EX_BITS-1:0]        ex_type,
+        input [SEW_TYPE_W-1:0]     sew_type,
+        input [`XLEN-1:0]          data
+    );
+    `ifdef XLEN_64
+        if ((ex_type == EX_FPU) && (sew_type == SEW_TYPE_W'(2))) begin
+            format_voperand_data = {32'hffffffff, data[31:0]};
+        end else begin
+            format_voperand_data = data;
+        end
+    `else
+        `UNUSED_VAR ({ex_type, sew_type})
+        format_voperand_data = data;
+    `endif
+    endfunction
+
+    op_args_t dispatch_op_args_f;
+    always @(*) begin
+        dispatch_op_args_f = dispatch_op_args;
+        if (dispatch_ex_type == EX_FPU) begin
+            dispatch_op_args_f.fpu.fmt[0] = (csr_sew_type == SEW_TYPE_W'(3));
+        end
+    end
+
     localparam RVV_LSU_SUBIDX_BITS_W = `CLOG2(SEW_IDX_W + 1);
 
     wire [RVV_LSU_SUBIDX_BITS_W-1:0] rvv_subidx_bits =
@@ -404,7 +429,11 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
                 if (get_reg_type(dispatch_src_regs[i]) == REG_TYPE_V) begin
                     for (int t = 0; t < VT_COUNT; ++t) begin
                         for (int l = 0; l < VL_COUNT; ++l) begin
-                            dispatch_rs_data_n[i][t * VL_COUNT + l] = unpacked_data[i][t][l];
+                            dispatch_rs_data_n[i][t * VL_COUNT + l] = format_voperand_data(
+                                dispatch_ex_type,
+                                csr_sew_type,
+                                unpacked_data[i][t][l]
+                            );
                         end
                     end
                 end else if (dispatch_used_rs[i]) begin
@@ -513,7 +542,7 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
             dispatch_wr_xregs,
             dispatch_ex_type,
             dispatch_op_type,
-            dispatch_op_args,
+            dispatch_op_args_f,
             dispatch_rd,
             dispatch_bytesel,
             dispatch_rs_data,
