@@ -42,16 +42,26 @@ module VX_vpu_uops import VX_vpu_pkg::*, VX_gpu_pkg::*; (
     localparam SG_LOG2_MAX_W   = `CLOG2(VPU_GROUP_IDX_BITS + 1); // width to hold sg_log2
 
     // vpu_csrs are maintained by VX_csr_unit (VSET handler) and broadcast
-    // per-warp via vpu_seq_csr_if. Here we just source combinationally.
-    `UNUSED_VAR (vpu_seq_opc_if.valid)
-    `UNUSED_VAR (vpu_seq_opc_if.data)
-    `UNUSED_VAR (clk)
-    `UNUSED_VAR (reset)
+    // per-warp via vpu_seq_csr_if. vpu_seq_opc_if forwards the VSET state
+    // earlier so uop expansion does not run ahead with stale CSR values.
     vpu_csrs_t vpu_csrs;
     assign vpu_csrs = vpu_seq_csr_if.data;
     `UNUSED_VAR (vpu_csrs)
 
-    wire csr_has_lmul = (vpu_csrs.vtype.vlmul != 0);
+    vpu_states_t opc_vstate;
+    always @(posedge clk) begin
+        if (reset) begin
+            opc_vstate <= '0;
+        end else if (vpu_seq_opc_if.valid) begin
+            opc_vstate <= vpu_seq_opc_if.data;
+        end
+    end
+
+    wire [2:0] csr_vlmul = vpu_seq_opc_if.valid ? vpu_seq_opc_if.data.vtype.vlmul : opc_vstate.vtype.vlmul;
+    wire [2:0] csr_vsew  = vpu_seq_opc_if.valid ? vpu_seq_opc_if.data.vtype.vsew  : opc_vstate.vtype.vsew;
+    wire [VL_MAX_W-1:0] csr_vl = vpu_seq_opc_if.valid ? vpu_seq_opc_if.data.vl : opc_vstate.vl;
+
+    wire csr_has_lmul = (csr_vlmul != 0);
 
     // RVV LSU expansion: uop_count = nfields * emul * simd_groups.
     // Whole-register form (umop==01000): nfields=1, emul=nf+1.
@@ -68,7 +78,7 @@ module VX_vpu_uops import VX_vpu_pkg::*, VX_gpu_pkg::*; (
     localparam EMUL_W = VPU_EMUL_IDX_BITS + 1; // wide enough to hold value 8
     reg [EMUL_W-1:0] emul_v;
     always @(*) begin
-        case (vpu_csrs.vtype.vlmul)
+        case (csr_vlmul)
             3'b000:  emul_v = EMUL_W'(1);
             3'b001:  emul_v = EMUL_W'(2);
             3'b010:  emul_v = EMUL_W'(4);
@@ -85,7 +95,7 @@ module VX_vpu_uops import VX_vpu_pkg::*, VX_gpu_pkg::*; (
     // simd_groups = max(1, VLENB >> (vsew + SIMD_W_LOG2))
     // Equivalently elements_per_vreg = VLENB >> vsew, then >> SIMD_W_LOG2.
     localparam SG_W = VPU_GROUP_IDX_BITS + 1; // wide enough for VPU_MAX_SIMD_GROUPS
-    wire [2:0] vsew = vpu_csrs.vtype.vsew;
+    wire [2:0] vsew = csr_vsew;
     // For whole-register L/S, element width comes from the instruction's `width`
     // field (op_args.lsu.offset[4:2]) rather than vtype.vsew, per RVV spec.
     wire [2:0] lsu_width = ibuf_in.op_args.lsu.offset[4:2];
@@ -96,7 +106,7 @@ module VX_vpu_uops import VX_vpu_pkg::*, VX_gpu_pkg::*; (
     // vlm.v/vsm.v (umop==01011): uop count derived from vl bytes, not vsew/vlmul.
     // vl_bytes = ceil(vl/8). simd_groups_mask = ceil_pow2(ceil(vl_bytes/SIMD_WIDTH)).
     localparam VLB_W = VL_MAX_W + 1; // room for vl+7
-    wire [VLB_W-1:0] vl_ext    = VLB_W'(vpu_csrs.vl);
+    wire [VLB_W-1:0] vl_ext    = VLB_W'(csr_vl);
     wire [VLB_W-1:0] vl_bytes  = (vl_ext + VLB_W'(7)) >> 3;
     // ceil(vl_bytes / SIMD_WIDTH) via shift; since SIMD_WIDTH is pow2.
     localparam SIMD_W_LOG2 = `CLOG2(`SIMD_WIDTH);
@@ -115,9 +125,17 @@ module VX_vpu_uops import VX_vpu_pkg::*, VX_gpu_pkg::*; (
     end
     wire [SG_W-1:0] simd_groups = is_mask_ls ? mask_simd_groups : sg_generic;
 
-    // Total uops = nfields * emul * simd_groups (all powers of two).
-    wire [UOP_CTR_W-1:0] lsu_uop_count =
+    wire [VLB_W-1:0] vl_elem_groups = (vl_ext + VLB_W'(`SIMD_WIDTH - 1)) >> SIMD_W_LOG2;
+    wire [UOP_CTR_W-1:0] max_elem_groups = UOP_CTR_W'(eff_emul) * UOP_CTR_W'(simd_groups);
+    wire [UOP_CTR_W-1:0] active_elem_groups =
+        (vl_elem_groups > VLB_W'(max_elem_groups)) ? max_elem_groups : UOP_CTR_W'(vl_elem_groups);
+
+    wire [UOP_CTR_W-1:0] lsu_full_uop_count =
         UOP_CTR_W'(eff_nfields) * UOP_CTR_W'(eff_emul) * UOP_CTR_W'(simd_groups);
+    wire [UOP_CTR_W-1:0] lsu_vl_uop_count =
+        UOP_CTR_W'(eff_nfields) * active_elem_groups;
+    wire [UOP_CTR_W-1:0] lsu_uop_count =
+        (is_whole_reg || is_mask_ls) ? lsu_full_uop_count : lsu_vl_uop_count;
 
     assign uop_count = is_vset ? UOP_CTR_W'(1)
                      : is_rvv_lsu ? lsu_uop_count
@@ -200,6 +218,7 @@ module VX_vpu_uops import VX_vpu_pkg::*, VX_gpu_pkg::*; (
             ibuf_r.op_args.lsu.emul_idx  = emul_idx_w;
             ibuf_r.op_args.lsu.group_idx = group_idx_w;
         end
+        ibuf_r.wb = ibuf_in.wb;
     end
 
     assign ibuf_out = ibuf_r;

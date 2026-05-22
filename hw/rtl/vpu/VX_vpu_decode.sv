@@ -31,21 +31,21 @@ module VX_vpu_decode_vl import VX_gpu_pkg::*, VX_vpu_pkg::*; (
     `UNUSED_VAR (opcode)
     `UNUSED_VAR (mew)
 
+    reg [2:0] eew;
     reg [INST_LSU_BITS-1:0] op;
     always @* begin
         case (width)
-        3'b000: op  = INST_LSU_LB; // 8-bit
-        3'b001: op  = INST_LSU_LH; // 16-bit
-        3'b010: op  = INST_LSU_LW; // 32-bit
-        3'b011: op  = INST_LSU_LD; // 64-bit
-        default: op = 'x;
+        3'b000: begin eew = 3'd0; op = INST_LSU_LB; end // 8-bit
+        3'b101: begin eew = 3'd1; op = INST_LSU_LH; end // 16-bit
+        3'b110: begin eew = 3'd2; op = INST_LSU_LW; end // 32-bit
+        3'b111: begin eew = 3'd3; op = INST_LSU_LD; end // 64-bit
+        default: begin eew = 'x; op = 'x; end
         endcase
     end
 
     reg [NUM_SRC_OPDS:0][NUM_REGS_BITS-1:0] reg_ids;
     reg [NUM_SRC_OPDS:0] use_regs;
 
-    wire rd_is_float   = (width == 3'b001 || width == 3'b010 || width == 3'b011 || width == 3'b100);
     wire rs2_is_vector = (mop != 2'b10);
     wire rs2_enable    = (mop != 2'b00);
 
@@ -57,9 +57,10 @@ module VX_vpu_decode_vl import VX_gpu_pkg::*, VX_vpu_pkg::*; (
         d.op_type = op;
         d.op_args.lsu.is_store = 0;
         // RVV offset layout: [11:7]=umop, [6:5]=mop, [4:2]=width, [1:0]=0
-        d.op_args.lsu.offset = {umop, mop, width, 2'b00};
-        d.op_args.lsu.is_float = rd_is_float;
+        d.op_args.lsu.offset = {umop, mop, eew, 2'b00};
+        d.op_args.lsu.is_float = 0;
         d.op_args.lsu.is_masked = ~vm;  // vm=0 means masked execution (v0 predicates)
+        d.op_args.lsu.pack = 2'b00;
         d.op_args.lsu.nf = nf;
         d.op_args.lsu.field_idx = '0;
         d.op_args.lsu.emul_idx  = '0;
@@ -102,14 +103,15 @@ module VX_vpu_decode_vs import VX_gpu_pkg::*, VX_vpu_pkg::*; (
     `UNUSED_VAR (opcode)
     `UNUSED_VAR (mew)
 
+    reg [2:0] eew;
     reg [INST_LSU_BITS-1:0] op;
     always @* begin
         case (width)
-        3'b000: op  = INST_LSU_SB; // 8-bit
-        3'b001: op  = INST_LSU_SH; // 16-bit
-        3'b010: op  = INST_LSU_SW; // 32-bit
-        3'b011: op  = INST_LSU_SD; // 64-bit
-        default: op = 'x;
+        3'b000: begin eew = 3'd0; op = INST_LSU_SB; end // 8-bit
+        3'b101: begin eew = 3'd1; op = INST_LSU_SH; end // 16-bit
+        3'b110: begin eew = 3'd2; op = INST_LSU_SW; end // 32-bit
+        3'b111: begin eew = 3'd3; op = INST_LSU_SD; end // 64-bit
+        default: begin eew = 'x; op = 'x; end
         endcase
     end
 
@@ -130,9 +132,10 @@ module VX_vpu_decode_vs import VX_gpu_pkg::*, VX_vpu_pkg::*; (
         d.op_type = op;
         d.op_args.lsu.is_store = 1;
         // RVV offset layout: [11:7]=umop, [6:5]=mop, [4:2]=width, [1:0]=0
-        d.op_args.lsu.offset = {umop, mop, width, 2'b00};
+        d.op_args.lsu.offset = {umop, mop, eew, 2'b00};
         d.op_args.lsu.is_float = 0;
         d.op_args.lsu.is_masked = ~vm;  // vm=0 means masked execution (v0 predicates)
+        d.op_args.lsu.pack = 2'b00;
         d.op_args.lsu.nf = nf;
         d.op_args.lsu.field_idx = '0;
         d.op_args.lsu.emul_idx  = '0;

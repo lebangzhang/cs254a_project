@@ -114,6 +114,9 @@ module VX_commit import VX_gpu_pkg::*; #(
         assign writeback_if[i].data.sid  = commit_arb_if[i].data.sid;
         assign writeback_if[i].data.PC   = commit_arb_if[i].data.PC;
         assign writeback_if[i].data.tmask= commit_arb_if[i].data.tmask;
+    `ifdef EXT_V_ENABLE
+        assign writeback_if[i].data.sew  = commit_arb_if[i].data.sew;
+    `endif
         assign writeback_if[i].data.wb   = commit_arb_if[i].data.wb;
         assign writeback_if[i].data.wr_xregs = commit_arb_if[i].data.wr_xregs;
         assign writeback_if[i].data.rd   = commit_arb_if[i].data.rd;

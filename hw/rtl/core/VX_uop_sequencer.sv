@@ -53,6 +53,16 @@ module VX_uop_sequencer import
     reg [UOP_CTR_W-1:0] last_ctr_r;
     ibuffer_t           uop_data;
 
+`ifdef EXT_V_ENABLE
+    reg vpu_seq_pending;
+
+    wire output_is_vset = output_if.data.is_rvv
+                       && (output_if.data.ex_type == EX_SFU)
+                       && (output_if.data.op_type == INST_OP_BITS'(INST_SFU_VSET));
+
+    wire vpu_seq_wait = vpu_seq_pending && ~vpu_seq_opc_if.valid;
+`endif
+
     logic [UOP_SEL_W-1:0] sel_idx_n;
     wire is_uop_input;
     VX_priority_encoder #(
@@ -73,7 +83,11 @@ module VX_uop_sequencer import
     end
 
     // uop_start fires for exactly one cycle at the beginning of a new burst.
-    wire uop_start = input_if.valid && is_uop_input && ~uop_active;
+    wire uop_start = input_if.valid && is_uop_input && ~uop_active
+                  `ifdef EXT_V_ENABLE
+                   && ~vpu_seq_wait
+                  `endif
+                   ;
 
     // downstream accepted a uop this cycle.
     wire uop_next = uop_active && output_if.ready;
@@ -86,7 +100,18 @@ module VX_uop_sequencer import
             last_ctr_r <= '0;
             uop_active <= 1'b0;
             uop_done   <= 1'b0;
+        `ifdef EXT_V_ENABLE
+            vpu_seq_pending <= 1'b0;
+        `endif
         end else begin
+        `ifdef EXT_V_ENABLE
+            if (vpu_seq_opc_if.valid) begin
+                vpu_seq_pending <= 1'b0;
+            end
+            if (output_if.valid && output_if.ready && output_is_vset) begin
+                vpu_seq_pending <= 1'b1;
+            end
+        `endif
             if (uop_start) begin
                 uop_active <= 1'b1;
                 uop_ctr    <= UOP_CTR_W'(1);
@@ -117,6 +142,7 @@ module VX_uop_sequencer import
     // Pack Load/Store uop expander
     // ------------------------------------------------------------------
     assign uop_in_valid[UOP_PACKLD] = (uop_in_data.ex_type == EX_LSU)
+                                   && ~uop_in_data.is_rvv
                                    && (uop_in_data.op_args.lsu.pack != 0);
     VX_uop_packld uop_packld (
         .clk       (clk),
@@ -170,11 +196,23 @@ module VX_uop_sequencer import
     );
 `endif
 
-    wire uop_hold = is_uop_input && ~uop_active;
+    wire uop_hold = is_uop_input && ~uop_active
+                 `ifdef EXT_V_ENABLE
+                  && ~vpu_seq_wait
+                 `endif
+                  ;
 
-    assign output_if.valid = uop_active || (input_if.valid && ~uop_hold);
+    assign output_if.valid = uop_active || (input_if.valid && ~uop_hold
+                         `ifdef EXT_V_ENABLE
+                          && ~vpu_seq_wait
+                         `endif
+                          );
     assign output_if.data  = uop_active ? uop_data : input_if.data;
-    assign input_if.ready  = output_if.ready && (uop_active ? uop_done : ~uop_hold);
+    assign input_if.ready  = output_if.ready && (uop_active ? uop_done : (~uop_hold
+                         `ifdef EXT_V_ENABLE
+                          && ~vpu_seq_wait
+                         `endif
+                          ));
 
 `ifdef DBG_TRACE_PIPELINE
     always @(posedge clk) begin

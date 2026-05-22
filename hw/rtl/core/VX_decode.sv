@@ -352,11 +352,12 @@ module VX_decode import
             end
         `ifdef EXT_V_ENABLE
             INST_FL: begin
-                if (funct3[2] == 1 || funct3 == 0) begin
+                if (funct3 == 3'h2 || funct3 == 3'h3) begin
                     ex_type = EX_LSU;
                     op_type = INST_OP_BITS'({1'b0, funct3});
                     op_args.lsu.is_store = 0;
                     op_args.lsu.is_float = opcode[2];
+                    op_args.lsu.pack = 0;
                     op_args.lsu.offset = u_12;
                     `USED_IREG (rs1);
                     `USED_FREG (rd);
@@ -389,11 +390,12 @@ module VX_decode import
             end
         `ifdef EXT_V_ENABLE
             INST_FS: begin
-                if (funct3[2] == 1 || funct3 == 0) begin
+                if (funct3 == 3'h2 || funct3 == 3'h3) begin
                     ex_type = EX_LSU;
                     op_type = INST_OP_BITS'({1'b1, funct3});
                     op_args.lsu.is_store = 1;
                     op_args.lsu.is_float = opcode[2];
+                    op_args.lsu.pack = 0;
                     op_args.lsu.offset = s_imm;
                     `USED_IREG (rs1);
                     `USED_FREG (rs2);
