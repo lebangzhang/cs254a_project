@@ -142,7 +142,9 @@ module VX_uop_sequencer import
     // Pack Load/Store uop expander
     // ------------------------------------------------------------------
     assign uop_in_valid[UOP_PACKLD] = (uop_in_data.ex_type == EX_LSU)
+                                `ifdef EXT_V_ENABLE
                                    && ~uop_in_data.is_rvv
+                                `endif
                                    && (uop_in_data.op_args.lsu.pack != 0);
     VX_uop_packld uop_packld (
         .clk       (clk),
