@@ -65,6 +65,24 @@ int main() {
   kernel_arg_t kernel_arg{};
 
   RT_CHECK(vx_dev_open(&device));
+
+  uint64_t isa_flags = 0;
+  RT_CHECK(vx_dev_caps(device, VX_CAPS_ISA_FLAGS, &isa_flags));
+  if ((isa_flags & VX_ISA_EXT_TCU) == 0) {
+    std::cout << "TCU extension not supported!" << std::endl;
+    cleanup();
+    return -1;
+  }
+
+  uint64_t NT = 0;
+  RT_CHECK(vx_dev_caps(device, VX_CAPS_NUM_THREADS, &NT));
+  if (NT != NUM_THREADS) {
+    std::cout << "Error: device warp size (" << NT
+              << ") must match NUM_THREADS=" << NUM_THREADS << "!" << std::endl;
+    cleanup();
+    return -1;
+  }
+
   RT_CHECK(vx_mem_alloc(device, A.size() * sizeof(float), VX_MEM_READ, &A_buffer));
   RT_CHECK(vx_mem_address(A_buffer, &kernel_arg.A_addr));
   RT_CHECK(vx_mem_alloc(device, B.size() * sizeof(float), VX_MEM_READ, &B_buffer));
