@@ -31,7 +31,8 @@ module VX_gpr_file import VX_gpu_pkg::*; #(
     parameter ENTRIES     = FILE_SIZE / DATA_SIZE,
     parameter ADDR_BITS   = `CLOG2(ENTRIES / REG_COUNT),
     parameter ADDR_WIDTH  = `UP(ADDR_BITS),
-    parameter REGID_WIDTH = `CLOG2(REG_COUNT)
+    parameter REGID_WIDTH = `CLOG2(REG_COUNT),
+    parameter `STRING RDW_MODE = "R"
 ) (
     input wire                  clk,
     input wire                  reset,
@@ -205,7 +206,7 @@ module VX_gpr_file import VX_gpu_pkg::*; #(
             .RESET_RAM (1),
          `endif
             .OUT_REG (1),
-            .RDW_MODE ("R")
+            .RDW_MODE (RDW_MODE)
         ) gpr_ram (
             .clk   (clk),
             .reset (reset),

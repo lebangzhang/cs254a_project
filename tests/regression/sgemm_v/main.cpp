@@ -40,20 +40,9 @@ public:
   }
 };
 
-static void matmul_cpu(TYPE* out, const TYPE* A, const TYPE* B,
-                       uint32_t width, uint32_t height) {
-  for (uint32_t row = 0; row < height; ++row)
-    for (uint32_t col = 0; col < width; ++col) {
-      TYPE sum(0);
-      for (uint32_t e = 0; e < width; ++e)
-        sum += A[row*width+e] * B[e*width+col];
-      out[row*width+col] = sum;
-    }
-}
-
 const char* kernel_file = "kernel.vxbin";
-uint32_t size = 32;
 uint32_t vlen = VLEN / 32;
+uint32_t size = vlen;
 
 vx_device_h device      = nullptr;
 vx_buffer_h A_buffer    = nullptr;
@@ -64,8 +53,8 @@ vx_buffer_h args_buffer = nullptr;
 kernel_arg_t kernel_arg = {};
 
 static void show_usage() {
-  std::cout << "Vortex sgemm_v Test." << std::endl;
-  std::cout << "Usage: [-k kernel] [-n size] [-v vlen] [-h help]" << std::endl;
+  std::cout << "Vortex RVV vfmv.v.f Test." << std::endl;
+  std::cout << "Usage: [-k kernel] [-n elements] [-v vlen] [-h help]" << std::endl;
 }
 static void parse_args(int argc, char **argv) {
   int c;
@@ -94,23 +83,19 @@ int main(int argc, char *argv[]) {
   std::cout << "open device connection" << std::endl;
   RT_CHECK(vx_dev_open(&device));
 
-  uint32_t size_sq  = size * size;
-  uint32_t buf_size = size_sq * sizeof(TYPE);
+  uint32_t buf_size = size * sizeof(TYPE);
 
   uint32_t num_col_tiles = (size + vlen - 1) / vlen;
   kernel_arg.vlen = vlen;
 
   std::cout << "data type: "      << Comparator<TYPE>::type_str() << std::endl;
-  std::cout << "matrix size: "    << size << "x" << size          << std::endl;
+  std::cout << "elements: "       << size                         << std::endl;
   std::cout << "vlen: "           << vlen                         << std::endl;
-  std::cout << "num_col_tiles: "  << num_col_tiles                << std::endl;
+  std::cout << "vector chunks: "  << num_col_tiles                << std::endl;
 
   kernel_arg.size = size;
 
-  // global_dim: x = num_col_tiles (one per vector-width column slice)
-  //             y = size          (one per row)
-  // block_dim: chosen by vx_max_occupancy_grid
-  uint32_t global_dim[2] = { num_col_tiles, size };
+  uint32_t global_dim[2] = { num_col_tiles, 1 };
   uint32_t grid_dim[2], block_dim[2];
   RT_CHECK(vx_max_occupancy_grid(device, 2, global_dim, grid_dim, block_dim));
 
@@ -129,16 +114,20 @@ int main(int argc, char *argv[]) {
   std::cout << "B_addr=0x" << std::hex << kernel_arg.B_addr << std::endl;
   std::cout << "C_addr=0x" << std::hex << kernel_arg.C_addr << std::endl;
 
-  std::vector<TYPE> h_A(size_sq), h_B(size_sq), h_C(size_sq);
-  for (uint32_t i = 0; i < size_sq; ++i) {
-    h_A[i] = Comparator<TYPE>::generate();
-    h_B[i] = Comparator<TYPE>::generate();
+  std::vector<TYPE> h_A(size), h_B(size), h_C(size);
+  for (uint32_t i = 0; i < size; ++i) {
+    h_A[i] = TYPE(0);
+    h_B[i] = TYPE(0);
+    h_C[i] = TYPE(-123.0f);
   }
+  h_B[0] = TYPE(1.5f);
 
-  std::cout << "upload matrix A buffer" << std::endl;
+  std::cout << "upload unused A buffer" << std::endl;
   RT_CHECK(vx_copy_to_dev(A_buffer, h_A.data(), 0, buf_size));
-  std::cout << "upload matrix B buffer" << std::endl;
+  std::cout << "upload scalar value" << std::endl;
   RT_CHECK(vx_copy_to_dev(B_buffer, h_B.data(), 0, buf_size));
+  std::cout << "upload destination sentinel buffer" << std::endl;
+  RT_CHECK(vx_copy_to_dev(C_buffer, h_C.data(), 0, buf_size));
 
   std::cout << "Upload kernel binary" << std::endl;
   RT_CHECK(vx_upload_kernel_file(device, kernel_file, &krnl_buffer));
@@ -159,11 +148,11 @@ int main(int argc, char *argv[]) {
 
   std::cout << "verify result" << std::endl;
   int errors = 0;
-  std::vector<TYPE> h_ref(size_sq);
-  matmul_cpu(h_ref.data(), h_A.data(), h_B.data(), size, size);
-  for (uint32_t i = 0; i < h_ref.size(); ++i)
-    if (!Comparator<TYPE>::compare(h_C[i], h_ref[i], i, errors))
+  TYPE expected = h_B[0];
+  for (uint32_t i = 0; i < size; ++i) {
+    if (!Comparator<TYPE>::compare(h_C[i], expected, i, errors))
       ++errors;
+  }
 
   std::cout << "cleanup" << std::endl;
   cleanup();
@@ -176,4 +165,3 @@ int main(int argc, char *argv[]) {
   std::cout << "PASSED!" << std::endl;
   return 0;
 }
-

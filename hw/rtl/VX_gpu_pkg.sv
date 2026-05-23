@@ -872,6 +872,7 @@ package VX_gpu_pkg;
     `ifdef EXT_V_ENABLE
         vpu_sew_t                           sew;
         logic                               is_rvv;
+        logic                               is_masked;
     `endif
         logic [PC_BITS-1:0]                 PC;
         logic [EX_BITS-1:0]                 ex_type;

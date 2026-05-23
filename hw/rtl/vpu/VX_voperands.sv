@@ -119,10 +119,11 @@ module VX_voperands import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
         );
 
         // enable scalar bypass only if vopc is not busy
-        assign per_opc_operands_if[i].valid = (sopc_operands_if.valid && ~is_rvv && sopc_operands2_if.ready)
+        assign per_opc_operands_if[i].valid = (sopc_operands_if.valid && ~is_rvv && sopc_operands2_if.ready && ~vopc_operands_if.valid)
                                            || vopc_operands_if.valid;
-        assign per_opc_operands_if[i].data = sopc_operands2_if.ready ? sopc_operands_if.data : vopc_operands_if.data;
-        assign sopc_operands_if.ready = per_opc_operands_if[i].ready && sopc_operands2_if.ready;
+        assign per_opc_operands_if[i].data = vopc_operands_if.valid ? vopc_operands_if.data : sopc_operands_if.data;
+        assign sopc_operands_if.ready = is_rvv ? sopc_operands2_if.ready
+                                      : (per_opc_operands_if[i].ready && sopc_operands2_if.ready && ~vopc_operands_if.valid);
         assign vopc_operands_if.ready = per_opc_operands_if[i].ready;
 
     end

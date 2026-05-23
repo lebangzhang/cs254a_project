@@ -40,7 +40,7 @@ module VX_sopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
     localparam GPR_ADDR_BITS  = `CLOG2(GPR_ENTRIES / NUM_SREGS);
     localparam GPR_ADDR_WIDTH = `UP(GPR_ADDR_BITS);
     localparam GPR_TAG_WIDTH  = UUID_WIDTH + ISSUE_WIS_W + SSIMD_IDX_W + SSIMD_WIDTH + PC_BITS + 1 + NUM_XREGS + EX_BITS + INST_OP_BITS + INST_ARGS_BITS + NUM_REGS_BITS + BYTESEL_BITS
-                                           + (NUM_SRC_OPDS * NUM_REGS_BITS + NUM_SRC_OPDS) + 1 + 1 + 1;
+                                           + (NUM_SRC_OPDS * NUM_REGS_BITS + NUM_SRC_OPDS) + 1 + 1 + 1 + 1;
     localparam OUT_DATAW      = GPR_TAG_WIDTH + NUM_SRC_OPDS * GPR_DATA_WIDTH;
 
     `UNUSED_VAR (writeback_if.data.sop)
@@ -102,6 +102,7 @@ module VX_sopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
         src_regs,
         scoreboard_if.data.used_rs,
         scoreboard_if.data.is_rvv,
+        scoreboard_if.data.is_masked,
         simd_sop,
         simd_eop
     };
@@ -191,6 +192,7 @@ module VX_sopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
             src_regs_o,
             used_rs_o,
             is_rvv_o,
+            operands_if.data.is_masked,
             operands_rs_data,
             operands_if.data.sop,
             operands_if.data.eop

@@ -39,7 +39,7 @@ module VX_lane_dispatch import VX_gpu_pkg::*; #(
     localparam NUM_PACKETS  = `SIMD_WIDTH / NUM_LANES;
     localparam LPID_BITS    = `CLOG2(NUM_PACKETS);
     localparam LPID_WIDTH   = `UP(LPID_BITS);
-    localparam GPID_BITS    = `CLOG2(`NUM_THREADS / NUM_LANES);
+    localparam GPID_BITS    = `CLOG2((SIMD_COUNT * `SIMD_WIDTH) / NUM_LANES);
     localparam GPID_WIDTH   = `UP(GPID_BITS);
     localparam BATCH_COUNT  = `ISSUE_WIDTH / BLOCK_SIZE;
     localparam BATCH_COUNT_W= `LOG2UP(BATCH_COUNT);

@@ -449,7 +449,7 @@
         logic [UUID_WIDTH-1:0]           uuid; \
         logic [NW_WIDTH-1:0]             wid; \
         logic [__lanes__-1:0]            tmask; \
-        logic [`LOG2UP(`NUM_THREADS / __lanes__)-1:0] pid; \
+        logic [`LOG2UP((SIMD_COUNT * `SIMD_WIDTH) / __lanes__)-1:0] pid; \
         logic                            sop; \
         logic                            eop; \
         vpu_sew_t                        sew; \
