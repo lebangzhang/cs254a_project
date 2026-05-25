@@ -95,12 +95,12 @@ int main(int argc, char *argv[]) {
 
   kernel_arg.size = size;
 
-  uint32_t global_dim[2] = { num_col_tiles, 1 };
-  uint32_t grid_dim[2], block_dim[2];
-  RT_CHECK(vx_max_occupancy_grid(device, 2, global_dim, grid_dim, block_dim));
+  // One logical worker per RVV chunk; RVV lanes cooperate within that worker.
+  uint32_t grid_dim[1]  = { num_col_tiles };
+  uint32_t block_dim[1] = { 1 };
 
-  std::cout << "grid_dim:  " << grid_dim[0]  << "x" << grid_dim[1]  << std::endl;
-  std::cout << "block_dim: " << block_dim[0] << "x" << block_dim[1] << std::endl;
+  std::cout << "grid_dim:  " << grid_dim[0]  << std::endl;
+  std::cout << "block_dim: " << block_dim[0] << std::endl;
 
   std::cout << "allocate device memory" << std::endl;
   RT_CHECK(vx_mem_alloc(device, buf_size, VX_MEM_READ,  &A_buffer));
@@ -136,7 +136,7 @@ int main(int argc, char *argv[]) {
 
   auto time_start = std::chrono::high_resolution_clock::now();
   std::cout << "start device" << std::endl;
-  RT_CHECK(vx_start_g(device, krnl_buffer, args_buffer, 2, grid_dim, block_dim, 0));
+  RT_CHECK(vx_start_g(device, krnl_buffer, args_buffer, 1, grid_dim, block_dim, 0));
   std::cout << "wait for completion" << std::endl;
   RT_CHECK(vx_ready_wait(device, VX_MAX_TIMEOUT));
   auto time_end = std::chrono::high_resolution_clock::now();
