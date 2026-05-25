@@ -33,7 +33,9 @@
 `ifdef SIMULATION
     `define RAM_RESET_BLOCK if (RESET_RAM && reset) begin \
                                 for (integer i = 0; i < SIZE; ++i) begin \
-                                    ram[i] <= DATAW'(INIT_VALUE); \
+                                    /* verilator lint_off BLKSEQ */ \
+                                    ram[i] = DATAW'(INIT_VALUE); \
+                                    /* verilator lint_on BLKSEQ */ \
                                 end \
                             end else
 `else

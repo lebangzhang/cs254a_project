@@ -13,7 +13,11 @@
 
 `include "VX_define.vh"
 
-module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
+module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*
+`ifdef EXT_TCU_ENABLE
+    , VX_tcu_pkg::*
+`endif
+; #(
     parameter `STRING INSTANCE_ID = "",
     parameter OUT_BUF = 3
 ) (
@@ -48,6 +52,9 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
     localparam STATE_FETCH     = 1;
     localparam STATE_DISPATCH  = 2;
     localparam STATE_WIDTH     = 2;
+`ifdef EXT_TCU_ENABLE
+    localparam WMMA_VV_BIDX_W = `UP($clog2(TCU_TC_K));
+`endif
 
     `UNUSED_VAR (writeback_if.data.sop)
 
@@ -71,9 +78,46 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
 
     wire [VT_COUNT-1:0][VL_COUNT-1:0][`XLEN-1:0] vmask;
 
+`ifdef EXT_TCU_ENABLE
+    wire dispatch_is_wmma_vv = (dispatch_ex_type == EX_TCU)
+                            && (dispatch_op_type == INST_OP_BITS'(INST_TCU_WMMA_VV));
+
+    function automatic [`XLEN-1:0] wmma_vv_format_ab(input [`XLEN-1:0] data);
+        wmma_vv_format_ab = `XLEN'({data[31], data[30:23], data[22:13]})
+                           | `XLEN'({19'b0, (data[12:0] & 13'b0)});
+    endfunction
+`else
+    wire dispatch_is_wmma_vv = 1'b0;
+`endif
+
     for (genvar i = 0; i < NUM_SRC_OPDS; ++i) begin : g_src_valid
+    `ifdef EXT_TCU_ENABLE
+        if (i == 0) begin : g_wmma_a
+            assign gpr_req_rid[i] = dispatch_is_wmma_vv
+                                  ? to_vreg_number(dispatch_src_regs[0])
+                                  : to_vreg_number(dispatch_src_regs[i]);
+            assign gpr_req_inused[i] = dispatch_is_wmma_vv
+                                     ? (wmma_vv_bidx == WMMA_VV_BIDX_W'(0))
+                                     : (dispatch_used_rs[i] && (get_reg_type(dispatch_src_regs[i]) == REG_TYPE_V));
+        end else if (i == 1) begin : g_wmma_b
+            assign gpr_req_rid[i] = dispatch_is_wmma_vv
+                                  ? (to_vreg_number(dispatch_src_regs[1]) + NUM_VREGS_BITS'(wmma_vv_bidx))
+                                  : to_vreg_number(dispatch_src_regs[i]);
+            assign gpr_req_inused[i] = dispatch_is_wmma_vv
+                                     ? 1'b1
+                                     : (dispatch_used_rs[i] && (get_reg_type(dispatch_src_regs[i]) == REG_TYPE_V));
+        end else begin : g_wmma_c
+            assign gpr_req_rid[i] = dispatch_is_wmma_vv
+                                  ? to_vreg_number(dispatch_src_regs[2])
+                                  : to_vreg_number(dispatch_src_regs[i]);
+            assign gpr_req_inused[i] = dispatch_is_wmma_vv
+                                     ? (wmma_vv_bidx == WMMA_VV_BIDX_W'(0))
+                                     : (dispatch_used_rs[i] && (get_reg_type(dispatch_src_regs[i]) == REG_TYPE_V));
+        end
+    `else
         assign gpr_req_rid[i] = to_vreg_number(dispatch_src_regs[i]);
         assign gpr_req_inused[i] = dispatch_used_rs[i] && (get_reg_type(dispatch_src_regs[i]) == REG_TYPE_V);
+    `endif
     end
 
     assign gpr_wb_rid = to_vreg_number(writeback_if.data.rd);
@@ -300,8 +344,20 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
     logic [NUM_SRC_OPDS-1:0][`SIMD_WIDTH-1:0][`XLEN-1:0] dispatch_rs_data, dispatch_rs_data_n;
     logic dispatch_sop, dispatch_sop_n;
     logic dispatch_eop, dispatch_eop_n;
+`ifdef EXT_TCU_ENABLE
+    logic [WMMA_VV_BIDX_W-1:0] wmma_vv_bidx, wmma_vv_bidx_n;
+    logic [`SIMD_WIDTH-1:0][`XLEN-1:0] wmma_vv_a_row, wmma_vv_a_row_n;
+    logic [`SIMD_WIDTH-1:0][`XLEN-1:0] wmma_vv_c_row, wmma_vv_c_row_n;
+    logic [TCU_TC_K-1:0][`SIMD_WIDTH-1:0][`XLEN-1:0] wmma_vv_b_rows, wmma_vv_b_rows_n;
+`endif
 
     wire soperands_is_rvv_lsu = (soperands_if.data.ex_type == EX_LSU);
+`ifdef EXT_TCU_ENABLE
+    wire soperands_is_wmma_vv = (soperands_if.data.ex_type == EX_TCU)
+                             && (soperands_if.data.op_type == INST_OP_BITS'(INST_TCU_WMMA_VV));
+`else
+    wire soperands_is_wmma_vv = 1'b0;
+`endif
     wire soperands_is_vfmv_f_s = soperands_if.data.is_rvv
                               && (soperands_if.data.ex_type == EX_FPU)
                               && (soperands_if.data.op_type == INST_OP_BITS'(INST_FPU_MISC))
@@ -385,13 +441,28 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
         dispatch_sop_n = dispatch_sop;
         dispatch_eop_n = dispatch_eop;
         gpr_req_sent_n = gpr_req_sent;
+    `ifdef EXT_TCU_ENABLE
+        wmma_vv_bidx_n = wmma_vv_bidx;
+        wmma_vv_a_row_n = wmma_vv_a_row;
+        wmma_vv_c_row_n = wmma_vv_c_row;
+        wmma_vv_b_rows_n = wmma_vv_b_rows;
+    `endif
 
         case (state)
         STATE_IDLE: begin
             if (soperands_fire) begin
                 state_n = soperands_is_vset ? STATE_DISPATCH : STATE_FETCH;
                 gpr_req_sent_n = 1'b0;
-                simd_ctr_n = soperands_is_vset ? VSIMD_IDX_W'(0) : VSIMD_IDX_W'(VSIMD_COUNT - 1);
+            `ifdef EXT_TCU_ENABLE
+                wmma_vv_bidx_n = '0;
+                wmma_vv_a_row_n = '0;
+                wmma_vv_c_row_n = '0;
+                wmma_vv_b_rows_n = '0;
+            `endif
+                simd_ctr_n = soperands_is_vset ? VSIMD_IDX_W'(0) :
+                              soperands_is_rvv_lsu ? VSIMD_IDX_W'(soperands_if.data.op_args.lsu.group_idx) :
+                              soperands_is_wmma_vv ? VSIMD_IDX_W'(0) :
+                              VSIMD_IDX_W'(VSIMD_COUNT - 1);
                 sew_ctr_n  = soperands_is_vset || soperands_is_vfmv_f_s ? SEW_IDX_W'(0) :
                              soperands_is_rvv_lsu ? rvv_lsu_sew_idx :
                              rvv_subidx_last;
@@ -418,7 +489,7 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
                 };
                 dispatch_srs_data_n = dispatch_rs_data_n;
                 dispatch_sop_n     = 1'b1;
-                dispatch_eop_n     = soperands_is_vset || soperands_is_vfmv_f_s || (VSIMD_COUNT == 1);
+                dispatch_eop_n     = soperands_is_vset || soperands_is_rvv_lsu || soperands_is_wmma_vv || soperands_is_vfmv_f_s || (VSIMD_COUNT == 1);
             end
         end
         STATE_FETCH: begin
@@ -426,6 +497,17 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
                 gpr_req_sent_n = 1'b1;
             end
             if (gpr_req_sent && gpr_rsp_valid) begin
+            `ifdef EXT_TCU_ENABLE
+                if (dispatch_is_wmma_vv) begin
+                    if (wmma_vv_bidx == WMMA_VV_BIDX_W'(TCU_TC_K - 1)) begin
+                        state_n = STATE_DISPATCH;
+                    end else begin
+                        wmma_vv_bidx_n = wmma_vv_bidx + WMMA_VV_BIDX_W'(1);
+                        gpr_req_sent_n = 1'b0;
+                        state_n = STATE_FETCH;
+                    end
+                end else
+            `endif
                 if (dispatch_is_vfmv_f_s && simd_ctr != 0) begin
                     simd_ctr_n = simd_ctr - 1;
                     gpr_req_sent_n = 1'b0;
@@ -434,6 +516,51 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
                     state_n = STATE_DISPATCH;
                 end
             end
+        `ifdef EXT_TCU_ENABLE
+            if (dispatch_is_wmma_vv) begin
+                if (gpr_req_sent && gpr_rsp_valid) begin
+                    for (int t = 0; t < VT_COUNT; ++t) begin
+                        for (int l = 0; l < VL_COUNT; ++l) begin
+                            int elem_idx;
+                            elem_idx = t * VL_COUNT + l;
+                            if (elem_idx < `SIMD_WIDTH) begin
+                                if (wmma_vv_bidx == WMMA_VV_BIDX_W'(0)) begin
+                                    wmma_vv_a_row_n[elem_idx] = gpr_rsp_data[0][t][l];
+                                    wmma_vv_c_row_n[elem_idx] = gpr_rsp_data[2][t][l];
+                                end
+                                wmma_vv_b_rows_n[int'(wmma_vv_bidx)][elem_idx] = gpr_rsp_data[1][t][l];
+                            end
+                        end
+                    end
+
+                    if (wmma_vv_bidx == WMMA_VV_BIDX_W'(TCU_TC_K - 1)) begin
+                        dispatch_tmask_n = '1;
+                        dispatch_rs_data_n = '0;
+                        for (int kk = 0; kk < TCU_TC_K; ++kk) begin
+                            int a_elem;
+                            a_elem = int'(dispatch_op_args.tcu.step_k) * TCU_TC_K + kk;
+                            if (a_elem < `SIMD_WIDTH) begin
+                                dispatch_rs_data_n[0][int'(dispatch_op_args.tcu.fmt_d) * TCU_TC_K + kk] = wmma_vv_format_ab(wmma_vv_a_row_n[a_elem]);
+                            end
+                            for (int jj = 0; jj < TCU_TC_N; ++jj) begin
+                                int b_elem;
+                                b_elem = int'(dispatch_op_args.tcu.step_n) * TCU_TC_N + jj;
+                                if (b_elem < `SIMD_WIDTH) begin
+                                    dispatch_rs_data_n[1][jj * TCU_TC_K + kk] = wmma_vv_format_ab(wmma_vv_b_rows_n[kk][b_elem]);
+                                end
+                            end
+                        end
+                        for (int jj = 0; jj < TCU_TC_N; ++jj) begin
+                            int c_elem;
+                            c_elem = int'(dispatch_op_args.tcu.step_n) * TCU_TC_N + jj;
+                            if (c_elem < `SIMD_WIDTH) begin
+                                dispatch_rs_data_n[2][int'(dispatch_op_args.tcu.fmt_d) * TCU_TC_N + jj] = wmma_vv_c_row_n[c_elem];
+                            end
+                        end
+                    end
+                end
+            end else
+        `endif
             if (dispatch_is_vfmv_f_s) begin
                 if (gpr_req_sent && gpr_rsp_valid) begin
                     for (int t = 0; t < VT_COUNT; ++t) begin
@@ -456,7 +583,7 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
                         int thread_idx;
                         thread_idx = int'(simd_ctr) * VT_COUNT + t;
                         dispatch_tmask_n[t * VL_COUNT + l] = (thread_idx < `NUM_THREADS)
-                                                           && dispatch_thread_tmask[thread_idx]
+                                                           && dispatch_thread_tmask[0]
                                                            && ((dispatch_elem_base + VL_MAX_W'(l)) < csr_vstate.vl)
                                                            && (~dispatch_use_vmask || unpacked_vmask[t][l]);
                     end
@@ -491,14 +618,14 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
         STATE_DISPATCH: begin
             if (dispatch_ready) begin
                 if (dispatch_is_vset
-                 || (dispatch_is_rvv_lsu ? (simd_ctr == 0) : (sew_ctr == 0 && simd_ctr == 0))) begin
+             `ifdef EXT_TCU_ENABLE
+                 || dispatch_is_wmma_vv
+             `endif
+                 || dispatch_is_rvv_lsu
+                 || (sew_ctr == 0 && simd_ctr == 0)) begin
                     state_n = STATE_IDLE;
                 end else begin
-                    if (dispatch_is_rvv_lsu) begin
-                        if (simd_ctr != 0) begin
-                            simd_ctr_n = simd_ctr - 1;
-                        end
-                    end else if (sew_ctr != 0) begin
+                    if (sew_ctr != 0) begin
                         sew_ctr_n = sew_ctr - 1;
                     end else begin
                         sew_ctr_n = rvv_subidx_last;
@@ -523,6 +650,12 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
             simd_ctr <= 0;
             sew_ctr <= 0;
             gpr_req_sent <= 0;
+        `ifdef EXT_TCU_ENABLE
+            wmma_vv_bidx <= '0;
+            wmma_vv_a_row <= '0;
+            wmma_vv_c_row <= '0;
+            wmma_vv_b_rows <= '0;
+        `endif
         end else begin
             state <= state_n;
             dispatch_tmask <= dispatch_tmask_n;
@@ -545,6 +678,12 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*; #(
             dispatch_rs_data <= dispatch_rs_data_n;
             dispatch_sop <= dispatch_sop_n;
             dispatch_eop <= dispatch_eop_n;
+        `ifdef EXT_TCU_ENABLE
+            wmma_vv_bidx <= wmma_vv_bidx_n;
+            wmma_vv_a_row <= wmma_vv_a_row_n;
+            wmma_vv_c_row <= wmma_vv_c_row_n;
+            wmma_vv_b_rows <= wmma_vv_b_rows_n;
+        `endif
             simd_ctr <= simd_ctr_n;
             sew_ctr <= sew_ctr_n;
             gpr_req_sent <= gpr_req_sent_n;

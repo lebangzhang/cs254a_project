@@ -74,6 +74,7 @@ module VX_tcu_core import VX_gpu_pkg::*, VX_tcu_pkg::*; #(
     wire is_sparse = execute_if.data.op_args.tcu.is_sparse;
     wire is_meta_store = (execute_if.data.op_type == INST_TCU_META_STORE);
 `endif
+    wire is_wmma_vv = (execute_if.data.op_type == INST_TCU_WMMA_VV);
 
     // -----------------------------------------------------------------------
     // Operand data mux: WGMMA uses tile buffer, WMMA uses register file
@@ -94,9 +95,11 @@ module VX_tcu_core import VX_gpu_pkg::*, VX_tcu_pkg::*; #(
     wire [3:0] step_m = execute_if.data.op_args.tcu.step_m;
     wire [3:0] step_n = execute_if.data.op_args.tcu.step_n;
     wire [3:0] step_k = execute_if.data.op_args.tcu.step_k;
+    wire [3:0] operand_step_m = is_wmma_vv ? 4'd0 : step_m;
+    wire [3:0] operand_step_n = is_wmma_vv ? 4'd0 : step_n;
 
     wire [3:0] fmt_s = execute_if.data.op_args.tcu.fmt_s;
-    wire [3:0] fmt_d = execute_if.data.op_args.tcu.fmt_d;
+    wire [3:0] fmt_d = is_wmma_vv ? 4'd0 : execute_if.data.op_args.tcu.fmt_d;
 
     wire execute_fire = execute_if.valid && execute_if.ready;
 
@@ -112,6 +115,12 @@ module VX_tcu_core import VX_gpu_pkg::*, VX_tcu_pkg::*; #(
     tcu_header_t mdata_queue_in;
     always_comb begin
         mdata_queue_in = execute_if.data.header;
+        if (is_wmma_vv) begin
+            mdata_queue_in.tmask = '0;
+            for (int j = 0; j < TCU_TC_N; ++j) begin
+                mdata_queue_in.tmask[int'(execute_if.data.op_args.tcu.step_n) * TCU_TC_N + j] = 1'b1;
+            end
+        end
         if (is_meta_store) begin
             mdata_queue_in.rd = '0;
         end
@@ -120,10 +129,16 @@ module VX_tcu_core import VX_gpu_pkg::*, VX_tcu_pkg::*; #(
     tcu_header_t mdata_queue_in;
     always_comb begin
         mdata_queue_in = execute_if.data.header;
+        if (is_wmma_vv) begin
+            mdata_queue_in.tmask = '0;
+            for (int j = 0; j < TCU_TC_N; ++j) begin
+                mdata_queue_in.tmask[int'(execute_if.data.op_args.tcu.step_n) * TCU_TC_N + j] = 1'b1;
+            end
+        end
     end
 `endif
 
-    `UNUSED_VAR ({step_m, step_n, step_k, fmt_s, fmt_d, execute_if.data});
+    `UNUSED_VAR ({step_m, step_n, step_k, operand_step_m[3], operand_step_n[3], fmt_s, fmt_d, execute_if.data});
 
     // -----------------------------------------------------------------------
     // Pipeline control
@@ -175,17 +190,38 @@ module VX_tcu_core import VX_gpu_pkg::*, VX_tcu_pkg::*; #(
         `UNUSED_PIN(size)
     );
 
+    wire result_is_wmma_vv;
+    wire [3:0] result_wmma_vv_row;
+    wire [3:0] result_wmma_vv_n;
+    VX_fifo_queue #(
+        .DATAW (1 + 4 + 4),
+        .DEPTH (MDATA_QUEUE_DEPTH),
+        .OUT_REG (1)
+    ) mdata_wmma_vv_queue (
+        .clk    (clk),
+        .reset  (reset),
+        .push   (execute_fire),
+        .pop    (result_fire),
+        .data_in({is_wmma_vv, execute_if.data.op_args.tcu.fmt_d, execute_if.data.op_args.tcu.step_n}),
+        .data_out({result_is_wmma_vv, result_wmma_vv_row, result_wmma_vv_n}),
+        `UNUSED_PIN(empty),
+        `UNUSED_PIN(alm_empty),
+        `UNUSED_PIN(full),
+        `UNUSED_PIN(alm_full),
+        `UNUSED_PIN(size)
+    );
+
     // -----------------------------------------------------------------------
     // Operand offset computation
     // -----------------------------------------------------------------------
 
-    wire [OFF_W-1:0] a_off = (OFF_W'(step_m) & OFF_W'(TCU_A_SUB_BLOCKS-1)) << LG_A_BS;
+    wire [OFF_W-1:0] a_off = (OFF_W'(operand_step_m) & OFF_W'(TCU_A_SUB_BLOCKS-1)) << LG_A_BS;
 `ifdef TCU_SPARSE_ENABLE
     wire [OFF_W-1:0] b_off = is_sparse
-        ? (OFF_W'(step_n) & OFF_W'(TCU_B_SUB_BLOCKS_SP-1)) << LG_B_BS_SP
-        : (OFF_W'(step_n) & OFF_W'(TCU_B_SUB_BLOCKS-1))    << LG_B_BS;
+        ? (OFF_W'(operand_step_n) & OFF_W'(TCU_B_SUB_BLOCKS_SP-1)) << LG_B_BS_SP
+        : (OFF_W'(operand_step_n) & OFF_W'(TCU_B_SUB_BLOCKS-1))    << LG_B_BS;
 `else
-    wire [OFF_W-1:0] b_off = (OFF_W'(step_n) & OFF_W'(TCU_B_SUB_BLOCKS-1)) << LG_B_BS;
+    wire [OFF_W-1:0] b_off = (OFF_W'(operand_step_n) & OFF_W'(TCU_B_SUB_BLOCKS-1)) << LG_B_BS;
 `endif
 
     // -----------------------------------------------------------------------
@@ -235,9 +271,9 @@ module VX_tcu_core import VX_gpu_pkg::*, VX_tcu_pkg::*; #(
             wire [TCU_TC_K-1:0][31:0] a_row, b_col;
         `endif
             for (genvar k_idx = 0; k_idx < TCU_TC_K; ++k_idx) begin : g_slice_assign
-                assign a_row[k_idx] = 32'(rs1_data[a_off + i * TCU_TC_K + k_idx]);
+                assign a_row[k_idx] = 32'(rs1_data[int'(a_off) + i * TCU_TC_K + k_idx]);
             `ifdef TCU_SPARSE_ENABLE
-                assign b_col_dense[k_idx] = 32'(rs2_data[b_off + j * TCU_TC_K + k_idx]);
+                assign b_col_dense[k_idx] = 32'(rs2_data[int'(b_off) + j * TCU_TC_K + k_idx]);
                 // WGMMA_SP: tbuf_rs2_data is wide (TCU_WG_RS2_WIDTH lanes);
                 //   use j directly — gather already placed each column's pair at j*tcK*2.
                 // WMMA_SP: rs2_data comes from the register file (TCU_BLOCK_CAP lanes);
@@ -246,16 +282,16 @@ module VX_tcu_core import VX_gpu_pkg::*, VX_tcu_pkg::*; #(
             `ifdef TCU_WGMMA_ENABLE
                 assign b_col_1[k_idx] = 32'(is_wgmma
                     ? tbuf_rs2_data[j * TCU_TC_K * 2 + k_idx * 2]
-                    : rs2_data[b_off + J_SP * TCU_TC_K * 2 + k_idx * 2]);
+                    : rs2_data[int'(b_off) + J_SP * TCU_TC_K * 2 + k_idx * 2]);
                 assign b_col_2[k_idx] = 32'(is_wgmma
                     ? tbuf_rs2_data[j * TCU_TC_K * 2 + k_idx * 2 + 1]
-                    : rs2_data[b_off + J_SP * TCU_TC_K * 2 + k_idx * 2 + 1]);
+                    : rs2_data[int'(b_off) + J_SP * TCU_TC_K * 2 + k_idx * 2 + 1]);
             `else
-                assign b_col_1[k_idx] = 32'(rs2_data[b_off + J_SP * TCU_TC_K * 2 + k_idx * 2]);
-                assign b_col_2[k_idx] = 32'(rs2_data[b_off + J_SP * TCU_TC_K * 2 + k_idx * 2 + 1]);
+                assign b_col_1[k_idx] = 32'(rs2_data[int'(b_off) + J_SP * TCU_TC_K * 2 + k_idx * 2]);
+                assign b_col_2[k_idx] = 32'(rs2_data[int'(b_off) + J_SP * TCU_TC_K * 2 + k_idx * 2 + 1]);
             `endif
             `else
-                assign b_col[k_idx] = 32'(rs2_data[b_off + j * TCU_TC_K + k_idx]);
+                assign b_col[k_idx] = 32'(rs2_data[int'(b_off) + j * TCU_TC_K + k_idx]);
             `endif
             end
 
@@ -354,11 +390,15 @@ module VX_tcu_core import VX_gpu_pkg::*, VX_tcu_pkg::*; #(
             );
         `endif
 
+        wire [31:0] result_lane_val = result_is_wmma_vv
+            ? ((4'(i) == result_wmma_vv_n) ? d_val[int'(result_wmma_vv_row)][j] : 32'b0)
+            : d_val[i][j];
+
         // NaN-box the fp32 result for XLEN=64: upper 32 bits must be all-1s per RVF spec.
         if (`XLEN > 32) begin : g_result_nanbox
-            assign result_if.data.data[i * TCU_TC_N + j] = {32'hffffffff, d_val[i][j]};
+            assign result_if.data.data[i * TCU_TC_N + j] = {32'hffffffff, result_lane_val};
         end else begin : g_result_passthrough
-            assign result_if.data.data[i * TCU_TC_N + j] = d_val[i][j];
+            assign result_if.data.data[i * TCU_TC_N + j] = result_lane_val;
         end
 
         `ifdef DBG_TRACE_TCU

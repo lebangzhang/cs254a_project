@@ -556,13 +556,32 @@ module VX_decode import
         `endif
         `ifdef EXT_V_ENABLE
             INST_V: begin
-                is_rvv   = 1;
-                is_masked= vpu_vop.is_masked;
-                ex_type  = vpu_vop.ex_type;
-                op_type  = vpu_vop.op_type;
-                op_args  = vpu_vop.op_args;
-                reg_ids  = vpu_vop.reg_ids;
-                use_regs = vpu_vop.use_regs;
+            `ifdef EXT_TCU_ENABLE
+                if ((instr[31:26] == 6'h3f) && (funct3 == 3'b000) && (instr[25] == 1'b1)) begin
+                    is_rvv   = 1;
+                    is_masked= 0;
+                    ex_type  = EX_TCU;
+                    op_type  = INST_OP_BITS'(INST_TCU_WMMA_VV);
+                    op_args.tcu.is_sparse = 1'b0;
+                    op_args.tcu.fmt_s  = 4'd0; // fp32
+                    op_args.tcu.fmt_d  = 4'd0; // fp32
+                    op_args.tcu.step_m = '0;
+                    op_args.tcu.step_n = '0;
+                    op_args.tcu.step_k = '0;
+                    `USED_VREG (rd);
+                    `USED_VREG (rs1);
+                    `USED_VREG (rs2);
+                end else
+            `endif
+                begin
+                    is_rvv   = 1;
+                    is_masked= vpu_vop.is_masked;
+                    ex_type  = vpu_vop.ex_type;
+                    op_type  = vpu_vop.op_type;
+                    op_args  = vpu_vop.op_args;
+                    reg_ids  = vpu_vop.reg_ids;
+                    use_regs = vpu_vop.use_regs;
+                end
             end
         `endif
             INST_EXT1: begin

@@ -39,10 +39,12 @@ module VX_tcu_uops import VX_tcu_pkg::*, VX_gpu_pkg::*; (
 `endif
 
 `ifdef TCU_WGMMA_ENABLE
-    localparam CTR_W = $clog2(MAX_UOPS > TCU_WG_UOPS ? MAX_UOPS : TCU_WG_UOPS);
+    localparam TCU_MAX_UOPS0 = (MAX_UOPS > TCU_WG_UOPS) ? MAX_UOPS : TCU_WG_UOPS;
 `else
-    localparam CTR_W = $clog2(MAX_UOPS);
+    localparam TCU_MAX_UOPS0 = MAX_UOPS;
 `endif
+    localparam TCU_WMMA_VV_UOPS = TCU_UOPS * TCU_TC_M;
+    localparam CTR_W = $clog2((TCU_MAX_UOPS0 > TCU_WMMA_VV_UOPS) ? TCU_MAX_UOPS0 : TCU_WMMA_VV_UOPS);
     `STATIC_ASSERT (CTR_W <= UOP_CTR_W, ("invalid parameter"))
 
     localparam LG_N = $clog2(TCU_N_STEPS);
@@ -51,11 +53,14 @@ module VX_tcu_uops import VX_tcu_pkg::*, VX_gpu_pkg::*; (
 
     localparam LG_A_SB = $clog2(TCU_A_SUB_BLOCKS);
     localparam LG_B_SB = $clog2(TCU_B_SUB_BLOCKS);
+    localparam LG_TC_M = $clog2(TCU_TC_M);
 
     `UNUSED_VAR ({clk, reset, start, advance, uop_idx})
 
     // Truncate the wide uop_idx to the bits this expander actually uses.
     wire [`UP(CTR_W)-1:0] ctr = `UP(CTR_W)'(uop_idx);
+
+    wire is_wmma_vv = (ibuf_in.op_type == INST_TCU_WMMA_VV);
 
 `ifdef TCU_WGMMA_ENABLE
     // WGMMA µops: desc_a in x10 (a0), desc_b in x11 (a1); C accumulator in rs3.
@@ -97,6 +102,7 @@ module VX_tcu_uops import VX_tcu_pkg::*, VX_gpu_pkg::*; (
 `endif
 
     assign uop_count =
+        is_wmma_vv ? UOP_CTR_W'(TCU_WMMA_VV_UOPS) :
 `ifdef TCU_WGMMA_ENABLE
         is_wgmma ? UOP_CTR_W'(
     `ifdef TCU_SPARSE_ENABLE
@@ -115,7 +121,8 @@ module VX_tcu_uops import VX_tcu_pkg::*, VX_gpu_pkg::*; (
         UOP_CTR_W'(TCU_UOPS);
 
 `ifdef TCU_SPARSE_ENABLE
-    wire [`UP(CTR_W)-1:0] eff_ctr = (is_sparse && !is_meta_phase) ? mma_ctr : ctr;
+    wire [`UP(CTR_W)-1:0] eff_ctr = is_wmma_vv ? (`UP(CTR_W)'(ctr) >> LG_TC_M)
+                                   : (is_sparse && !is_meta_phase) ? mma_ctr : ctr;
 
     // Parametric symmetric tmask for sparse mode
     // sym_mask_lo[t] = 1 for threads where (t % tcN) < (tcN/2)
@@ -128,8 +135,15 @@ module VX_tcu_uops import VX_tcu_pkg::*, VX_gpu_pkg::*; (
         assign sym_mask_lo = '0;
     end
 `else
-    wire [`UP(CTR_W)-1:0] eff_ctr = ctr;
+    wire [`UP(CTR_W)-1:0] eff_ctr = is_wmma_vv ? (`UP(CTR_W)'(ctr) >> LG_TC_M) : ctr;
 `endif
+
+    wire [`UP(LG_TC_M)-1:0] wmma_vv_row_sel;
+    if (LG_TC_M != 0) begin : g_wmma_vv_row_sel
+        assign wmma_vv_row_sel = ctr[0 +: LG_TC_M];
+    end else begin : g_wmma_vv_row_sel0
+        assign wmma_vv_row_sel = '0;
+    end
 
     // -----------------------------------------------------------------------
     // Index extraction from uop_idx
@@ -201,6 +215,15 @@ module VX_tcu_uops import VX_tcu_pkg::*, VX_gpu_pkg::*; (
     wire [4:0] rs2 = TCU_RB + 5'(rs2_offset);
     wire [4:0] rs3 = TCU_RC + 5'(rs3_offset);
 
+    wire [4:0] wmma_vv_a_row = get_reg_idx(ibuf_in.rs1)
+                             + 5'(m_index) * 5'(TCU_TC_M)
+                             + 5'(wmma_vv_row_sel);
+    wire [4:0] wmma_vv_b_row = get_reg_idx(ibuf_in.rs2)
+                             + 5'(k_index) * 5'(TCU_TC_K);
+    wire [4:0] wmma_vv_c_row = get_reg_idx(ibuf_in.rd)
+                             + 5'(m_index) * 5'(TCU_TC_M)
+                             + 5'(wmma_vv_row_sel);
+
     // -----------------------------------------------------------------------
     // Output uop assembly.
     // -----------------------------------------------------------------------
@@ -220,6 +243,20 @@ module VX_tcu_uops import VX_tcu_pkg::*, VX_gpu_pkg::*; (
         n_sp_s = '0;
         m_sp_s = '0;
     `endif
+        if (is_wmma_vv) begin
+            ibuf_r.op_args.tcu.is_sparse = 1'b0;
+            ibuf_r.op_args.tcu.fmt_s  = 4'(TCU_TF32_ID);
+            ibuf_r.op_args.tcu.fmt_d  = 4'(wmma_vv_row_sel);
+            ibuf_r.op_args.tcu.step_m = 4'(m_index);
+            ibuf_r.op_args.tcu.step_n = 4'(n_index);
+            ibuf_r.op_args.tcu.step_k = 4'(k_index);
+            ibuf_r.wb  = 1'b1;
+            ibuf_r.rd  = make_reg_num(REG_TYPE_V, wmma_vv_c_row);
+            ibuf_r.rs1 = make_reg_num(REG_TYPE_V, wmma_vv_a_row);
+            ibuf_r.rs2 = make_reg_num(REG_TYPE_V, wmma_vv_b_row);
+            ibuf_r.rs3 = make_reg_num(REG_TYPE_V, wmma_vv_c_row);
+            ibuf_r.used_rs = 3'b111;
+        end else
     `ifdef TCU_WGMMA_ENABLE
         if (is_wgmma) begin
             // WGMMA µop:

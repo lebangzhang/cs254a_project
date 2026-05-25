@@ -583,6 +583,7 @@ package VX_gpu_pkg;
     localparam INST_TCU_WGMMA      = 4'h1;
 `endif
     localparam INST_TCU_META_STORE = 4'h2;
+    localparam INST_TCU_WMMA_VV    = 4'h3;
     localparam INST_TCU_BITS = 4;
 `endif
 

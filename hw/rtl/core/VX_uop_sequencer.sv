@@ -166,6 +166,7 @@ module VX_uop_sequencer import
     `ifdef TCU_WGMMA_ENABLE
         || uop_in_data.op_type == INST_TCU_WGMMA
     `endif
+        || uop_in_data.op_type == INST_TCU_WMMA_VV
         );
     VX_tcu_uops tcu_uops (
         .clk       (clk),
@@ -183,7 +184,7 @@ module VX_uop_sequencer import
     // ------------------------------------------------------------------
     // VPU uop expander
     // ------------------------------------------------------------------
-    assign uop_in_valid[UOP_VPU] = uop_in_data.is_rvv;
+    assign uop_in_valid[UOP_VPU] = uop_in_data.is_rvv && (uop_in_data.ex_type != EX_TCU);
     VX_vpu_uops vpu_uops (
         .clk            (clk),
         .reset          (reset),
