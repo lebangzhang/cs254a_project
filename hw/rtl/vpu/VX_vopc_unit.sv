@@ -111,7 +111,8 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*
                                   ? to_vreg_number(dispatch_src_regs[2])
                                   : to_vreg_number(dispatch_src_regs[i]);
             assign gpr_req_inused[i] = dispatch_is_wmma_vv
-                                     ? (wmma_vv_bidx == WMMA_VV_BIDX_W'(0))
+                                     ? ((wmma_vv_bidx == WMMA_VV_BIDX_W'(0))
+                                     && (dispatch_op_args.tcu.step_k != 4'(0)))
                                      : (dispatch_used_rs[i] && (get_reg_type(dispatch_src_regs[i]) == REG_TYPE_V));
         end
     `else
@@ -526,7 +527,9 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*
                             if (elem_idx < `SIMD_WIDTH) begin
                                 if (wmma_vv_bidx == WMMA_VV_BIDX_W'(0)) begin
                                     wmma_vv_a_row_n[elem_idx] = gpr_rsp_data[0][t][l];
-                                    wmma_vv_c_row_n[elem_idx] = gpr_rsp_data[2][t][l];
+                                    wmma_vv_c_row_n[elem_idx] = (dispatch_op_args.tcu.step_k == 4'(0))
+                                                              ? '0
+                                                              : gpr_rsp_data[2][t][l];
                                 end
                                 wmma_vv_b_rows_n[int'(wmma_vv_bidx)][elem_idx] = gpr_rsp_data[1][t][l];
                             end
