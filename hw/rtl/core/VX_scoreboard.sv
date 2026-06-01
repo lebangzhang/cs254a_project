@@ -13,7 +13,11 @@
 
 `include "VX_define.vh"
 
-module VX_scoreboard import VX_gpu_pkg::*; #(
+module VX_scoreboard import VX_gpu_pkg::*
+`ifdef EXT_TCU_ENABLE
+    , VX_tcu_pkg::*
+`endif
+; #(
     parameter `STRING INSTANCE_ID = "",
     parameter ISSUE_ID = 0
 ) (
@@ -35,6 +39,49 @@ module VX_scoreboard import VX_gpu_pkg::*; #(
     localparam NUM_OPDS  = NUM_SRC_OPDS + 1;
     localparam IN_DATAW  = $bits(ibuffer_t);
     localparam OUT_DATAW = $bits(scoreboard_t) - ISSUE_WIS_W;
+`ifdef EXT_TCU_ENABLE
+    localparam WMMA_VV_TILE_M = TCU_TC_M * TCU_M_STEPS;
+    localparam WMMA_VV_TILE_K = TCU_TC_K * TCU_K_STEPS;
+    localparam WMMA_VV_UOPS = TCU_TC_M * TCU_M_STEPS * TCU_N_STEPS * TCU_K_STEPS;
+    localparam WMMA_VV_UOPS_W = `UP($clog2(WMMA_VV_UOPS + 1));
+`endif
+
+`ifdef EXT_TCU_ENABLE
+    function automatic logic wmma_vv_is_uop(input ibuffer_t ibuf);
+        wmma_vv_is_uop = (ibuf.op_type == INST_TCU_WMMA_VV);
+    endfunction
+
+    function automatic logic wmma_vv_is_first_uop(input ibuffer_t ibuf);
+        wmma_vv_is_first_uop = (ibuf.op_args.tcu.step_m == 4'(0))
+                            && (ibuf.op_args.tcu.step_n == 4'(0))
+                            && (ibuf.op_args.tcu.step_k == 4'(0))
+                            && (ibuf.op_args.tcu.fmt_d  == 4'(0));
+    endfunction
+
+    function automatic logic wmma_vv_is_last_uop(input ibuffer_t ibuf);
+        wmma_vv_is_last_uop = (ibuf.op_args.tcu.step_m == 4'(TCU_M_STEPS - 1))
+                           && (ibuf.op_args.tcu.step_n == 4'(TCU_N_STEPS - 1))
+                           && (ibuf.op_args.tcu.step_k == 4'(TCU_K_STEPS - 1))
+                           && (ibuf.op_args.tcu.fmt_d  == 4'(TCU_TC_M - 1));
+    endfunction
+
+    function automatic [RV_REGS_BITS-1:0] wmma_vv_base_row(input logic [NUM_REGS_BITS-1:0] reg_num, input op_args_t op_args);
+        wmma_vv_base_row = get_reg_idx(reg_num) - RV_REGS_BITS'(int'(op_args.tcu.step_m) * TCU_TC_M + int'(op_args.tcu.fmt_d));
+    endfunction
+
+    function automatic [RV_REGS_BITS-1:0] wmma_vv_base_k(input logic [NUM_REGS_BITS-1:0] reg_num, input op_args_t op_args);
+        wmma_vv_base_k = get_reg_idx(reg_num) - RV_REGS_BITS'(int'(op_args.tcu.step_k) * TCU_TC_K);
+    endfunction
+
+    function automatic [RV_REGS-1:0] wmma_vv_group_mask_vec(input logic [RV_REGS_BITS-1:0] base_idx, input int rows);
+        logic [RV_REGS-1:0] mask;
+        mask = '0;
+        for (int i = 0; i < rows; ++i) begin
+            mask[base_idx + RV_REGS_BITS'(i)] = 1'b1;
+        end
+        return mask;
+    endfunction
+`endif
 
     VX_ibuffer_if staging_if [PER_ISSUE_WARPS]();
     wire [PER_ISSUE_WARPS-1:0] operands_ready;
@@ -74,6 +121,14 @@ module VX_scoreboard import VX_gpu_pkg::*; #(
     for (genvar w = 0; w < PER_ISSUE_WARPS; ++w) begin : g_scoreboard
         reg [NUM_REGS-1:0] inuse_regs, inuse_regs_n;
         reg [NUM_XREGS-1:0] inuse_xregs, inuse_xregs_n;
+    `ifdef EXT_TCU_ENABLE
+        reg wmma_vv_busy, wmma_vv_busy_n;
+        reg wmma_vv_emit_active, wmma_vv_emit_active_n;
+        reg [PC_BITS-1:0] wmma_vv_pc, wmma_vv_pc_n;
+        reg [WMMA_VV_UOPS_W-1:0] wmma_vv_wb_left, wmma_vv_wb_left_n;
+        reg [RV_REGS-1:0] wmma_vv_group_mask_vec_r, wmma_vv_group_mask_vec_n;
+        reg [RV_REGS-1:0] wmma_vv_dst_mask_vec_r, wmma_vv_dst_mask_vec_n;
+    `endif
         wire [NUM_OPDS-1:0] operands_busy;
 
         wire ibuffer_fire = ibuffer_if[w].valid && ibuffer_if[w].ready;
@@ -89,6 +144,26 @@ module VX_scoreboard import VX_gpu_pkg::*; #(
 
         wire [NUM_OPDS-1:0] ibf_used_rs = {ibuffer_if[w].data.used_rs, ibuffer_if[w].data.wb};
         wire [NUM_OPDS-1:0] stg_used_rs = {staging_if[w].data.used_rs, staging_if[w].data.wb};
+
+    `ifdef EXT_TCU_ENABLE
+        wire ibf_is_wmma_vv = wmma_vv_is_uop(ibuffer_if[w].data);
+        wire stg_is_wmma_vv = wmma_vv_is_uop(staging_if[w].data);
+        wire ibf_is_wmma_vv_first = ibf_is_wmma_vv && wmma_vv_is_first_uop(ibuffer_if[w].data);
+        wire stg_is_wmma_vv_first = stg_is_wmma_vv && wmma_vv_is_first_uop(staging_if[w].data);
+        wire curr_is_wmma_vv = ibuffer_fire ? ibf_is_wmma_vv : stg_is_wmma_vv;
+        wire curr_is_wmma_cont = curr_is_wmma_vv && wmma_vv_emit_active;
+        wire curr_is_wmma_vv_first = ibuffer_fire ? ibf_is_wmma_vv_first : stg_is_wmma_vv_first;
+
+        wire [RV_REGS-1:0] ibf_wmma_issue_mask =
+              wmma_vv_group_mask_vec(wmma_vv_base_row(ibuffer_if[w].data.rd,  ibuffer_if[w].data.op_args), WMMA_VV_TILE_M)
+            | wmma_vv_group_mask_vec(wmma_vv_base_row(ibuffer_if[w].data.rs1, ibuffer_if[w].data.op_args), WMMA_VV_TILE_M)
+            | wmma_vv_group_mask_vec(wmma_vv_base_k  (ibuffer_if[w].data.rs2, ibuffer_if[w].data.op_args), WMMA_VV_TILE_K);
+        wire [RV_REGS-1:0] stg_wmma_issue_mask =
+              wmma_vv_group_mask_vec(wmma_vv_base_row(staging_if[w].data.rd,  staging_if[w].data.op_args), WMMA_VV_TILE_M)
+            | wmma_vv_group_mask_vec(wmma_vv_base_row(staging_if[w].data.rs1, staging_if[w].data.op_args), WMMA_VV_TILE_M)
+            | wmma_vv_group_mask_vec(wmma_vv_base_k  (staging_if[w].data.rs2, staging_if[w].data.op_args), WMMA_VV_TILE_K);
+        wire [RV_REGS-1:0] curr_wmma_issue_mask = ibuffer_fire ? ibf_wmma_issue_mask : stg_wmma_issue_mask;
+    `endif
 
         // Special-register dependency masks
         wire [NUM_XREGS-1:0] ibf_xregs_mask = ibuffer_if[w].data.rd_xregs | ibuffer_if[w].data.wr_xregs;
@@ -106,17 +181,60 @@ module VX_scoreboard import VX_gpu_pkg::*; #(
         always @(*) begin
             inuse_regs_n  = inuse_regs;
             inuse_xregs_n = inuse_xregs;
+        `ifdef EXT_TCU_ENABLE
+            wmma_vv_busy_n = wmma_vv_busy;
+            wmma_vv_emit_active_n = wmma_vv_emit_active;
+            wmma_vv_pc_n = wmma_vv_pc;
+            wmma_vv_wb_left_n = wmma_vv_wb_left;
+            wmma_vv_group_mask_vec_n = wmma_vv_group_mask_vec_r;
+            wmma_vv_dst_mask_vec_n = wmma_vv_dst_mask_vec_r;
+        `endif
             if (writeback_fire) begin
                 if (writeback_if.data.wb) begin
                     inuse_regs_n[writeback_if.data.rd] = 0; // release rd
                 end
                 inuse_xregs_n &= ~writeback_if.data.wr_xregs; // release special regs
+            `ifdef EXT_TCU_ENABLE
+                if (wmma_vv_busy
+                 && writeback_if.data.wb
+                 && (get_reg_type(writeback_if.data.rd) == REG_TYPE_V)
+                 && (writeback_if.data.PC == wmma_vv_pc)
+                 && wmma_vv_dst_mask_vec_r[get_reg_idx(writeback_if.data.rd)]) begin
+                    if (wmma_vv_wb_left == WMMA_VV_UOPS_W'(1)) begin
+                        wmma_vv_busy_n = 1'b0;
+                        wmma_vv_wb_left_n = '0;
+                        wmma_vv_group_mask_vec_n = '0;
+                        wmma_vv_dst_mask_vec_n = '0;
+                    end else begin
+                        wmma_vv_wb_left_n = wmma_vv_wb_left - WMMA_VV_UOPS_W'(1);
+                    end
+                end
+            `endif
             end
             if (staging_fire) begin
                 if (staging_if[w].data.wb) begin
                     inuse_regs_n |= stg_opd_mask[0]; // reserve rd
                 end
                 inuse_xregs_n |= staging_if[w].data.wr_xregs; // reserve special regs
+            `ifdef EXT_TCU_ENABLE
+                if (stg_is_wmma_vv) begin
+                    if (!wmma_vv_busy && wmma_vv_is_first_uop(staging_if[w].data)) begin
+                        wmma_vv_busy_n = 1'b1;
+                        wmma_vv_emit_active_n = 1'b1;
+                        wmma_vv_pc_n = staging_if[w].data.PC;
+                        wmma_vv_wb_left_n = WMMA_VV_UOPS_W'(WMMA_VV_UOPS);
+                        wmma_vv_group_mask_vec_n =
+                              wmma_vv_group_mask_vec(wmma_vv_base_row(staging_if[w].data.rd,  staging_if[w].data.op_args), WMMA_VV_TILE_M)
+                            | wmma_vv_group_mask_vec(wmma_vv_base_row(staging_if[w].data.rs1, staging_if[w].data.op_args), WMMA_VV_TILE_M)
+                            | wmma_vv_group_mask_vec(wmma_vv_base_k  (staging_if[w].data.rs2, staging_if[w].data.op_args), WMMA_VV_TILE_K);
+                        wmma_vv_dst_mask_vec_n =
+                            wmma_vv_group_mask_vec(wmma_vv_base_row(staging_if[w].data.rd, staging_if[w].data.op_args), WMMA_VV_TILE_M);
+                    end
+                    if (wmma_vv_emit_active && wmma_vv_is_last_uop(staging_if[w].data)) begin
+                        wmma_vv_emit_active_n = 1'b0;
+                    end
+                end
+            `endif
             end
         end
 
@@ -125,7 +243,14 @@ module VX_scoreboard import VX_gpu_pkg::*; #(
             wire [RV_REGS-1:0] ibf_reg_mask = ibf_opd_mask[0][i] | ibf_opd_mask[1][i] | ibf_opd_mask[2][i] | ibf_opd_mask[3][i];
             wire [RV_REGS-1:0] stg_reg_mask = stg_opd_mask[0][i] | stg_opd_mask[1][i] | stg_opd_mask[2][i] | stg_opd_mask[3][i];
             wire [RV_REGS-1:0] regs_mask = ibuffer_fire ? ibf_reg_mask : stg_reg_mask;
+        `ifdef EXT_TCU_ENABLE
+            wire [RV_REGS-1:0] wmma_vv_mask = ((i == REG_TYPE_V) && wmma_vv_busy && !curr_is_wmma_cont)
+                                            ? wmma_vv_group_mask_vec_r
+                                            : '0;
+            assign in_use_mask[i] = (inuse_regs_n[i * RV_REGS +: RV_REGS] | wmma_vv_mask) & regs_mask;
+        `else
             assign in_use_mask[i] = inuse_regs_n[i * RV_REGS +: RV_REGS] & regs_mask;
+        `endif
         end
 
         wire [REG_TYPES-1:0] regs_busy;
@@ -141,6 +266,12 @@ module VX_scoreboard import VX_gpu_pkg::*; #(
 
         wire [NUM_XREGS-1:0] xregs_mask = ibuffer_fire ? ibf_xregs_mask : stg_xregs_mask;
         wire [NUM_XREGS-1:0] xregs_busy = inuse_xregs_n & xregs_mask;
+    `ifdef EXT_TCU_ENABLE
+        wire wmma_vv_issue_busy = curr_is_wmma_vv_first
+                               && ((inuse_regs_n[REG_TYPE_V * RV_REGS +: RV_REGS] & curr_wmma_issue_mask) != 0);
+    `else
+        wire wmma_vv_issue_busy = 1'b0;
+    `endif
 
         reg operands_ready_r;
 
@@ -148,11 +279,27 @@ module VX_scoreboard import VX_gpu_pkg::*; #(
             if (reset) begin
                 inuse_regs  <= '0;
                 inuse_xregs <= '0;
+            `ifdef EXT_TCU_ENABLE
+                wmma_vv_busy <= 1'b0;
+                wmma_vv_emit_active <= 1'b0;
+                wmma_vv_pc <= '0;
+                wmma_vv_wb_left <= '0;
+                wmma_vv_group_mask_vec_r <= '0;
+                wmma_vv_dst_mask_vec_r <= '0;
+            `endif
             end else begin
                 inuse_regs <= inuse_regs_n;
                 inuse_xregs <= inuse_xregs_n;
+            `ifdef EXT_TCU_ENABLE
+                wmma_vv_busy <= wmma_vv_busy_n;
+                wmma_vv_emit_active <= wmma_vv_emit_active_n;
+                wmma_vv_pc <= wmma_vv_pc_n;
+                wmma_vv_wb_left <= wmma_vv_wb_left_n;
+                wmma_vv_group_mask_vec_r <= wmma_vv_group_mask_vec_n;
+                wmma_vv_dst_mask_vec_r <= wmma_vv_dst_mask_vec_n;
+            `endif
             end
-            operands_ready_r <= (regs_busy == 0) && (xregs_busy == 0);
+            operands_ready_r <= (regs_busy == 0) && (xregs_busy == 0) && ~wmma_vv_issue_busy;
         end
 
         assign operands_ready[w] = operands_ready_r;

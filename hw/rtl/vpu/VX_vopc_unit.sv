@@ -53,7 +53,10 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*
     localparam STATE_DISPATCH  = 2;
     localparam STATE_WIDTH     = 2;
 `ifdef EXT_TCU_ENABLE
-    localparam WMMA_VV_BIDX_W = `UP($clog2(TCU_TC_K));
+    localparam WMMA_VV_TILE_M = TCU_TC_M * TCU_M_STEPS;
+    localparam WMMA_VV_TILE_K = TCU_TC_K * TCU_K_STEPS;
+    localparam WMMA_VV_SNAP_ROWS = (WMMA_VV_TILE_M > WMMA_VV_TILE_K) ? WMMA_VV_TILE_M : WMMA_VV_TILE_K;
+    localparam WMMA_VV_SNAP_W = `UP($clog2(WMMA_VV_SNAP_ROWS));
 `endif
 
     `UNUSED_VAR (writeback_if.data.sop)
@@ -82,9 +85,19 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*
     wire dispatch_is_wmma_vv = (dispatch_ex_type == EX_TCU)
                             && (dispatch_op_type == INST_OP_BITS'(INST_TCU_WMMA_VV));
 
+    wire [PER_OPC_NW_W-1:0] dispatch_opc_wid = dispatch_wis[ISSUE_WIS_W-1 -: PER_OPC_NW_W];
+    wire [PER_OPC_NW_W-1:0] soperands_opc_wid = soperands_if.data.wis[ISSUE_WIS_W-1 -: PER_OPC_NW_W];
+
     function automatic [`XLEN-1:0] wmma_vv_format_ab(input [`XLEN-1:0] data);
         wmma_vv_format_ab = `XLEN'({data[31], data[30:23], data[22:13]})
                            | `XLEN'({19'b0, (data[12:0] & 13'b0)});
+    endfunction
+
+    function automatic logic wmma_vv_is_last_uop(input op_args_t op_args);
+        wmma_vv_is_last_uop = (op_args.tcu.step_m == 4'(TCU_M_STEPS - 1))
+                           && (op_args.tcu.step_n == 4'(TCU_N_STEPS - 1))
+                           && (op_args.tcu.step_k == 4'(TCU_K_STEPS - 1))
+                           && (op_args.tcu.fmt_d  == 4'(TCU_TC_M - 1));
     endfunction
 `else
     wire dispatch_is_wmma_vv = 1'b0;
@@ -94,25 +107,28 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*
     `ifdef EXT_TCU_ENABLE
         if (i == 0) begin : g_wmma_a
             assign gpr_req_rid[i] = dispatch_is_wmma_vv
-                                  ? to_vreg_number(dispatch_src_regs[0])
+                                  ? ((wmma_vv_snap_fetch && ~wmma_vv_snap_is_b)
+                                      ? (to_vreg_number(dispatch_src_regs[0]) + NUM_VREGS_BITS'(wmma_vv_snap_idx))
+                                      : to_vreg_number(dispatch_src_regs[0]))
                                   : to_vreg_number(dispatch_src_regs[i]);
             assign gpr_req_inused[i] = dispatch_is_wmma_vv
-                                     ? (wmma_vv_bidx == WMMA_VV_BIDX_W'(0))
+                                     ? (wmma_vv_snap_fetch && ~wmma_vv_snap_is_b && (int'(wmma_vv_snap_idx) < WMMA_VV_TILE_M))
                                      : (dispatch_used_rs[i] && (get_reg_type(dispatch_src_regs[i]) == REG_TYPE_V));
         end else if (i == 1) begin : g_wmma_b
             assign gpr_req_rid[i] = dispatch_is_wmma_vv
-                                  ? (to_vreg_number(dispatch_src_regs[1]) + NUM_VREGS_BITS'(wmma_vv_bidx))
+                                  ? ((wmma_vv_snap_fetch && wmma_vv_snap_is_b)
+                                      ? (to_vreg_number(dispatch_src_regs[1]) + NUM_VREGS_BITS'(wmma_vv_snap_idx))
+                                      : to_vreg_number(dispatch_src_regs[1]))
                                   : to_vreg_number(dispatch_src_regs[i]);
             assign gpr_req_inused[i] = dispatch_is_wmma_vv
-                                     ? 1'b1
+                                     ? (wmma_vv_snap_fetch && wmma_vv_snap_is_b && (int'(wmma_vv_snap_idx) < WMMA_VV_TILE_K))
                                      : (dispatch_used_rs[i] && (get_reg_type(dispatch_src_regs[i]) == REG_TYPE_V));
         end else begin : g_wmma_c
             assign gpr_req_rid[i] = dispatch_is_wmma_vv
                                   ? to_vreg_number(dispatch_src_regs[2])
                                   : to_vreg_number(dispatch_src_regs[i]);
             assign gpr_req_inused[i] = dispatch_is_wmma_vv
-                                     ? ((wmma_vv_bidx == WMMA_VV_BIDX_W'(0))
-                                     && (dispatch_op_args.tcu.step_k != 4'(0)))
+                                     ? (~wmma_vv_snap_fetch && (dispatch_op_args.tcu.step_k != 4'(0)))
                                      : (dispatch_used_rs[i] && (get_reg_type(dispatch_src_regs[i]) == REG_TYPE_V));
         end
     `else
@@ -346,10 +362,13 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*
     logic dispatch_sop, dispatch_sop_n;
     logic dispatch_eop, dispatch_eop_n;
 `ifdef EXT_TCU_ENABLE
-    logic [WMMA_VV_BIDX_W-1:0] wmma_vv_bidx, wmma_vv_bidx_n;
-    logic [`SIMD_WIDTH-1:0][`XLEN-1:0] wmma_vv_a_row, wmma_vv_a_row_n;
+    logic wmma_vv_snap_fetch, wmma_vv_snap_fetch_n;
+    logic wmma_vv_snap_is_b, wmma_vv_snap_is_b_n;
+    logic [WMMA_VV_SNAP_W-1:0] wmma_vv_snap_idx, wmma_vv_snap_idx_n;
+    logic [PER_OPC_WARPS-1:0] wmma_vv_snap_valid, wmma_vv_snap_valid_n;
+    logic [PER_OPC_WARPS-1:0][WMMA_VV_TILE_M-1:0][`SIMD_WIDTH-1:0][`XLEN-1:0] wmma_vv_a_rows, wmma_vv_a_rows_n;
     logic [`SIMD_WIDTH-1:0][`XLEN-1:0] wmma_vv_c_row, wmma_vv_c_row_n;
-    logic [TCU_TC_K-1:0][`SIMD_WIDTH-1:0][`XLEN-1:0] wmma_vv_b_rows, wmma_vv_b_rows_n;
+    logic [PER_OPC_WARPS-1:0][WMMA_VV_TILE_K-1:0][`SIMD_WIDTH-1:0][`XLEN-1:0] wmma_vv_b_rows, wmma_vv_b_rows_n;
 `endif
 
     wire soperands_is_rvv_lsu = (soperands_if.data.ex_type == EX_LSU);
@@ -443,8 +462,11 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*
         dispatch_eop_n = dispatch_eop;
         gpr_req_sent_n = gpr_req_sent;
     `ifdef EXT_TCU_ENABLE
-        wmma_vv_bidx_n = wmma_vv_bidx;
-        wmma_vv_a_row_n = wmma_vv_a_row;
+        wmma_vv_snap_fetch_n = wmma_vv_snap_fetch;
+        wmma_vv_snap_is_b_n = wmma_vv_snap_is_b;
+        wmma_vv_snap_idx_n = wmma_vv_snap_idx;
+        wmma_vv_snap_valid_n = wmma_vv_snap_valid;
+        wmma_vv_a_rows_n = wmma_vv_a_rows;
         wmma_vv_c_row_n = wmma_vv_c_row;
         wmma_vv_b_rows_n = wmma_vv_b_rows;
     `endif
@@ -455,10 +477,10 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*
                 state_n = soperands_is_vset ? STATE_DISPATCH : STATE_FETCH;
                 gpr_req_sent_n = 1'b0;
             `ifdef EXT_TCU_ENABLE
-                wmma_vv_bidx_n = '0;
-                wmma_vv_a_row_n = '0;
                 wmma_vv_c_row_n = '0;
-                wmma_vv_b_rows_n = '0;
+                wmma_vv_snap_fetch_n = 1'b0;
+                wmma_vv_snap_is_b_n = 1'b0;
+                wmma_vv_snap_idx_n = '0;
             `endif
                 simd_ctr_n = soperands_is_vset ? VSIMD_IDX_W'(0) :
                               soperands_is_rvv_lsu ? VSIMD_IDX_W'(soperands_if.data.op_args.lsu.group_idx) :
@@ -491,6 +513,37 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*
                 dispatch_srs_data_n = dispatch_rs_data_n;
                 dispatch_sop_n     = 1'b1;
                 dispatch_eop_n     = soperands_is_vset || soperands_is_rvv_lsu || soperands_is_wmma_vv || soperands_is_vfmv_f_s || (VSIMD_COUNT == 1);
+            `ifdef EXT_TCU_ENABLE
+                if (soperands_is_wmma_vv) begin
+                    if (wmma_vv_snap_valid[soperands_opc_wid]) begin
+                        if (soperands_if.data.op_args.tcu.step_k == 4'(0)) begin
+                            state_n = STATE_DISPATCH;
+                            dispatch_tmask_n = '1;
+                            dispatch_rs_data_n = '0;
+                            for (int kk = 0; kk < TCU_TC_K; ++kk) begin
+                                int a_elem;
+                                a_elem = int'(soperands_if.data.op_args.tcu.step_k) * TCU_TC_K + kk;
+                                if (a_elem < `SIMD_WIDTH) begin
+                                    dispatch_rs_data_n[0][int'(soperands_if.data.op_args.tcu.fmt_d) * TCU_TC_K + kk] =
+                                        wmma_vv_format_ab(wmma_vv_a_rows[soperands_opc_wid][int'(soperands_if.data.op_args.tcu.step_m) * TCU_TC_M + int'(soperands_if.data.op_args.tcu.fmt_d)][a_elem]);
+                                end
+                                for (int jj = 0; jj < TCU_TC_N; ++jj) begin
+                                    int b_elem;
+                                    b_elem = int'(soperands_if.data.op_args.tcu.step_n) * TCU_TC_N + jj;
+                                    if (b_elem < `SIMD_WIDTH) begin
+                                        dispatch_rs_data_n[1][jj * TCU_TC_K + kk] =
+                                            wmma_vv_format_ab(wmma_vv_b_rows[soperands_opc_wid][int'(soperands_if.data.op_args.tcu.step_k) * TCU_TC_K + kk][b_elem]);
+                                    end
+                                end
+                            end
+                        end
+                    end else begin
+                        wmma_vv_snap_fetch_n = 1'b1;
+                        wmma_vv_snap_is_b_n = 1'b0;
+                        wmma_vv_snap_idx_n = '0;
+                    end
+                end
+            `endif
             end
         end
         STATE_FETCH: begin
@@ -500,12 +553,38 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*
             if (gpr_req_sent && gpr_rsp_valid) begin
             `ifdef EXT_TCU_ENABLE
                 if (dispatch_is_wmma_vv) begin
-                    if (wmma_vv_bidx == WMMA_VV_BIDX_W'(TCU_TC_K - 1)) begin
-                        state_n = STATE_DISPATCH;
+                    if (wmma_vv_snap_fetch) begin
+                        if (~wmma_vv_snap_is_b) begin
+                            if (wmma_vv_snap_idx == WMMA_VV_SNAP_W'(WMMA_VV_TILE_M - 1)) begin
+                                wmma_vv_snap_is_b_n = 1'b1;
+                                wmma_vv_snap_idx_n = '0;
+                                gpr_req_sent_n = 1'b0;
+                                state_n = STATE_FETCH;
+                            end else begin
+                                wmma_vv_snap_idx_n = wmma_vv_snap_idx + WMMA_VV_SNAP_W'(1);
+                                gpr_req_sent_n = 1'b0;
+                                state_n = STATE_FETCH;
+                            end
+                        end else begin
+                            if (wmma_vv_snap_idx == WMMA_VV_SNAP_W'(WMMA_VV_TILE_K - 1)) begin
+                                wmma_vv_snap_fetch_n = 1'b0;
+                                wmma_vv_snap_is_b_n = 1'b0;
+                                wmma_vv_snap_idx_n = '0;
+                                wmma_vv_snap_valid_n[dispatch_opc_wid] = 1'b1;
+                                if (dispatch_op_args.tcu.step_k == 4'(0)) begin
+                                    state_n = STATE_DISPATCH;
+                                end else begin
+                                    gpr_req_sent_n = 1'b0;
+                                    state_n = STATE_FETCH;
+                                end
+                            end else begin
+                                wmma_vv_snap_idx_n = wmma_vv_snap_idx + WMMA_VV_SNAP_W'(1);
+                                gpr_req_sent_n = 1'b0;
+                                state_n = STATE_FETCH;
+                            end
+                        end
                     end else begin
-                        wmma_vv_bidx_n = wmma_vv_bidx + WMMA_VV_BIDX_W'(1);
-                        gpr_req_sent_n = 1'b0;
-                        state_n = STATE_FETCH;
+                        state_n = STATE_DISPATCH;
                     end
                 end else
             `endif
@@ -525,31 +604,39 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*
                             int elem_idx;
                             elem_idx = t * VL_COUNT + l;
                             if (elem_idx < `SIMD_WIDTH) begin
-                                if (wmma_vv_bidx == WMMA_VV_BIDX_W'(0)) begin
-                                    wmma_vv_a_row_n[elem_idx] = gpr_rsp_data[0][t][l];
+                                if (wmma_vv_snap_fetch) begin
+                                    if (~wmma_vv_snap_is_b && (int'(wmma_vv_snap_idx) < WMMA_VV_TILE_M)) begin
+                                        wmma_vv_a_rows_n[dispatch_opc_wid][int'(wmma_vv_snap_idx)][elem_idx] = gpr_rsp_data[0][t][l];
+                                    end
+                                    if (wmma_vv_snap_is_b && (int'(wmma_vv_snap_idx) < WMMA_VV_TILE_K)) begin
+                                        wmma_vv_b_rows_n[dispatch_opc_wid][int'(wmma_vv_snap_idx)][elem_idx] = gpr_rsp_data[1][t][l];
+                                    end
+                                end else begin
                                     wmma_vv_c_row_n[elem_idx] = (dispatch_op_args.tcu.step_k == 4'(0))
                                                               ? '0
                                                               : gpr_rsp_data[2][t][l];
                                 end
-                                wmma_vv_b_rows_n[int'(wmma_vv_bidx)][elem_idx] = gpr_rsp_data[1][t][l];
                             end
                         end
                     end
 
-                    if (wmma_vv_bidx == WMMA_VV_BIDX_W'(TCU_TC_K - 1)) begin
+                    if (~wmma_vv_snap_fetch
+                     || (wmma_vv_snap_is_b && (wmma_vv_snap_idx == WMMA_VV_SNAP_W'(WMMA_VV_TILE_K - 1)))) begin
                         dispatch_tmask_n = '1;
                         dispatch_rs_data_n = '0;
                         for (int kk = 0; kk < TCU_TC_K; ++kk) begin
                             int a_elem;
                             a_elem = int'(dispatch_op_args.tcu.step_k) * TCU_TC_K + kk;
                             if (a_elem < `SIMD_WIDTH) begin
-                                dispatch_rs_data_n[0][int'(dispatch_op_args.tcu.fmt_d) * TCU_TC_K + kk] = wmma_vv_format_ab(wmma_vv_a_row_n[a_elem]);
+                                dispatch_rs_data_n[0][int'(dispatch_op_args.tcu.fmt_d) * TCU_TC_K + kk] =
+                                    wmma_vv_format_ab(wmma_vv_a_rows_n[dispatch_opc_wid][int'(dispatch_op_args.tcu.step_m) * TCU_TC_M + int'(dispatch_op_args.tcu.fmt_d)][a_elem]);
                             end
                             for (int jj = 0; jj < TCU_TC_N; ++jj) begin
                                 int b_elem;
                                 b_elem = int'(dispatch_op_args.tcu.step_n) * TCU_TC_N + jj;
                                 if (b_elem < `SIMD_WIDTH) begin
-                                    dispatch_rs_data_n[1][jj * TCU_TC_K + kk] = wmma_vv_format_ab(wmma_vv_b_rows_n[kk][b_elem]);
+                                    dispatch_rs_data_n[1][jj * TCU_TC_K + kk] =
+                                        wmma_vv_format_ab(wmma_vv_b_rows_n[dispatch_opc_wid][int'(dispatch_op_args.tcu.step_k) * TCU_TC_K + kk][b_elem]);
                                 end
                             end
                         end
@@ -620,6 +707,11 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*
         end
         STATE_DISPATCH: begin
             if (dispatch_ready) begin
+            `ifdef EXT_TCU_ENABLE
+                if (dispatch_is_wmma_vv && wmma_vv_is_last_uop(dispatch_op_args)) begin
+                    wmma_vv_snap_valid_n[dispatch_opc_wid] = 1'b0;
+                end
+            `endif
                 if (dispatch_is_vset
              `ifdef EXT_TCU_ENABLE
                  || dispatch_is_wmma_vv
@@ -654,8 +746,11 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*
             sew_ctr <= 0;
             gpr_req_sent <= 0;
         `ifdef EXT_TCU_ENABLE
-            wmma_vv_bidx <= '0;
-            wmma_vv_a_row <= '0;
+            wmma_vv_snap_fetch <= 1'b0;
+            wmma_vv_snap_is_b <= 1'b0;
+            wmma_vv_snap_idx <= '0;
+            wmma_vv_snap_valid <= '0;
+            wmma_vv_a_rows <= '0;
             wmma_vv_c_row <= '0;
             wmma_vv_b_rows <= '0;
         `endif
@@ -682,8 +777,11 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*
             dispatch_sop <= dispatch_sop_n;
             dispatch_eop <= dispatch_eop_n;
         `ifdef EXT_TCU_ENABLE
-            wmma_vv_bidx <= wmma_vv_bidx_n;
-            wmma_vv_a_row <= wmma_vv_a_row_n;
+            wmma_vv_snap_fetch <= wmma_vv_snap_fetch_n;
+            wmma_vv_snap_is_b <= wmma_vv_snap_is_b_n;
+            wmma_vv_snap_idx <= wmma_vv_snap_idx_n;
+            wmma_vv_snap_valid <= wmma_vv_snap_valid_n;
+            wmma_vv_a_rows <= wmma_vv_a_rows_n;
             wmma_vv_c_row <= wmma_vv_c_row_n;
             wmma_vv_b_rows <= wmma_vv_b_rows_n;
         `endif
