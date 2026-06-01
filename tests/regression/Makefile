@@ -36,6 +36,7 @@ all:
 	$(MAKE) -C sgemm_tcu_mx
 	$(MAKE) -C wmma_vv
 	$(MAKE) -C wmma_vv_overlap
+	$(MAKE) -C wmma_vv_rvv
 	$(MAKE) -C sgemm2_dxa
 	$(MAKE) -C async_barrier
 	$(MAKE) -C async_gbarrier
@@ -74,6 +75,7 @@ run-simx:
 	$(MAKE) -C softmax run-simx
 	$(MAKE) -C wmma_vv run-simx
 	$(MAKE) -C wmma_vv_overlap run-simx
+	$(MAKE) -C wmma_vv_rvv run-simx
 	$(MAKE) -C async_barrier run-simx
 	$(MAKE) -C packld run-simx
 	$(MAKE) -C wgather run-simx
@@ -137,6 +139,7 @@ clean:
 	$(MAKE) -C sgemm_tcu_mx clean
 	$(MAKE) -C wmma_vv clean
 	$(MAKE) -C wmma_vv_overlap clean
+	$(MAKE) -C wmma_vv_rvv clean
 	$(MAKE) -C conv3 clean
 	$(MAKE) -C relu clean
 	$(MAKE) -C sgemv clean
