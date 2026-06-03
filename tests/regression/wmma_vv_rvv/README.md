@@ -7,13 +7,16 @@ It keeps the same:
 
 - host-side input generation
 - CPU golden reference
-- single-tile `wmma_config_t<NUM_THREADS>` workload
+- fixed single-tile `wmma_config_t<8>` workload
 - launch shape (`grid_dim=1`, `block_dim=1`)
 
 and only changes the device-side compute path:
 
 - `wmma_vv`: uses `wmma.vv`
 - `wmma_vv_rvv`: uses RVV `vfmacc.vf` outer-product accumulation
+
+This baseline is intentionally fixed to `NUM_THREADS=8` so it matches the
+single fixed-size `wmma_vv` regression.
 
 Typical comparison flow from `build/`:
 

@@ -4,7 +4,7 @@ set -euo pipefail
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 BUILD_DIR="$ROOT_DIR/build"
-APP="wmma_vv"
+APP="wmma_vv_overlap"
 DRIVER="simx"
 THREADS=8
 VLEN=256
@@ -16,10 +16,10 @@ usage() {
   cat <<'EOF'
 Usage: ./run.sh [options]
 
-Rebuild and run tests/regression/wmma_vv with matching app/device thread settings.
+Rebuild and run a regression app with matching app/device thread settings.
 
 Options:
-  -t, --threads N       Set NUM_THREADS and blackbox --threads (default: 8)
+  -a, --app NAME        Regression app under tests/regression (default: wmma_vv_overlap)
   -d, --driver NAME     Select driver: simx or rtlsim (default: simx)
       --vlen N          Set VLEN macro for app/driver builds (default: 256)
       --configs STR     Extra CONFIGS appended to both app and driver builds
@@ -34,12 +34,12 @@ EOF
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    -t|--threads)
-      THREADS="$2"
+    -a|--app)
+      APP="$2"
       shift 2
       ;;
-    --threads=*)
-      THREADS="${1#*=}"
+    --app=*)
+      APP="${1#*=}"
       shift
       ;;
     -d|--driver)
@@ -111,6 +111,9 @@ if [[ -n "$EXTRA_CONFIGS" ]]; then
   DRIVER_CONFIGS+=" $EXTRA_CONFIGS"
 fi
 
+echo "App: $APP"
+echo "Driver: $DRIVER"
+echo "Threads: $THREADS"
 echo "App build CONFIGS: $APP_CONFIGS"
 if [[ $DO_CLEAN -eq 1 ]]; then
   make -C "$BUILD_DIR/tests/regression/$APP" clean
