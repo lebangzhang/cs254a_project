@@ -51,12 +51,24 @@ std::vector<float> matmul(const std::vector<float>& A,
   return out;
 }
 
+std::vector<float> take_top_rows(const std::vector<float>& Mtx,
+                                 uint32_t rows,
+                                 uint32_t cols) {
+  std::vector<float> out(rows * cols, 0.0f);
+  for (uint32_t i = 0; i < rows; ++i) {
+    for (uint32_t j = 0; j < cols; ++j)
+      out[i * cols + j] = Mtx[i * cols + j];
+  }
+  return out;
+}
+
 const char* case_name(uint32_t bit) {
   switch (bit) {
   case kCaseUniqueDst: return "unique-dst";
   case kCaseDstEqSrcA: return "dst-eq-srcA";
   case kCaseDstEqSrcB: return "dst-eq-srcB";
-  case kCaseChain:     return "chain";
+  case kCaseDstEqSrcATwice: return "dst-eq-srcA-twice";
+  case kCaseDstEqSrcBTwice: return "dst-eq-srcB-twice";
   default:             return "unknown";
   }
 }
@@ -66,7 +78,8 @@ uint32_t slot_index(uint32_t bit) {
   case kCaseUniqueDst: return 0;
   case kCaseDstEqSrcA: return 1;
   case kCaseDstEqSrcB: return 2;
-  case kCaseChain:     return 3;
+  case kCaseDstEqSrcATwice: return 3;
+  case kCaseDstEqSrcBTwice: return 4;
   default:             return 0;
   }
 }
@@ -75,7 +88,7 @@ uint32_t enabled_case_mask() {
   uint32_t mask = 0;
   if constexpr (kHasUniqueDst)
     mask |= kCaseUniqueDst;
-  mask |= kCaseDstEqSrcA | kCaseDstEqSrcB | kCaseChain;
+  mask |= kCaseDstEqSrcA | kCaseDstEqSrcB | kCaseDstEqSrcATwice | kCaseDstEqSrcBTwice;
   return mask;
 }
 
@@ -121,6 +134,8 @@ int main() {
 
   static_assert(cfg::tileN == cfg::tileK,
                 "wmma_vv_overlap expects tileN == tileK for the chained dependency case");
+  static_assert(cfg::tileK <= cfg::tileM,
+                "wmma_vv_overlap expects tileK <= tileM for dst-eq-srcB-twice");
 
   const uint32_t case_mask = enabled_case_mask();
 
@@ -129,7 +144,8 @@ int main() {
   std::vector<float> B1(K * N);
   std::vector<float> C(kCaseCount * kElemsPerCase, 0.0f);
   std::vector<float> ref_unique;
-  std::vector<float> ref_chain;
+  std::vector<float> ref_a_twice;
+  std::vector<float> ref_b_twice;
 
   for (uint32_t i = 0; i < A.size(); ++i)
     A[i] = pattern_a(i);
@@ -139,7 +155,8 @@ int main() {
     B1[i] = pattern_b1(i);
 
   ref_unique = matmul(A, B0, M, N, K);
-  ref_chain = matmul(ref_unique, B1, M, N, K);
+  ref_a_twice = matmul(ref_unique, B1, M, N, K);
+  ref_b_twice = matmul(A, take_top_rows(ref_unique, K, N), M, N, K);
 
   kernel_arg_t kernel_arg{};
   kernel_arg.case_mask = case_mask;
@@ -186,13 +203,17 @@ int main() {
 
   int errors = 0;
   uint32_t cases = 0;
-  for (uint32_t bit : {kCaseUniqueDst, kCaseDstEqSrcA, kCaseDstEqSrcB, kCaseChain}) {
+  for (uint32_t bit : {kCaseUniqueDst, kCaseDstEqSrcA, kCaseDstEqSrcB,
+                       kCaseDstEqSrcATwice, kCaseDstEqSrcBTwice}) {
     if ((case_mask & bit) == 0)
       continue;
 
     ++cases;
     const uint32_t slot = slot_index(bit);
-    const float* expected = (bit == kCaseChain) ? ref_chain.data() : ref_unique.data();
+    const float* expected =
+        (bit == kCaseDstEqSrcATwice) ? ref_a_twice.data()
+      : (bit == kCaseDstEqSrcBTwice) ? ref_b_twice.data()
+      : ref_unique.data();
     const float* actual = C.data() + slot * kElemsPerCase;
 
     for (uint32_t i = 0; i < kElemsPerCase; ++i) {

@@ -7,11 +7,12 @@
 #endif
 
 enum : uint32_t {
-  kCaseUniqueDst = 1u << 0,
-  kCaseDstEqSrcA = 1u << 1,
-  kCaseDstEqSrcB = 1u << 2,
-  kCaseChain     = 1u << 3,
-  kCaseCount     = 4,
+  kCaseUniqueDst     = 1u << 0,
+  kCaseDstEqSrcA     = 1u << 1,
+  kCaseDstEqSrcB     = 1u << 2,
+  kCaseDstEqSrcATwice = 1u << 3,
+  kCaseDstEqSrcBTwice = 1u << 4,
+  kCaseCount         = 5,
 };
 
 struct kernel_arg_t {

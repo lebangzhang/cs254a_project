@@ -27,7 +27,7 @@ constexpr uint32_t encode_wmma_vv(uint32_t vd, uint32_t vs1, uint32_t vs2) {
 
 constexpr uint32_t kInstOverlapA = encode_wmma_vv(kABase, kABase, kB0Base);
 constexpr uint32_t kInstOverlapB = encode_wmma_vv(kB0Base, kABase, kB0Base);
-constexpr uint32_t kInstChain = encode_wmma_vv(kABase, kABase, kB1Base);
+constexpr uint32_t kInstOverlapATwice = encode_wmma_vv(kABase, kABase, kB1Base);
 constexpr uint32_t kInstUnique = kHasUniqueDst ? encode_wmma_vv(kUniqueDstBase, kABase, kB0Base) : 0;
 
 static_assert((kB0Base + cfg::tileK) <= kMaxVregs,
@@ -484,12 +484,20 @@ extern "C" void kernel_main(kernel_arg_t* __UNIFORM__ arg) {
     store_b0_dst_regs(C + 2 * kElemsPerCase);
   }
 
-  if (arg->case_mask & kCaseChain) {
+  if (arg->case_mask & kCaseDstEqSrcATwice) {
     load_a_regs(A);
     load_b0_regs(B0);
     load_b1_regs(B1);
     issue_wmma_vv(kInstOverlapA);
-    issue_wmma_vv(kInstChain);
+    issue_wmma_vv(kInstOverlapATwice);
     store_a_regs(C + 3 * kElemsPerCase);
+  }
+
+  if (arg->case_mask & kCaseDstEqSrcBTwice) {
+    load_a_regs(A);
+    load_b0_regs(B0);
+    issue_wmma_vv(kInstOverlapB);
+    issue_wmma_vv(kInstOverlapB);
+    store_b0_dst_regs(C + 4 * kElemsPerCase);
   }
 }

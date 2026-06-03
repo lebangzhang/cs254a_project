@@ -6,7 +6,8 @@ Cases:
 - `unique-dst`: disjoint destination group when register space permits
 - `dst-eq-srcA`: destination overlaps source A
 - `dst-eq-srcB`: destination overlaps source B
-- `chain`: second `wmma.vv` consumes the first result directly
+- `dst-eq-srcA-twice`: two consecutive `wmma.vv` instructions reuse the A overlap path
+- `dst-eq-srcB-twice`: two consecutive `wmma.vv` instructions reuse the B overlap path
 
 Driver behavior:
 - `simx`: runs the full overlap suite
