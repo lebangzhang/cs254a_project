@@ -234,7 +234,8 @@ bool Ara_VOpc_Unit::schedule(instr_trace_t* trace) {
     // issue a cloned instruction trace
     auto trace_alloc = core_->trace_pool().allocate(1);
     auto new_trace = new (trace_alloc) instr_trace_t(*trace);
-    new_trace->wb = false; // disable scoreboard release
+    new_trace->wb = false;  // internal uop, do not retire the parent instruction here
+    new_trace->instr_eop = false;
     this->lsu_flush(new_trace);
     DT(4, "*** VOPC next group: vlmul=" << vlmul_counter_ << ", " << *new_trace);
     this->Output.push(new_trace);
@@ -286,7 +287,8 @@ bool Ara_VOpc_Unit::fused_schedule(instr_trace_t* trace) {
     // issue a cloned instruction trace
     auto trace_alloc = core_->trace_pool().allocate(1);
     auto new_trace = new (trace_alloc) instr_trace_t(*trace);
-    new_trace->wb = false; // disable scoreboard release
+    new_trace->wb = false;  // internal uop, do not retire the parent instruction here
+    new_trace->instr_eop = false;
     this->decode(new_trace);
     DT(4, "*** VOPC next group: vlmul=" << vlmul_counter_ << ", " << *new_trace);
     this->Output.push(new_trace);
@@ -324,7 +326,8 @@ bool Ara_VOpc_Unit::fused_schedule(instr_trace_t* trace) {
     // issue a cloned instruction trace
     auto trace_alloc = core_->trace_pool().allocate(1);
     auto new_trace = new (trace_alloc) instr_trace_t(*trace);
-    new_trace->wb = false; // disable scoreboard release
+    new_trace->wb = false;  // internal uop, do not retire the parent instruction here
+    new_trace->instr_eop = false;
     this->decode(new_trace);
     DT(4, "*** VOPC next lane: vl=" << vl_counter_ << ", vlmul=" << vlmul_counter_ << ", " << *new_trace);
     this->Output.push(new_trace);

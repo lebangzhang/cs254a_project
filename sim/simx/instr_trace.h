@@ -85,6 +85,7 @@ public:
   int  pid;
   bool sop;
   bool eop;
+  bool instr_eop;
 
   bool fetch_stall;
 
@@ -106,6 +107,7 @@ public:
     , pid(-1)
     , sop(true)
     , eop(true)
+    , instr_eop(true)
     , fetch_stall(false)
     , issue_time(SimPlatform::instance().cycles())
     , log_once_(false)
@@ -127,6 +129,7 @@ public:
     , pid(rhs.pid)
     , sop(rhs.sop)
     , eop(rhs.eop)
+    , instr_eop(rhs.instr_eop)
     , fetch_stall(rhs.fetch_stall)
     , issue_time(rhs.issue_time)
     , log_once_(false)

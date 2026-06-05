@@ -47,7 +47,7 @@ module VX_lane_dispatch import VX_gpu_pkg::*; #(
     localparam FANOUT_ENABLE= (`SIMD_WIDTH > (MAX_FANOUT + MAX_FANOUT /2));
 
     localparam DATA_IN_TMASK_OFF = IN_DATAW - (UUID_WIDTH + ISSUE_WIS_W + SIMD_IDX_W + `SIMD_WIDTH);
-    localparam DATA_IN_OPDS_OFF = 1 + 1;
+    localparam DATA_IN_OPDS_OFF = 1 + 1 + 1;
 
     typedef struct packed {
         logic [2:0][NUM_LANES-1:0][`XLEN-1:0] rsdata;
@@ -120,6 +120,7 @@ module VX_lane_dispatch import VX_gpu_pkg::*; #(
         wire [ISSUE_W-1:0] issue_idx = issue_indices[block_idx];
         wire [ISSUE_WIS_W-1:0] dispatch_wis = dispatch_data[issue_idx][DATA_IN_TMASK_OFF + `SIMD_WIDTH + SIMD_IDX_W +: ISSUE_WIS_W];
         wire [SIMD_IDX_W-1:0] dispatch_sid = dispatch_data[issue_idx][DATA_IN_TMASK_OFF + `SIMD_WIDTH +: SIMD_IDX_W];
+        wire dispatch_instr_eop = dispatch_data[issue_idx][2];
         wire dispatch_sop = dispatch_data[issue_idx][1];
         wire dispatch_eop = dispatch_data[issue_idx][0];
 
@@ -203,6 +204,7 @@ module VX_lane_dispatch import VX_gpu_pkg::*; #(
         wire [NW_WIDTH-1:0] block_wid = wis_to_wid(dispatch_wis, isw);
         wire [GPID_WIDTH-1:0] warp_pid = GPID_WIDTH'(block_pid[block_idx]) + GPID_WIDTH'(dispatch_sid * NUM_PACKETS);
 
+        wire warp_instr_eop = block_eop[block_idx] && dispatch_instr_eop;
         wire warp_sop = block_sop[block_idx] && dispatch_sop;
         wire warp_eop = block_eop[block_idx] && dispatch_eop;
 
@@ -220,6 +222,7 @@ module VX_lane_dispatch import VX_gpu_pkg::*; #(
                 block_wid,
                 block_tmask[block_idx],
                 warp_pid,
+                warp_instr_eop,
                 warp_sop,
                 warp_eop,
                 dispatch_data[issue_idx][DATA_IN_TMASK_OFF-1 : (DATA_IN_OPDS_OFF + NUM_SRC_OPDS * `SIMD_WIDTH * `XLEN)],

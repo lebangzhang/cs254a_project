@@ -176,7 +176,8 @@ void VOpcUnit::tick() {
 
       auto trace_alloc = core_->trace_pool().allocate(1);
       auto new_trace = new (trace_alloc) instr_trace_t(*trace);
-      new_trace->wb = false; // disable scoreboard release
+      new_trace->wb = false;  // internal uops must not retire the ISA instruction
+      new_trace->instr_eop = false;
 
       // Issue Trace to Execution
       this->Output.push(new_trace, VOPC_SCALAR_DELAY + scalar_stalls + i);
@@ -415,8 +416,9 @@ void VOpcUnit::send_uop_trace(instr_trace_t* trace) {
     this->translate(new_trace);
   }
 
-  // Disable scoreboard release
+  // Internal trace: keep execution timing, but retire only on the final trace.
   new_trace->wb = false;
+  new_trace->instr_eop = false;
 
   // Issue Trace to Execution
   this->Output.send(new_trace);
@@ -682,4 +684,3 @@ void VOpcUnit::writeback(instr_trace_t* trace) {
   // Overall, optimally, it optimizes for 4 VRF req batches
   // Hence, need to consider 3 different caess, (Only 1 VRF req batch, Only 2 VRF req batch, Only 4)
   // Note, the total number of batches is assumed to be a power of 2
-

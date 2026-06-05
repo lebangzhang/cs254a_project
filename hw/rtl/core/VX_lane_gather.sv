@@ -139,6 +139,7 @@ module VX_lane_gather import VX_gpu_pkg::*; #(
             result_tmp_if.data.header.rd,
             result_tmp_if.data.header.bytesel,
             commit_data_w,
+            result_tmp_if.data.header.instr_eop,
             result_tmp_if.data.header.sop,
             result_tmp_if.data.header.eop
         };

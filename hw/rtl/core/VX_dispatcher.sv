@@ -69,6 +69,7 @@ module VX_dispatcher import VX_gpu_pkg::*; #(
                     operands_if.data.rs1_data,
                     operands_if.data.rs2_data,
                     operands_if.data.rs3_data,
+                    operands_if.data.instr_eop,
                     operands_if.data.sop,
                     operands_if.data.eop
                 }),
@@ -107,7 +108,7 @@ module VX_dispatcher import VX_gpu_pkg::*; #(
                 perf_instrs_r[i] <= '0;
             end else begin
                 perf_stalls_r[i] <= perf_stalls_r[i] + PERF_CTR_BITS'(operands_if_stall && operands_if.data.ex_type == EX_BITS'(i));
-                perf_instrs_r[i] <= perf_instrs_r[i] + PERF_CTR_BITS'(operands_if_fire && operands_if.data.ex_type == EX_BITS'(i) && operands_if.data.eop);
+                perf_instrs_r[i] <= perf_instrs_r[i] + PERF_CTR_BITS'(operands_if_fire && operands_if.data.ex_type == EX_BITS'(i) && operands_if.data.instr_eop);
             end
         end
         assign perf_stalls[i] = perf_stalls_r[i];

@@ -158,7 +158,8 @@ void VOpcUnit::vector_std_trace(instr_trace_t* trace) {
     // translate VPU instructions
     this->translate(new_trace);
   }
-  new_trace->wb = false; // disable scoreboard release
+  new_trace->wb = false;  // internal uop, not an architectural retirement point
+  new_trace->instr_eop = false;
 
   // Check if is LSU instruction
   this->lsu_flush(new_trace);
@@ -418,4 +419,3 @@ void VOpcUnit::writeback(instr_trace_t* trace) {
   // Overall, optimally, it optimizes for 4 VRF req batches
   // Hence, need to consider 3 different caess, (Only 1 VRF req batch, Only 2 VRF req batch, Only 4)
   // Note, the total number of batches is assumed to be a power of 2
-

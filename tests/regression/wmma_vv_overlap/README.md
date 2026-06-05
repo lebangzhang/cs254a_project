@@ -1,6 +1,7 @@
 # `wmma_vv_overlap`
 
 This regression complements `wmma_vv` with grouped-register hazard coverage.
+It is fixed to the `NUM_THREADS=8` / `8x8x8` tile configuration.
 
 Cases:
 - `unique-dst`: disjoint destination group when register space permits
@@ -16,6 +17,6 @@ Driver behavior:
 Examples:
 
 ```bash
-./ci/blackbox.sh --driver=simx --app=wmma_vv_overlap --threads=8
-./ci/blackbox.sh --driver=rtlsim --app=wmma_vv_overlap --threads=8
+./run.sh --app wmma_vv_overlap --driver=simx
+./run.sh --app wmma_vv_overlap --driver=rtlsim
 ```

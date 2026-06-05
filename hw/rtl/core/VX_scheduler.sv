@@ -375,14 +375,17 @@ module VX_scheduler import VX_gpu_pkg::*; #(
     reg [PERF_CTR_BITS-1:0] instret;
 
     wire [`NUM_WARPS-1:0] committed_warps_v = commit_sched_if.committed_warps;
+    wire [`ISSUE_WIDTH-1:0] committed_instrs_v = commit_sched_if.committed_instrs;
     wire [`CLOG2(`NUM_WARPS+1)-1:0] committed_warps_cnt_v;
+    wire [`CLOG2(`ISSUE_WIDTH+1)-1:0] committed_instrs_cnt_v;
     `POP_COUNT(committed_warps_cnt_v, committed_warps_v);
+    `POP_COUNT(committed_instrs_cnt_v, committed_instrs_v);
 
     always @(posedge clk) begin
         if (reset) begin
             instret <= '0;
         end else begin
-            instret <= instret + PERF_CTR_BITS'(committed_warps_cnt_v);
+            instret <= instret + PERF_CTR_BITS'(committed_instrs_cnt_v);
         end
     end
 

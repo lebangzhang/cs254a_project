@@ -2,7 +2,11 @@
 
 #include <stdint.h>
 
-#ifndef NUM_THREADS
+#ifdef NUM_THREADS
+#if NUM_THREADS != 8
+#error "wmma_vv_overlap regression is fixed to NUM_THREADS=8"
+#endif
+#else
 #define NUM_THREADS 8
 #endif
 

@@ -36,7 +36,7 @@ module VX_opc_unit import VX_gpu_pkg::*; #(
     localparam GPR_ENTRIES    = GPR_FILE_SIZE / GPR_DATA_SIZE;
     localparam GPR_ADDR_BITS  = `CLOG2(GPR_ENTRIES / NUM_REGS);
     localparam GPR_ADDR_WIDTH = `UP(GPR_ADDR_BITS);
-    localparam GPR_TAG_WIDTH  = UUID_WIDTH + ISSUE_WIS_W + SIMD_IDX_W + `SIMD_WIDTH + PC_BITS + 1 + NUM_XREGS + EX_BITS + INST_OP_BITS + INST_ARGS_BITS + NUM_REGS_BITS + BYTESEL_BITS + 1 + 1;
+    localparam GPR_TAG_WIDTH  = UUID_WIDTH + ISSUE_WIS_W + SIMD_IDX_W + `SIMD_WIDTH + PC_BITS + 1 + NUM_XREGS + EX_BITS + INST_OP_BITS + INST_ARGS_BITS + NUM_REGS_BITS + BYTESEL_BITS + 1 + 1 + 1;
     localparam OUT_DATAW      = $bits(operands_t);
 
     `UNUSED_VAR (writeback_if.data.sop)
@@ -87,6 +87,7 @@ module VX_opc_unit import VX_gpu_pkg::*; #(
         scoreboard_if.data.op_args,
         scoreboard_if.data.rd,
         scoreboard_if.data.bytesel,
+        simd_eop,
         simd_sop,
         simd_eop
     };
@@ -152,9 +153,9 @@ module VX_opc_unit import VX_gpu_pkg::*; #(
         .reset    (reset),
         .valid_in (gpr_rsp_valid),
         .ready_in (gpr_rsp_ready),
-        .data_in  ({gpr_rsp_tag[GPR_TAG_WIDTH-1:2], // remove sop/eop
+        .data_in  ({gpr_rsp_tag[GPR_TAG_WIDTH-1:3], // remove instr_eop/sop/eop
                     gpr_rsp_data, // operand data
-                    gpr_rsp_tag[1:0]}), // sop/eop
+                    gpr_rsp_tag[2:0]}), // instr_eop/sop/eop
         .data_out ({
             operands_if.data.uuid,
             operands_if.data.wis,
@@ -171,6 +172,7 @@ module VX_opc_unit import VX_gpu_pkg::*; #(
             operands_if.data.rs3_data,
             operands_if.data.rs2_data,
             operands_if.data.rs1_data,
+            operands_if.data.instr_eop,
             operands_if.data.sop,
             operands_if.data.eop
         }),

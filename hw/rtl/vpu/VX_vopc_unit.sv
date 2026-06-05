@@ -359,6 +359,7 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*
     logic [NUM_SRC_OPDS-1:0] dispatch_used_rs, dispatch_used_rs_n;
     logic [NUM_SRC_OPDS-1:0][`SIMD_WIDTH-1:0][`XLEN-1:0] dispatch_srs_data, dispatch_srs_data_n;
     logic [NUM_SRC_OPDS-1:0][`SIMD_WIDTH-1:0][`XLEN-1:0] dispatch_rs_data, dispatch_rs_data_n;
+    logic dispatch_instr_eop, dispatch_instr_eop_n;
     logic dispatch_sop, dispatch_sop_n;
     logic dispatch_eop, dispatch_eop_n;
 `ifdef EXT_TCU_ENABLE
@@ -458,6 +459,7 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*
         dispatch_used_rs_n = dispatch_used_rs;
         dispatch_srs_data_n = dispatch_srs_data;
         dispatch_rs_data_n = dispatch_rs_data;
+        dispatch_instr_eop_n = dispatch_instr_eop;
         dispatch_sop_n = dispatch_sop;
         dispatch_eop_n = dispatch_eop;
         gpr_req_sent_n = gpr_req_sent;
@@ -511,6 +513,9 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*
                     soperands_if.data.rs1_data
                 };
                 dispatch_srs_data_n = dispatch_rs_data_n;
+                dispatch_instr_eop_n = soperands_is_wmma_vv
+                                     ? wmma_vv_is_last_uop(soperands_if.data.op_args)
+                                     : (soperands_is_vset || soperands_is_rvv_lsu || soperands_is_vfmv_f_s || (VSIMD_COUNT == 1));
                 dispatch_sop_n     = 1'b1;
                 dispatch_eop_n     = soperands_is_vset || soperands_is_rvv_lsu || soperands_is_wmma_vv || soperands_is_vfmv_f_s || (VSIMD_COUNT == 1);
             `ifdef EXT_TCU_ENABLE
@@ -731,6 +736,7 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*
                     dispatch_sop_n = 1'b0;
                     dispatch_eop_n = dispatch_is_rvv_lsu ? (simd_ctr_n == 0)
                                                          : ((simd_ctr_n == 0) && (sew_ctr_n == 0));
+                    dispatch_instr_eop_n = dispatch_eop_n;
                     state_n = STATE_FETCH;
                     gpr_req_sent_n = 1'b0;
                 end
@@ -774,6 +780,7 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*
             dispatch_used_rs <= dispatch_used_rs_n;
             dispatch_srs_data <= dispatch_srs_data_n;
             dispatch_rs_data <= dispatch_rs_data_n;
+            dispatch_instr_eop <= dispatch_instr_eop_n;
             dispatch_sop <= dispatch_sop_n;
             dispatch_eop <= dispatch_eop_n;
         `ifdef EXT_TCU_ENABLE
@@ -837,6 +844,7 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*
             dispatch_rd,
             dispatch_bytesel,
             dispatch_rs_data,
+            dispatch_instr_eop,
             dispatch_sop,
             dispatch_eop
         }),
@@ -861,6 +869,7 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*
             voperands_if.data.rs3_data,
             voperands_if.data.rs2_data,
             voperands_if.data.rs1_data,
+            voperands_if.data.instr_eop,
             voperands_if.data.sop,
             voperands_if.data.eop
         }),

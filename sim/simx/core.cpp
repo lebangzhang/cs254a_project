@@ -463,29 +463,31 @@ void Core::commit() {
         scoreboard_.release(trace);
       }
 
-      // instruction mix profiling
-      switch (trace->fu_type) {
-      case FUType::ALU: ++perf_stats_.alu_instrs; break;
-      case FUType::FPU: ++perf_stats_.fpu_instrs; break;
-      case FUType::LSU: ++perf_stats_.lsu_instrs; break;
-      case FUType::SFU: ++perf_stats_.sfu_instrs; break;
-    #ifdef EXT_TCU_ENABLE
-      case FUType::TCU: ++perf_stats_.tcu_instrs; break;
-    #endif
-    #ifdef EXT_V_ENABLE
-      case FUType::VPU: ++perf_stats_.vpu_instrs; break;
-    #endif
-      default: assert(false);
+      if (trace->instr_eop) {
+        // instruction mix profiling
+        switch (trace->fu_type) {
+        case FUType::ALU: ++perf_stats_.alu_instrs; break;
+        case FUType::FPU: ++perf_stats_.fpu_instrs; break;
+        case FUType::LSU: ++perf_stats_.lsu_instrs; break;
+        case FUType::SFU: ++perf_stats_.sfu_instrs; break;
+      #ifdef EXT_TCU_ENABLE
+        case FUType::TCU: ++perf_stats_.tcu_instrs; break;
+      #endif
+      #ifdef EXT_V_ENABLE
+        case FUType::VPU: ++perf_stats_.vpu_instrs; break;
+      #endif
+        default: assert(false);
+        }
+        // track committed instructions
+        perf_stats_.instrs += 1;
+      #ifdef EXT_V_ENABLE
+        if (std::get_if<VsetType>(&trace->op_type)
+          || std::get_if<VlsType>(&trace->op_type)
+          || std::get_if<VopType>(&trace->op_type)) {
+          perf_stats_.vinstrs += 1;
+        }
+      #endif
       }
-      // track committed instructions
-      perf_stats_.instrs += 1;
-    #ifdef EXT_V_ENABLE
-      if (std::get_if<VsetType>(&trace->op_type)
-        || std::get_if<VlsType>(&trace->op_type)
-        || std::get_if<VopType>(&trace->op_type)) {
-        perf_stats_.vinstrs += 1;
-      }
-    #endif
       // instruction completed
       pending_instrs_.remove(trace);
     }

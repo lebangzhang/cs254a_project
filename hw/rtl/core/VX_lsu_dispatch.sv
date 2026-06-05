@@ -260,6 +260,7 @@ module VX_lsu_dispatch import VX_gpu_pkg::*; #(
         eff_rs1_data,
         opd_q.rs2_data,
         opd_q.rs3_data,
+        opd_q.instr_eop,
         opd_q.sop,
         opd_q.eop
     };
