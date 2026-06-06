@@ -687,6 +687,15 @@ public:
   }
 
   void wmma_vv(uint32_t wid, uint32_t tid, uint32_t rdest, uint32_t rsrc0, uint32_t rsrc1) {
+#ifndef EXT_TCU_ENABLE
+    (void)wid;
+    (void)tid;
+    (void)rdest;
+    (void)rsrc0;
+    (void)rsrc1;
+    std::cout << "wmma.vv requires EXT_TCU_ENABLE in simx" << std::endl;
+    std::abort();
+#else
     namespace vt = vortex::tensor;
     using cfg = vt::wmma_config_t<NUM_THREADS>;
 
@@ -791,6 +800,7 @@ public:
     for (uint32_t r = 0; r < cfg::NRC; ++r) {
       unpack_c(r);
     }
+#endif
   }
 
   void execute(const Instr &instr, uint32_t wid, uint32_t tid,

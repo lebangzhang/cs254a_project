@@ -60,7 +60,11 @@ module VX_tcu_uops import VX_tcu_pkg::*, VX_gpu_pkg::*; (
     // Truncate the wide uop_idx to the bits this expander actually uses.
     wire [`UP(CTR_W)-1:0] ctr = `UP(CTR_W)'(uop_idx);
 
+`ifdef EXT_V_ENABLE
     wire is_wmma_vv = (ibuf_in.op_type == INST_TCU_WMMA_VV);
+`else
+    wire is_wmma_vv = 1'b0;
+`endif
 
 `ifdef TCU_WGMMA_ENABLE
     // WGMMA µops: desc_a in x10 (a0), desc_b in x11 (a1); C accumulator in rs3.
@@ -215,6 +219,7 @@ module VX_tcu_uops import VX_tcu_pkg::*, VX_gpu_pkg::*; (
     wire [4:0] rs2 = TCU_RB + 5'(rs2_offset);
     wire [4:0] rs3 = TCU_RC + 5'(rs3_offset);
 
+`ifdef EXT_V_ENABLE
     wire [4:0] wmma_vv_a_row = get_reg_idx(ibuf_in.rs1)
                              + 5'(m_index) * 5'(TCU_TC_M)
                              + 5'(wmma_vv_row_sel);
@@ -223,6 +228,7 @@ module VX_tcu_uops import VX_tcu_pkg::*, VX_gpu_pkg::*; (
     wire [4:0] wmma_vv_c_row = get_reg_idx(ibuf_in.rd)
                              + 5'(m_index) * 5'(TCU_TC_M)
                              + 5'(wmma_vv_row_sel);
+`endif
 
     // -----------------------------------------------------------------------
     // Output uop assembly.
@@ -243,6 +249,7 @@ module VX_tcu_uops import VX_tcu_pkg::*, VX_gpu_pkg::*; (
         n_sp_s = '0;
         m_sp_s = '0;
     `endif
+    `ifdef EXT_V_ENABLE
         if (is_wmma_vv) begin
             ibuf_r.op_args.tcu.is_sparse = 1'b0;
             ibuf_r.op_args.tcu.fmt_s  = 4'(TCU_TF32_ID);
@@ -257,6 +264,7 @@ module VX_tcu_uops import VX_tcu_pkg::*, VX_gpu_pkg::*; (
             ibuf_r.rs3 = make_reg_num(REG_TYPE_V, wmma_vv_c_row);
             ibuf_r.used_rs = 3'b111;
         end else
+    `endif
     `ifdef TCU_WGMMA_ENABLE
         if (is_wgmma) begin
             // WGMMA µop:
