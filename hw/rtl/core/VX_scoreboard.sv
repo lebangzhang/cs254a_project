@@ -40,13 +40,16 @@ module VX_scoreboard import VX_gpu_pkg::*
     localparam IN_DATAW  = $bits(ibuffer_t);
     localparam OUT_DATAW = $bits(scoreboard_t) - ISSUE_WIS_W;
 `ifdef EXT_TCU_ENABLE
+`ifdef EXT_V_ENABLE
     localparam WMMA_VV_TILE_M = TCU_TC_M * TCU_M_STEPS;
     localparam WMMA_VV_TILE_K = TCU_TC_K * TCU_K_STEPS;
     localparam WMMA_VV_UOPS = TCU_TC_M * TCU_M_STEPS * TCU_N_STEPS * TCU_K_STEPS;
     localparam WMMA_VV_UOPS_W = `UP($clog2(WMMA_VV_UOPS + 1));
 `endif
+`endif
 
 `ifdef EXT_TCU_ENABLE
+`ifdef EXT_V_ENABLE
     function automatic logic wmma_vv_is_uop(input ibuffer_t ibuf);
         wmma_vv_is_uop = (ibuf.op_type == INST_TCU_WMMA_VV);
     endfunction
@@ -81,6 +84,7 @@ module VX_scoreboard import VX_gpu_pkg::*
         end
         return mask;
     endfunction
+`endif
 `endif
 
     VX_ibuffer_if staging_if [PER_ISSUE_WARPS]();
@@ -122,12 +126,14 @@ module VX_scoreboard import VX_gpu_pkg::*
         reg [NUM_REGS-1:0] inuse_regs, inuse_regs_n;
         reg [NUM_XREGS-1:0] inuse_xregs, inuse_xregs_n;
     `ifdef EXT_TCU_ENABLE
+    `ifdef EXT_V_ENABLE
         reg wmma_vv_busy, wmma_vv_busy_n;
         reg wmma_vv_emit_active, wmma_vv_emit_active_n;
         reg [PC_BITS-1:0] wmma_vv_pc, wmma_vv_pc_n;
         reg [WMMA_VV_UOPS_W-1:0] wmma_vv_wb_left, wmma_vv_wb_left_n;
         reg [RV_REGS-1:0] wmma_vv_group_mask_vec_r, wmma_vv_group_mask_vec_n;
         reg [RV_REGS-1:0] wmma_vv_dst_mask_vec_r, wmma_vv_dst_mask_vec_n;
+    `endif
     `endif
         wire [NUM_OPDS-1:0] operands_busy;
 
@@ -146,6 +152,7 @@ module VX_scoreboard import VX_gpu_pkg::*
         wire [NUM_OPDS-1:0] stg_used_rs = {staging_if[w].data.used_rs, staging_if[w].data.wb};
 
     `ifdef EXT_TCU_ENABLE
+    `ifdef EXT_V_ENABLE
         wire ibf_is_wmma_vv = wmma_vv_is_uop(ibuffer_if[w].data);
         wire stg_is_wmma_vv = wmma_vv_is_uop(staging_if[w].data);
         wire ibf_is_wmma_vv_first = ibf_is_wmma_vv && wmma_vv_is_first_uop(ibuffer_if[w].data);
@@ -163,6 +170,7 @@ module VX_scoreboard import VX_gpu_pkg::*
             | wmma_vv_group_mask_vec(wmma_vv_base_row(staging_if[w].data.rs1, staging_if[w].data.op_args), WMMA_VV_TILE_M)
             | wmma_vv_group_mask_vec(wmma_vv_base_k  (staging_if[w].data.rs2, staging_if[w].data.op_args), WMMA_VV_TILE_K);
         wire [RV_REGS-1:0] curr_wmma_issue_mask = ibuffer_fire ? ibf_wmma_issue_mask : stg_wmma_issue_mask;
+    `endif
     `endif
 
         // Special-register dependency masks
@@ -182,6 +190,7 @@ module VX_scoreboard import VX_gpu_pkg::*
             inuse_regs_n  = inuse_regs;
             inuse_xregs_n = inuse_xregs;
         `ifdef EXT_TCU_ENABLE
+        `ifdef EXT_V_ENABLE
             wmma_vv_busy_n = wmma_vv_busy;
             wmma_vv_emit_active_n = wmma_vv_emit_active;
             wmma_vv_pc_n = wmma_vv_pc;
@@ -189,12 +198,14 @@ module VX_scoreboard import VX_gpu_pkg::*
             wmma_vv_group_mask_vec_n = wmma_vv_group_mask_vec_r;
             wmma_vv_dst_mask_vec_n = wmma_vv_dst_mask_vec_r;
         `endif
+        `endif
             if (writeback_fire) begin
                 if (writeback_if.data.wb) begin
                     inuse_regs_n[writeback_if.data.rd] = 0; // release rd
                 end
                 inuse_xregs_n &= ~writeback_if.data.wr_xregs; // release special regs
             `ifdef EXT_TCU_ENABLE
+            `ifdef EXT_V_ENABLE
                 if (wmma_vv_busy
                  && writeback_if.data.wb
                  && (get_reg_type(writeback_if.data.rd) == REG_TYPE_V)
@@ -210,6 +221,7 @@ module VX_scoreboard import VX_gpu_pkg::*
                     end
                 end
             `endif
+            `endif
             end
             if (staging_fire) begin
                 if (staging_if[w].data.wb) begin
@@ -217,6 +229,7 @@ module VX_scoreboard import VX_gpu_pkg::*
                 end
                 inuse_xregs_n |= staging_if[w].data.wr_xregs; // reserve special regs
             `ifdef EXT_TCU_ENABLE
+            `ifdef EXT_V_ENABLE
                 if (stg_is_wmma_vv) begin
                     if (!wmma_vv_busy && wmma_vv_is_first_uop(staging_if[w].data)) begin
                         wmma_vv_busy_n = 1'b1;
@@ -235,6 +248,7 @@ module VX_scoreboard import VX_gpu_pkg::*
                     end
                 end
             `endif
+            `endif
             end
         end
 
@@ -244,12 +258,14 @@ module VX_scoreboard import VX_gpu_pkg::*
             wire [RV_REGS-1:0] stg_reg_mask = stg_opd_mask[0][i] | stg_opd_mask[1][i] | stg_opd_mask[2][i] | stg_opd_mask[3][i];
             wire [RV_REGS-1:0] regs_mask = ibuffer_fire ? ibf_reg_mask : stg_reg_mask;
         `ifdef EXT_TCU_ENABLE
+        `ifdef EXT_V_ENABLE
             wire [RV_REGS-1:0] wmma_vv_mask = ((i == REG_TYPE_V) && wmma_vv_busy && !curr_is_wmma_cont)
                                             ? wmma_vv_group_mask_vec_r
                                             : '0;
             assign in_use_mask[i] = (inuse_regs_n[i * RV_REGS +: RV_REGS] | wmma_vv_mask) & regs_mask;
         `else
             assign in_use_mask[i] = inuse_regs_n[i * RV_REGS +: RV_REGS] & regs_mask;
+        `endif
         `endif
         end
 
@@ -267,10 +283,12 @@ module VX_scoreboard import VX_gpu_pkg::*
         wire [NUM_XREGS-1:0] xregs_mask = ibuffer_fire ? ibf_xregs_mask : stg_xregs_mask;
         wire [NUM_XREGS-1:0] xregs_busy = inuse_xregs_n & xregs_mask;
     `ifdef EXT_TCU_ENABLE
+    `ifdef EXT_V_ENABLE
         wire wmma_vv_issue_busy = curr_is_wmma_vv_first
                                && ((inuse_regs_n[REG_TYPE_V * RV_REGS +: RV_REGS] & curr_wmma_issue_mask) != 0);
     `else
         wire wmma_vv_issue_busy = 1'b0;
+    `endif
     `endif
 
         reg operands_ready_r;
@@ -280,6 +298,7 @@ module VX_scoreboard import VX_gpu_pkg::*
                 inuse_regs  <= '0;
                 inuse_xregs <= '0;
             `ifdef EXT_TCU_ENABLE
+            `ifdef EXT_V_ENABLE
                 wmma_vv_busy <= 1'b0;
                 wmma_vv_emit_active <= 1'b0;
                 wmma_vv_pc <= '0;
@@ -287,16 +306,19 @@ module VX_scoreboard import VX_gpu_pkg::*
                 wmma_vv_group_mask_vec_r <= '0;
                 wmma_vv_dst_mask_vec_r <= '0;
             `endif
+            `endif
             end else begin
                 inuse_regs <= inuse_regs_n;
                 inuse_xregs <= inuse_xregs_n;
             `ifdef EXT_TCU_ENABLE
+            `ifdef EXT_V_ENABLE
                 wmma_vv_busy <= wmma_vv_busy_n;
                 wmma_vv_emit_active <= wmma_vv_emit_active_n;
                 wmma_vv_pc <= wmma_vv_pc_n;
                 wmma_vv_wb_left <= wmma_vv_wb_left_n;
                 wmma_vv_group_mask_vec_r <= wmma_vv_group_mask_vec_n;
                 wmma_vv_dst_mask_vec_r <= wmma_vv_dst_mask_vec_n;
+            `endif
             `endif
             end
             operands_ready_r <= (regs_busy == 0) && (xregs_busy == 0) && ~wmma_vv_issue_busy;
