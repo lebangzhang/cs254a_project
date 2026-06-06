@@ -266,6 +266,8 @@ module VX_scoreboard import VX_gpu_pkg::*
         `else
             assign in_use_mask[i] = inuse_regs_n[i * RV_REGS +: RV_REGS] & regs_mask;
         `endif
+        `else
+            assign in_use_mask[i] = inuse_regs_n[i * RV_REGS +: RV_REGS] & regs_mask;
         `endif
         end
 
@@ -289,6 +291,8 @@ module VX_scoreboard import VX_gpu_pkg::*
     `else
         wire wmma_vv_issue_busy = 1'b0;
     `endif
+    `else
+        wire wmma_vv_issue_busy = 1'b0;
     `endif
 
         reg operands_ready_r;
