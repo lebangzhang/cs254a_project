@@ -31,6 +31,7 @@ all:
 	$(MAKE) -C pathfinder
 	$(MAKE) -C softmax
 	$(MAKE) -C sgemm_tcu
+	$(MAKE) -C sgemm_tcu_baseline
 	$(MAKE) -C sgemm2_tcu
 	$(MAKE) -C sgemm_tcu_sp
 	$(MAKE) -C sgemm_tcu_mx
@@ -73,6 +74,7 @@ run-simx:
 	$(MAKE) -C jacobi run-simx
 	$(MAKE) -C pathfinder run-simx
 	$(MAKE) -C softmax run-simx
+	$(MAKE) -C sgemm_tcu_baseline run-simx
 	$(MAKE) -C wmma_vv run-simx
 	$(MAKE) -C wmma_vv_overlap run-simx
 	$(MAKE) -C wmma_vv_rvv run-simx
@@ -110,6 +112,7 @@ run-rtlsim:
 	$(MAKE) -C jacobi run-rtlsim
 	$(MAKE) -C pathfinder run-rtlsim
 	$(MAKE) -C softmax run-rtlsim
+	$(MAKE) -C sgemm_tcu_baseline run-rtlsim
 	$(MAKE) -C wmma_vv_overlap run-rtlsim
 	$(MAKE) -C async_barrier run-rtlsim
 	$(MAKE) -C packld run-rtlsim
@@ -134,6 +137,7 @@ clean:
 	$(MAKE) -C sgemm clean
 	$(MAKE) -C sgemm_v1 clean
 	$(MAKE) -C sgemm_tcu clean
+	$(MAKE) -C sgemm_tcu_baseline clean
 	$(MAKE) -C sgemm2_tcu clean
 	$(MAKE) -C sgemm_tcu_sp clean
 	$(MAKE) -C sgemm_tcu_mx clean

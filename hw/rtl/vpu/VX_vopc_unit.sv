@@ -101,6 +101,11 @@ module VX_vopc_unit import VX_gpu_pkg::*, VX_vpu_pkg::*
     endfunction
 `else
     wire dispatch_is_wmma_vv = 1'b0;
+
+    function automatic logic wmma_vv_is_last_uop(input op_args_t op_args);
+        `UNUSED_VAR(op_args)
+        wmma_vv_is_last_uop = 1'b0;
+    endfunction
 `endif
 
     for (genvar i = 0; i < NUM_SRC_OPDS; ++i) begin : g_src_valid

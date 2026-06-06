@@ -1,4 +1,5 @@
 #include "common.h"
+#include <cstdlib>
 #include <cmath>
 #include <iostream>
 #include <tensor_cfg.h>
@@ -48,10 +49,11 @@ int main() {
   std::vector<float> C(M * N, 0.0f);
   std::vector<float> ref(M * N, 0.0f);
 
+  std::srand(50);
   for (uint32_t i = 0; i < A.size(); ++i)
-    A[i] = static_cast<float>(static_cast<int>(i % 13) - 6) * 0.25f;
+    A[i] = static_cast<float>(std::rand()) / RAND_MAX;
   for (uint32_t i = 0; i < B.size(); ++i)
-    B[i] = static_cast<float>(static_cast<int>(i % 11) - 5) * 0.125f;
+    B[i] = static_cast<float>(std::rand()) / RAND_MAX;
 
   for (uint32_t i = 0; i < M; ++i) {
     for (uint32_t j = 0; j < N; ++j) {
