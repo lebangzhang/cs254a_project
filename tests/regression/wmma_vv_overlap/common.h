@@ -10,9 +10,10 @@ enum : uint32_t {
   kCaseUniqueDst     = 1u << 0,
   kCaseDstEqSrcA     = 1u << 1,
   kCaseDstEqSrcB     = 1u << 2,
-  kCaseDstEqSrcATwice = 1u << 3,
-  kCaseDstEqSrcBTwice = 1u << 4,
-  kCaseCount         = 5,
+  kCasePartialOverlap = 1u << 3,
+  kCaseDstEqSrcATwice = 1u << 4,
+  kCaseDstEqSrcBTwice = 1u << 5,
+  kCaseCount         = 6,
 };
 
 struct kernel_arg_t {

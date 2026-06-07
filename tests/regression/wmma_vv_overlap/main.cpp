@@ -16,6 +16,7 @@ constexpr uint32_t kABase = 0;
 constexpr uint32_t kB0Base = kABase + cfg::tileM;
 constexpr uint32_t kB1Base = kB0Base + cfg::tileK;
 constexpr uint32_t kUniqueDstBase = kB1Base + cfg::tileK;
+constexpr uint32_t kPartialDstBase = kABase + (cfg::tileK / 2);
 constexpr bool kHasUniqueDst = (kUniqueDstBase + cfg::tileM) <= kMaxVregs;
 
 constexpr uint32_t slot_elem_count() {
@@ -67,6 +68,7 @@ const char* case_name(uint32_t bit) {
   case kCaseUniqueDst: return "unique-dst";
   case kCaseDstEqSrcA: return "dst-eq-srcA";
   case kCaseDstEqSrcB: return "dst-eq-srcB";
+  case kCasePartialOverlap: return "partial-overlap";
   case kCaseDstEqSrcATwice: return "dst-eq-srcA-twice";
   case kCaseDstEqSrcBTwice: return "dst-eq-srcB-twice";
   default:             return "unknown";
@@ -78,8 +80,9 @@ uint32_t slot_index(uint32_t bit) {
   case kCaseUniqueDst: return 0;
   case kCaseDstEqSrcA: return 1;
   case kCaseDstEqSrcB: return 2;
-  case kCaseDstEqSrcATwice: return 3;
-  case kCaseDstEqSrcBTwice: return 4;
+  case kCasePartialOverlap: return 3;
+  case kCaseDstEqSrcATwice: return 4;
+  case kCaseDstEqSrcBTwice: return 5;
   default:             return 0;
   }
 }
@@ -88,7 +91,8 @@ uint32_t enabled_case_mask() {
   uint32_t mask = 0;
   if constexpr (kHasUniqueDst)
     mask |= kCaseUniqueDst;
-  mask |= kCaseDstEqSrcA | kCaseDstEqSrcB | kCaseDstEqSrcATwice | kCaseDstEqSrcBTwice;
+  mask |= kCaseDstEqSrcA | kCaseDstEqSrcB | kCasePartialOverlap
+       |  kCaseDstEqSrcATwice | kCaseDstEqSrcBTwice;
   return mask;
 }
 
@@ -136,6 +140,8 @@ int main() {
                 "wmma_vv_overlap expects tileN == tileK for the chained dependency case");
   static_assert(cfg::tileK <= cfg::tileM,
                 "wmma_vv_overlap expects tileK <= tileM for dst-eq-srcB-twice");
+  static_assert((kPartialDstBase + cfg::tileM) <= kMaxVregs,
+                "wmma_vv_overlap partial-overlap destination group exceeds the register file");
 
   const uint32_t case_mask = enabled_case_mask();
 
@@ -203,7 +209,7 @@ int main() {
 
   int errors = 0;
   uint32_t cases = 0;
-  for (uint32_t bit : {kCaseUniqueDst, kCaseDstEqSrcA, kCaseDstEqSrcB,
+  for (uint32_t bit : {kCaseUniqueDst, kCaseDstEqSrcA, kCaseDstEqSrcB, kCasePartialOverlap,
                        kCaseDstEqSrcATwice, kCaseDstEqSrcBTwice}) {
     if ((case_mask & bit) == 0)
       continue;

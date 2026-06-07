@@ -6,8 +6,6 @@
 namespace vt = vortex::tensor;
 using cfg = vt::wmma_config_t<NUM_THREADS>;
 
-static_assert(NUM_THREADS == 4 || NUM_THREADS == 8 || NUM_THREADS == 16,
-              "wmma_vv_overlap supports NUM_THREADS=4/8/16");
 static_assert(cfg::tileN == cfg::tileK,
               "wmma_vv_overlap expects tileN == tileK for the chained dependency case");
 
@@ -18,6 +16,7 @@ constexpr uint32_t kABase = 0;
 constexpr uint32_t kB0Base = kABase + cfg::tileM;
 constexpr uint32_t kB1Base = kB0Base + cfg::tileK;
 constexpr uint32_t kUniqueDstBase = kB1Base + cfg::tileK;
+constexpr uint32_t kPartialDstBase = kABase + (cfg::tileK / 2);
 constexpr bool kHasUniqueDst = (kUniqueDstBase + cfg::tileM) <= kMaxVregs;
 constexpr uint32_t kElemsPerCase = cfg::tileM * cfg::tileN;
 
@@ -27,6 +26,7 @@ constexpr uint32_t encode_wmma_vv(uint32_t vd, uint32_t vs1, uint32_t vs2) {
 
 constexpr uint32_t kInstOverlapA = encode_wmma_vv(kABase, kABase, kB0Base);
 constexpr uint32_t kInstOverlapB = encode_wmma_vv(kB0Base, kABase, kB0Base);
+constexpr uint32_t kInstPartial = encode_wmma_vv(kPartialDstBase, kABase, kB0Base);
 constexpr uint32_t kInstOverlapATwice = encode_wmma_vv(kABase, kABase, kB1Base);
 constexpr uint32_t kInstUnique = kHasUniqueDst ? encode_wmma_vv(kUniqueDstBase, kABase, kB0Base) : 0;
 
@@ -34,6 +34,8 @@ static_assert((kB0Base + cfg::tileK) <= kMaxVregs,
               "wmma_vv_overlap needs source B0 tile registers");
 static_assert((kB1Base + cfg::tileK) <= kMaxVregs,
               "wmma_vv_overlap needs source B1 tile registers");
+static_assert((kPartialDstBase + cfg::tileM) <= kMaxVregs,
+              "wmma_vv_overlap partial overlap destination group exceeds the register file");
 
 #if NUM_THREADS == 4
 static inline void load_a_regs(const float* A) {
@@ -140,6 +142,28 @@ static inline void store_unique_regs(float* C) {
       "vse32.v v21, (%[c5])\n\t"
       "vse32.v v22, (%[c6])\n\t"
       "vse32.v v23, (%[c7])"
+      :
+      : [c0] "r"(C + 0 * cfg::tileN),
+        [c1] "r"(C + 1 * cfg::tileN),
+        [c2] "r"(C + 2 * cfg::tileN),
+        [c3] "r"(C + 3 * cfg::tileN),
+        [c4] "r"(C + 4 * cfg::tileN),
+        [c5] "r"(C + 5 * cfg::tileN),
+        [c6] "r"(C + 6 * cfg::tileN),
+        [c7] "r"(C + 7 * cfg::tileN)
+      : "memory");
+}
+
+static inline void store_partial_regs(float* C) {
+  __asm__ volatile(
+      "vse32.v v2, (%[c0])\n\t"
+      "vse32.v v3, (%[c1])\n\t"
+      "vse32.v v4, (%[c2])\n\t"
+      "vse32.v v5, (%[c3])\n\t"
+      "vse32.v v6, (%[c4])\n\t"
+      "vse32.v v7, (%[c5])\n\t"
+      "vse32.v v8, (%[c6])\n\t"
+      "vse32.v v9, (%[c7])"
       :
       : [c0] "r"(C + 0 * cfg::tileN),
         [c1] "r"(C + 1 * cfg::tileN),
@@ -272,6 +296,28 @@ static inline void store_unique_regs(float* C) {
       "vse32.v v29, (%[c5])\n\t"
       "vse32.v v30, (%[c6])\n\t"
       "vse32.v v31, (%[c7])"
+      :
+      : [c0] "r"(C + 0 * cfg::tileN),
+        [c1] "r"(C + 1 * cfg::tileN),
+        [c2] "r"(C + 2 * cfg::tileN),
+        [c3] "r"(C + 3 * cfg::tileN),
+        [c4] "r"(C + 4 * cfg::tileN),
+        [c5] "r"(C + 5 * cfg::tileN),
+        [c6] "r"(C + 6 * cfg::tileN),
+        [c7] "r"(C + 7 * cfg::tileN)
+      : "memory");
+}
+
+static inline void store_partial_regs(float* C) {
+  __asm__ volatile(
+      "vse32.v v4,  (%[c0])\n\t"
+      "vse32.v v5,  (%[c1])\n\t"
+      "vse32.v v6,  (%[c2])\n\t"
+      "vse32.v v7,  (%[c3])\n\t"
+      "vse32.v v8,  (%[c4])\n\t"
+      "vse32.v v9,  (%[c5])\n\t"
+      "vse32.v v10, (%[c6])\n\t"
+      "vse32.v v11, (%[c7])"
       :
       : [c0] "r"(C + 0 * cfg::tileN),
         [c1] "r"(C + 1 * cfg::tileN),
@@ -441,6 +487,44 @@ static inline void store_b0_dst_regs(float* C) {
         [c15] "r"(C + 15 * cfg::tileN)
       : "memory");
 }
+
+static inline void store_partial_regs(float* C) {
+  __asm__ volatile(
+      "vse32.v v4,  (%[c0])\n\t"
+      "vse32.v v5,  (%[c1])\n\t"
+      "vse32.v v6,  (%[c2])\n\t"
+      "vse32.v v7,  (%[c3])\n\t"
+      "vse32.v v8,  (%[c4])\n\t"
+      "vse32.v v9,  (%[c5])\n\t"
+      "vse32.v v10, (%[c6])\n\t"
+      "vse32.v v11, (%[c7])\n\t"
+      "vse32.v v12, (%[c8])\n\t"
+      "vse32.v v13, (%[c9])\n\t"
+      "vse32.v v14, (%[c10])\n\t"
+      "vse32.v v15, (%[c11])\n\t"
+      "vse32.v v16, (%[c12])\n\t"
+      "vse32.v v17, (%[c13])\n\t"
+      "vse32.v v18, (%[c14])\n\t"
+      "vse32.v v19, (%[c15])"
+      :
+      : [c0]  "r"(C + 0  * cfg::tileN),
+        [c1]  "r"(C + 1  * cfg::tileN),
+        [c2]  "r"(C + 2  * cfg::tileN),
+        [c3]  "r"(C + 3  * cfg::tileN),
+        [c4]  "r"(C + 4  * cfg::tileN),
+        [c5]  "r"(C + 5  * cfg::tileN),
+        [c6]  "r"(C + 6  * cfg::tileN),
+        [c7]  "r"(C + 7  * cfg::tileN),
+        [c8]  "r"(C + 8  * cfg::tileN),
+        [c9]  "r"(C + 9  * cfg::tileN),
+        [c10] "r"(C + 10 * cfg::tileN),
+        [c11] "r"(C + 11 * cfg::tileN),
+        [c12] "r"(C + 12 * cfg::tileN),
+        [c13] "r"(C + 13 * cfg::tileN),
+        [c14] "r"(C + 14 * cfg::tileN),
+        [c15] "r"(C + 15 * cfg::tileN)
+      : "memory");
+}
 #endif
 
 static inline void issue_wmma_vv(uint32_t inst) {
@@ -484,13 +568,20 @@ extern "C" void kernel_main(kernel_arg_t* __UNIFORM__ arg) {
     store_b0_dst_regs(C + 2 * kElemsPerCase);
   }
 
+  if (arg->case_mask & kCasePartialOverlap) {
+    load_a_regs(A);
+    load_b0_regs(B0);
+    issue_wmma_vv(kInstPartial);
+    store_partial_regs(C + 3 * kElemsPerCase);
+  }
+
   if (arg->case_mask & kCaseDstEqSrcATwice) {
     load_a_regs(A);
     load_b0_regs(B0);
     load_b1_regs(B1);
     issue_wmma_vv(kInstOverlapA);
     issue_wmma_vv(kInstOverlapATwice);
-    store_a_regs(C + 3 * kElemsPerCase);
+    store_a_regs(C + 4 * kElemsPerCase);
   }
 
   if (arg->case_mask & kCaseDstEqSrcBTwice) {
@@ -498,6 +589,6 @@ extern "C" void kernel_main(kernel_arg_t* __UNIFORM__ arg) {
     load_b0_regs(B0);
     issue_wmma_vv(kInstOverlapB);
     issue_wmma_vv(kInstOverlapB);
-    store_b0_dst_regs(C + 4 * kElemsPerCase);
+    store_b0_dst_regs(C + 5 * kElemsPerCase);
   }
 }
