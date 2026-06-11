@@ -2,6 +2,8 @@
 
 #include <stdint.h>
 
+static constexpr uint32_t kMatrixSize = 64;
+
 #ifdef NUM_THREADS
 #if NUM_THREADS != 8
 #error "wmma_vv regression is fixed to NUM_THREADS=8"

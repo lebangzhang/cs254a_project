@@ -39,9 +39,13 @@ static void cleanup() {
   } while (false)
 
 int main() {
-  constexpr uint32_t M = cfg::tileM;
-  constexpr uint32_t N = cfg::tileN;
-  constexpr uint32_t K = cfg::tileK;
+  constexpr uint32_t M = kMatrixSize;
+  constexpr uint32_t N = kMatrixSize;
+  constexpr uint32_t K = kMatrixSize;
+
+  static_assert((M % cfg::tileM) == 0, "M must be a multiple of tileM");
+  static_assert((N % cfg::tileN) == 0, "N must be a multiple of tileN");
+  static_assert((K % cfg::tileK) == 0, "K must be a multiple of tileK");
 
   std::vector<float> A(M * K);
   std::vector<float> B(K * N);
