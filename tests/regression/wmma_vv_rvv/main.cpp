@@ -39,9 +39,13 @@ static void cleanup() {
   } while (false)
 
 int main() {
-  constexpr uint32_t M = cfg::tileM;
-  constexpr uint32_t N = cfg::tileN;
-  constexpr uint32_t K = cfg::tileK;
+  constexpr uint32_t M = kProblemM;
+  constexpr uint32_t N = kProblemN;
+  constexpr uint32_t K = kProblemK;
+
+  static_assert((M % cfg::tileM) == 0, "problem M must be divisible by tileM");
+  static_assert((N % cfg::tileN) == 0, "problem N must be divisible by tileN");
+  static_assert((K % cfg::tileK) == 0, "problem K must be divisible by tileK");
 
   std::vector<float> A(M * K);
   std::vector<float> B(K * N);

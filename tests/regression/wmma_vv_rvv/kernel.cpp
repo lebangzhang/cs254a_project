@@ -7,10 +7,16 @@ using cfg = vt::wmma_config_t<NUM_THREADS>;
 
 static_assert(NUM_THREADS == 8,
               "wmma_vv_rvv baseline is fixed to NUM_THREADS=8");
+static_assert((kProblemM % cfg::tileM) == 0,
+              "wmma_vv_rvv expects problem M divisible by tileM");
+static_assert((kProblemN % cfg::tileN) == 0,
+              "wmma_vv_rvv expects problem N divisible by tileN");
+static_assert((kProblemK % cfg::tileK) == 0,
+              "wmma_vv_rvv expects problem K divisible by tileK");
 
 namespace {
 
-static inline void issue_rvv_tile(const float* A, const float* B) {
+static inline void clear_accum_regs() {
   const float zero = 0.0f;
   __asm__ volatile(
       "vfmv.v.f v16, %[zero]\n\t"
@@ -24,17 +30,20 @@ static inline void issue_rvv_tile(const float* A, const float* B) {
       :
       : [zero] "f"(zero)
       : "v16", "v17", "v18", "v19", "v20", "v21", "v22", "v23");
+}
 
+static inline void accum_rvv_tile(const float* A, uint32_t a_row_stride,
+                                  const float* B, uint32_t b_row_stride) {
   for (uint32_t k = 0; k < cfg::tileK; ++k) {
-    const float* brow = B + k * cfg::tileN;
-    float a0 = A[0 * cfg::tileK + k];
-    float a1 = A[1 * cfg::tileK + k];
-    float a2 = A[2 * cfg::tileK + k];
-    float a3 = A[3 * cfg::tileK + k];
-    float a4 = A[4 * cfg::tileK + k];
-    float a5 = A[5 * cfg::tileK + k];
-    float a6 = A[6 * cfg::tileK + k];
-    float a7 = A[7 * cfg::tileK + k];
+    const float* brow = B + k * b_row_stride;
+    float a0 = A[0 * a_row_stride + k];
+    float a1 = A[1 * a_row_stride + k];
+    float a2 = A[2 * a_row_stride + k];
+    float a3 = A[3 * a_row_stride + k];
+    float a4 = A[4 * a_row_stride + k];
+    float a5 = A[5 * a_row_stride + k];
+    float a6 = A[6 * a_row_stride + k];
+    float a7 = A[7 * a_row_stride + k];
 
     __asm__ volatile(
         "vle32.v v8, (%[brow])\n\t"
@@ -54,7 +63,7 @@ static inline void issue_rvv_tile(const float* A, const float* B) {
   }
 }
 
-static inline void store_c_regs(float* C) {
+static inline void store_c_regs(float* C, uint32_t row_stride) {
   __asm__ volatile(
       "vse32.v v16, (%[c0])\n\t"
       "vse32.v v17, (%[c1])\n\t"
@@ -65,14 +74,14 @@ static inline void store_c_regs(float* C) {
       "vse32.v v22, (%[c6])\n\t"
       "vse32.v v23, (%[c7])"
       :
-      : [c0] "r"(C + 0 * cfg::tileN),
-        [c1] "r"(C + 1 * cfg::tileN),
-        [c2] "r"(C + 2 * cfg::tileN),
-        [c3] "r"(C + 3 * cfg::tileN),
-        [c4] "r"(C + 4 * cfg::tileN),
-        [c5] "r"(C + 5 * cfg::tileN),
-        [c6] "r"(C + 6 * cfg::tileN),
-        [c7] "r"(C + 7 * cfg::tileN)
+      : [c0] "r"(C + 0 * row_stride),
+        [c1] "r"(C + 1 * row_stride),
+        [c2] "r"(C + 2 * row_stride),
+        [c3] "r"(C + 3 * row_stride),
+        [c4] "r"(C + 4 * row_stride),
+        [c5] "r"(C + 5 * row_stride),
+        [c6] "r"(C + 6 * row_stride),
+        [c7] "r"(C + 7 * row_stride)
       : "memory");
 }
 
@@ -91,6 +100,18 @@ extern "C" void kernel_main(kernel_arg_t* __UNIFORM__ arg) {
                    : [vl] "=r"(vl)
                    : [avl] "r"(cfg::tileN));
 
-  issue_rvv_tile(A, B);
-  store_c_regs(C);
+  for (uint32_t bm = 0; bm < kProblemM; bm += cfg::tileM) {
+    for (uint32_t bn = 0; bn < kProblemN; bn += cfg::tileN) {
+      clear_accum_regs();
+
+      for (uint32_t bk = 0; bk < kProblemK; bk += cfg::tileK) {
+        const float* a_tile = A + bm * kProblemK + bk;
+        const float* b_tile = B + bk * kProblemN + bn;
+
+        accum_rvv_tile(a_tile, kProblemK, b_tile, kProblemN);
+      }
+
+      store_c_regs(C + bm * kProblemN + bn, kProblemN);
+    }
+  }
 }

@@ -15,3 +15,7 @@ struct kernel_arg_t {
   uint64_t B_addr;
   uint64_t C_addr;
 };
+
+constexpr uint32_t kProblemM = 64;
+constexpr uint32_t kProblemN = 64;
+constexpr uint32_t kProblemK = 64;
